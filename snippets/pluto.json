@@ -1,0 +1,182 @@
+{
+  "Markdown Cell": {
+    "prefix": "md",
+    "body": [
+      "md\"\"\"",
+      "${1:# Title}",
+      "\"\"\"$0"
+    ],
+    "description": "Create a Pluto markdown cell"
+  },
+  "Markdown Cell with Content": {
+    "prefix": "mdcell",
+    "body": [
+      "md\"\"\"",
+      "# ${1:Section Title}",
+      "",
+      "${2:Content}",
+      "\"\"\""
+    ],
+    "description": "Create a Pluto markdown cell with title and content"
+  },
+  "HTML Cell": {
+    "prefix": "html",
+    "body": [
+      "html\"\"\"",
+      "${1:<div>Content</div>}",
+      "\"\"\"$0"
+    ],
+    "description": "Create a Pluto HTML cell"
+  },
+  "PlutoUI Slider": {
+    "prefix": "slider",
+    "body": [
+      "@bind ${1:variable} Slider(${2:1:10}, default=${3:5}, show_value=true)$0"
+    ],
+    "description": "Create a PlutoUI slider with binding"
+  },
+  "PlutoUI NumberField": {
+    "prefix": "numberfield",
+    "body": [
+      "@bind ${1:variable} NumberField(${2:1:100}, default=${3:10})$0"
+    ],
+    "description": "Create a PlutoUI number field with binding"
+  },
+  "PlutoUI TextField": {
+    "prefix": "textfield",
+    "body": [
+      "@bind ${1:variable} TextField(default=\"${2:default text}\")$0"
+    ],
+    "description": "Create a PlutoUI text field with binding"
+  },
+  "PlutoUI CheckBox": {
+    "prefix": "checkbox",
+    "body": [
+      "@bind ${1:variable} CheckBox(default=${2:false})$0"
+    ],
+    "description": "Create a PlutoUI checkbox with binding"
+  },
+  "PlutoUI Select": {
+    "prefix": "select",
+    "body": [
+      "@bind ${1:variable} Select([${2:\"option1\", \"option2\", \"option3\"}])$0"
+    ],
+    "description": "Create a PlutoUI select dropdown with binding"
+  },
+  "PlutoUI Button": {
+    "prefix": "button",
+    "body": [
+      "@bind ${1:variable} Button(\"${2:Click me}\")$0"
+    ],
+    "description": "Create a PlutoUI button with binding"
+  },
+  "Import PlutoUI": {
+    "prefix": "using plutoui",
+    "body": [
+      "using PlutoUI"
+    ],
+    "description": "Import PlutoUI package"
+  },
+  "Import Plots": {
+    "prefix": "using plots",
+    "body": [
+      "using Plots"
+    ],
+    "description": "Import Plots package"
+  },
+  "Import Common Packages": {
+    "prefix": "using common",
+    "body": [
+      "using Markdown",
+      "using InteractiveUtils"
+    ],
+    "description": "Import common Pluto packages"
+  },
+  "TableOfContents": {
+    "prefix": "toc",
+    "body": [
+      "TableOfContents()"
+    ],
+    "description": "Add a PlutoUI table of contents"
+  },
+  "Begin Block": {
+    "prefix": "begin",
+    "body": [
+      "begin",
+      "\t${1:# code}",
+      "end$0"
+    ],
+    "description": "Create a begin-end block"
+  },
+  "Let Block": {
+    "prefix": "let",
+    "body": [
+      "let ${1:x} = ${2:value}",
+      "\t${3:# code}",
+      "end$0"
+    ],
+    "description": "Create a let-end block"
+  },
+  "Plot Basic": {
+    "prefix": "plot",
+    "body": [
+      "plot(${1:x}, ${2:y}, ",
+      "\tlabel=\"${3:label}\",",
+      "\ttitle=\"${4:title}\",",
+      "\txlabel=\"${5:x}\",",
+      "\tylabel=\"${6:y}\"",
+      ")$0"
+    ],
+    "description": "Create a basic plot"
+  },
+  "Scatter Plot": {
+    "prefix": "scatter",
+    "body": [
+      "scatter(${1:x}, ${2:y},",
+      "\tlabel=\"${3:label}\",",
+      "\ttitle=\"${4:title}\",",
+      "\txlabel=\"${5:x}\",",
+      "\tylabel=\"${6:y}\"",
+      ")$0"
+    ],
+    "description": "Create a scatter plot"
+  },
+  "Heatmap": {
+    "prefix": "heatmap",
+    "body": [
+      "heatmap(${1:data},",
+      "\ttitle=\"${2:title}\",",
+      "\txlabel=\"${3:x}\",",
+      "\tylabel=\"${4:y}\"",
+      ")$0"
+    ],
+    "description": "Create a heatmap"
+  },
+  "Function Definition": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:args})",
+      "\t${3:# body}",
+      "end$0"
+    ],
+    "description": "Create a function definition"
+  },
+  "Struct Definition": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name}",
+      "\t${2:field}::${3:Type}",
+      "end$0"
+    ],
+    "description": "Create a struct definition"
+  },
+  "Mutable Struct": {
+    "prefix": "mstruct",
+    "body": [
+      "mutable struct ${1:Name}",
+      "\t${2:field}::${3:Type}",
+      "end$0"
+    ],
+    "description": "Create a mutable struct definition"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "Run Analysis": {
+    "prefix": "run analysis",
+    "body": [
+      "result = ${1:MyAnalysis}()$0"
+    ],
+    "description": "Run a DyadInterface analysis"
+  },
+  "Run Analysis with Begin Block": {
+    "prefix": "begin analysis",
+    "body": [
+      "begin",
+      "\tresult = ${1:MyAnalysis}()",
+      "\t${2:plot(result)}",
+      "end$0"
+    ],
+    "description": "Run analysis in a begin block"
+  },
+  "Get Artifacts": {
+    "prefix": "artifacts",
+    "body": [
+      "artifacts(${1:result}, :${2:RawSolution})$0"
+    ],
+    "description": "Extract artifacts from analysis result"
+  },
+  "Get Artifacts with Begin Block": {
+    "prefix": "begin artifacts",
+    "body": [
+      "begin",
+      "\tusing DyadInterface: artifacts",
+      "\tsol = artifacts(${1:result}, :RawSolution)",
+      "\t${2:sol(1.0)}",
+      "end$0"
+    ],
+    "description": "Extract and work with artifacts in a begin block"
+  },
+  "Plot Analysis Result": {
+    "prefix": "plot result",
+    "body": [
+      "plot(${1:result})$0"
+    ],
+    "description": "Plot analysis result"
+  },
+  "Import DyadInterface": {
+    "prefix": "using dyad",
+    "body": [
+      "using DyadInterface"
+    ],
+    "description": "Import DyadInterface package"
+  }
+}
