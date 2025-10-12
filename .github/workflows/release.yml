@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # Allow manual trigger
     inputs:
       dry_run:
-        description: 'Run in dry-run mode (no actual release)'
+        description: "Run in dry-run mode (no actual release)"
         required: false
         type: boolean
         default: false
@@ -23,7 +23,9 @@ jobs:
     name: Run CI
     uses: ./.github/workflows/ci.yml
 
-  # Automated release with semantic-release
+  # Automated release with semantic-release (no-commit mode)
+  # This configuration creates releases without pushing version commits back to main
+  # Perfect for repositories with strict branch protection/rulesets
   release:
     name: Semantic Release
     runs-on: ubuntu-latest
@@ -34,8 +36,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history for semantic-release
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          persist-credentials: true # Need credentials for semantic-release to push
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false # No need to push commits in no-commit mode
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -59,19 +61,18 @@ jobs:
           echo "filename=$VSIX_FILE" >> $GITHUB_OUTPUT
           echo "Built VSIX file: $VSIX_FILE"
 
-      - name: Run semantic-release
+      - name: Run semantic-release (no-commit mode)
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            echo "Running in dry-run mode..."
+            echo "Running in dry-run mode (no commits will be pushed)..."
             npx semantic-release --dry-run
           else
+            echo "Running semantic-release in no-commit mode..."
+            echo "This will create a GitHub release with VSIX but won't update package.json/CHANGELOG in the repo"
+            echo "TODO: (and good first issue) actually introduce semantic release updating (after stable release) "
             npx semantic-release
           fi
 
