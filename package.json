@@ -1,9 +1,9 @@
 {
-  "name": "pluto-notebook",
+  "name": "advanced-vscode-extension",
   "displayName": "Pluto Notebook",
   "description": "VSCode extension for Julia Pluto notebooks",
-  "version": "0.0.1",
-  "publisher": "pluto-notebook",
+  "version": "0.1.0-alpha",
+  "publisher": "juliapluto-pankgeorg",
   "repository": {
     "type": "git",
     "url": "https://github.com/JuliaPluto/advanced-vscode-extension"

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha] - 2025-10-12
+
+Initial alpha release of the Pluto Notebook VSCode extension.
+
+**⚠️ Alpha Release Notice:** This is an early alpha version. Features are functional but may contain bugs. Not recommended for production use.
+
 ### Added
 
 - Pluto Notebook support for `.pluto.jl` and `.dyad.jl` files ([9467309](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9467309))
