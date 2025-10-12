@@ -38,7 +38,39 @@ We use a Personal Access Token (PAT) with bypass permissions to allow semantic-r
    - **Name**: `GH_PAT`
    - **Secret**: Paste the token you created
 
-### 3. Configure Branch Protection Rules
+### 3. Configure Branch Protection (Rulesets or Legacy)
+
+#### Option A: GitHub Rulesets (Recommended - Newer Repositories)
+
+**Important**: Deploy keys do NOT work with rulesets for semantic-release. You need to bypass for specific actors.
+
+1. Go to Settings → Rules → Rulesets
+2. Find or create a ruleset that applies to the `main` branch
+3. Configure bypass permissions:
+
+**Method 1: Bypass for Repository Admin (Simplest)**
+   - Under "Bypass list", click "Add bypass"
+   - Select "Repository admin"
+   - This allows repository admins to bypass (semantic-release will use admin PAT)
+
+**Method 2: Bypass for GitHub App**
+   - Under "Bypass list", click "Add bypass"
+   - Select "GitHub Apps"
+   - Add the GitHub Actions app if available
+
+**Method 3: Bypass for Specific User**
+   - Create a PAT (see step 1)
+   - Under "Bypass list", click "Add bypass"
+   - Select "Organization members" or "Repository collaborators"
+   - Add the user who owns the PAT
+
+4. Ensure these ruleset settings allow semantic-release to work:
+   - **Require pull request before merging**: Add bypass for your chosen actor
+   - **Require status checks to pass**: Add bypass for your chosen actor
+   - **Require linear history**: Can be enabled (semantic-release creates merge commits)
+   - **Block force pushes**: Keep enabled (semantic-release doesn't force push)
+
+#### Option B: Legacy Branch Protection Rules
 
 1. Go to Settings → Branches → Branch protection rules
 2. Edit the rule for `main`
@@ -145,8 +177,15 @@ This creates releases without pushing version bumps back to main.
 
 Solution: The PAT needs "Workflows" permission. Recreate the token with this permission added.
 
-### "protected branch hook declined"
+### "protected branch hook declined" or "Resource protected by organization SAML enforcement"
 
+**For GitHub Rulesets:**
+1. Verify the PAT owner is in the bypass list (not deploy keys)
+2. Check Settings → Rules → Rulesets → View ruleset runs to see why it was blocked
+3. Ensure the ruleset bypass includes the correct actor type (Repository admin, Org member, or App)
+4. If using org-level rulesets, you may need org admin permissions
+
+**For Legacy Protection:**
 Solution: Ensure the PAT user or github-actions[bot] is in the bypass list for branch protection.
 
 ### "Author identity unknown"
@@ -158,8 +197,69 @@ Solution: The workflow sets `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` environment
 Check:
 1. `GH_PAT` secret is properly set
 2. PAT has not expired
-3. PAT has correct permissions
-4. Branch protection allows bypass
+3. PAT has correct permissions (Contents: R/W minimum)
+4. Branch protection/rulesets allow bypass for the PAT owner
+5. PAT is authorized for SSO (if applicable)
+
+### Deploy keys don't work with Rulesets
+
+This is expected. Deploy keys cannot be added to ruleset bypass lists. Solutions:
+1. Use a Personal Access Token (PAT) instead
+2. Add the PAT owner to the ruleset bypass list
+3. Use "Repository admin" bypass if the PAT is from an admin
+
+### Verifying Ruleset Configuration
+
+Test if your PAT can push to protected branch:
+
+```bash
+# Clone with PAT
+git clone https://<PAT>@github.com/JuliaPluto/advanced-vscode-extension.git
+cd advanced-vscode-extension
+git checkout main
+
+# Make a test commit
+echo "test" >> test.txt
+git add test.txt
+git commit -m "test: ruleset bypass"
+git push
+
+# If this fails, your ruleset bypass is not configured correctly
+# Clean up
+git reset --hard HEAD~1
+git push --force
+```
+
+### Alternative: Skip Version Commits
+
+If you can't get rulesets to allow pushes, configure semantic-release to skip version commits and only create tags/releases:
+
+Update `.releaserc.json`:
+```json
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    ["@semantic-release/npm", { "npmPublish": false }],
+    ["semantic-release-vsce", { "packageVsix": true }],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "*.vsix", "label": "VS Code Extension (VSIX)" }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+This removes:
+- `@semantic-release/changelog` - no changelog updates
+- `@semantic-release/git` - no version commits to main
+
+Releases are created without pushing back to the repository.
 
 ## Security Notes
 
