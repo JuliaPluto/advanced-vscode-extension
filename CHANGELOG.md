@@ -1,13 +1,18 @@
 # Changelog
 
+All notable changes to the Pluto Notebook VSCode extension will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [Unreleased]
 
-### Features
+### Added
 
-- Pluto Notebook support for `.pluto.jl` and `.dyad.jl` files
+- Pluto Notebook support for `.pluto.jl` and `.dyad.jl` files ([9467309](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9467309))
 - Integrated Pluto server with automatic lifecycle management
-- VSCode task integration for Pluto server (terminal-based)
-- Interactive terminal for Julia code execution with command history
+- VSCode task integration for Pluto server (terminal-based) ([0ce78b4](https://github.com/JuliaPluto/advanced-vscode-extension/commit/0ce78b4))
+- Interactive terminal for Julia code execution with command history ([2c93203](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2c93203))
 - Rich output rendering (HTML, images, plots) in webviews
 - HTTP-based MCP server for AI assistant integration
 - 11 VS Code commands for server, configuration, and notebook management
@@ -18,6 +23,48 @@
 - Health check endpoint
 - Configuration settings for ports and auto-start
 - Shared state between extension and MCP clients
+- Code snippets for Pluto and Dyad Interface components
+- Automatic port selection to avoid conflicts
+- Toggle view command to switch between code and notebook view
+- Pluto Notebooks tree view in explorer with hierarchy information and definitions ([5c0313d](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5c0313d))
+- Reconnect notebook functionality
+- Status bar integration ([5341d45](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5341d45))
+- MathJax support for mathematical notation ([73ead4a](https://github.com/JuliaPluto/advanced-vscode-extension/commit/73ead4a))
+- Synchronous logs, stdout, and progress display ([a606e59](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a606e59))
+- Native support for images and bonds ([96c166d](https://github.com/JuliaPluto/advanced-vscode-extension/commit/96c166d))
+- Optional connection to local URL instead of spawning server ([5ef432b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5ef432b))
+
+### Fixed
+
+- Multiple open editors handling ([da1f7b9](https://github.com/JuliaPluto/advanced-vscode-extension/commit/da1f7b9))
+- Output display on notebook reopen ([ad6e488](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ad6e488))
+- Value display after error state ([b8cd536](https://github.com/JuliaPluto/advanced-vscode-extension/commit/b8cd536))
+- Tree view error handling ([2ba1da8](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2ba1da8))
+- UUID validation compatibility with Julia ([333531d](https://github.com/JuliaPluto/advanced-vscode-extension/commit/333531d))
+- Linting issues with isDefined/isNotDefined usage ([fff6b6f](https://github.com/JuliaPluto/advanced-vscode-extension/commit/fff6b6f))
+- Conditional checks and markdown serialization ([8cd0d2e](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8cd0d2e))
+- Task start functionality ([299f8c6](https://github.com/JuliaPluto/advanced-vscode-extension/commit/299f8c6))
+- Tests and markdown handling ([0160cf5](https://github.com/JuliaPluto/advanced-vscode-extension/commit/0160cf5))
+- Jest environment configuration ([37f5bfc](https://github.com/JuliaPluto/advanced-vscode-extension/commit/37f5bfc))
+- Pluto terminal error handling ([f474fd0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f474fd0))
+- Worker shutdown using process termination instead of connection close ([5aa73d6](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5aa73d6))
+- Image serialization issues ([9240509](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9240509))
+- ArrayBuffer to string conversion moved to controller ([4cc3b3f](https://github.com/JuliaPluto/advanced-vscode-extension/commit/4cc3b3f))
+- Pluto-tree styles refinements ([426f0a6](https://github.com/JuliaPluto/advanced-vscode-extension/commit/426f0a6), [ebe31c0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ebe31c0))
+- TypeScript type definitions ([9937fb3](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9937fb3))
+
+### Changed
+
+- Reset error state automatically ([2d251dc](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2d251dc))
+- Hide Pluto AI interface in embedded views ([8388eaa](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8388eaa))
+- Remove icons from tree view ([de43faa](https://github.com/JuliaPluto/advanced-vscode-extension/commit/de43faa))
+- Improved styling for webviews ([ec94551](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ec94551))
+- Code formatting with Prettier ([95b5f29](https://github.com/JuliaPluto/advanced-vscode-extension/commit/95b5f29), [fe7211b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/fe7211b), [b1d09a7](https://github.com/JuliaPluto/advanced-vscode-extension/commit/b1d09a7))
+- ESLint configuration and cleanup ([14b2b44](https://github.com/JuliaPluto/advanced-vscode-extension/commit/14b2b44), [a92c8af](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a92c8af))
+- Better notebook management ([875f317](https://github.com/JuliaPluto/advanced-vscode-extension/commit/875f317))
+- Tree view refactoring ([a2e52e1](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a2e52e1))
+- Enhanced styling for `pre` and `pluto-tree` elements ([2c9a7d5](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2c9a7d5))
+- General style updates and refinements ([2c1f723](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2c1f723), [5ffef03](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5ffef03))
 
 ### Documentation
 
@@ -28,4 +75,20 @@
 - Contributing guidelines (docs/CONTRIBUTING.md)
 - Semantic release workflow (docs/SEMANTIC_RELEASE.md)
 - Pluto.jl guide for AI tools with PlutoUI components reference
-- Updated README with extension overview and complete feature list
+- Updated README with extension overview and complete feature list ([e69c775](https://github.com/JuliaPluto/advanced-vscode-extension/commit/e69c775), [8596f60](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8596f60))
+- Improved code comments ([9129c44](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9129c44))
+
+### CI/CD
+
+- Complete CI/CD pipeline with GitHub Actions ([8736c3d](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8736c3d))
+- Automated releases with semantic-release ([a2c2855](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a2c2855))
+- Commitlint for conventional commits
+- ESLint and Prettier checks in CI ([a92c8af](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a92c8af))
+- Unit tests in CI pipeline ([c5f61bf](https://github.com/JuliaPluto/advanced-vscode-extension/commit/c5f61bf))
+- TypeScript type checking and linting fixes ([4493719](https://github.com/JuliaPluto/advanced-vscode-extension/commit/4493719))
+- VSIX artifact generation and attachment to releases
+
+### Dependencies
+
+- Upgraded @plutojl/rainbow to 0.6.10 ([b504340](https://github.com/JuliaPluto/advanced-vscode-extension/commit/b504340))
+- Upgraded @plutojl/rainbow to 0.6.8 ([048fdea](https://github.com/JuliaPluto/advanced-vscode-extension/commit/048fdea))
