@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main # semantic-release works on branch pushes, not tags
+      - alpha
+      - beta
+      - release
   workflow_dispatch: # Allow manual trigger
     inputs:
       dry_run:
