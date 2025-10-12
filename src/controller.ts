@@ -410,7 +410,6 @@ export class PlutoNotebookController {
    */
   private onPlutoNotebookUpdate = (notebook: vscode.NotebookDocument) => {
     return (event: UpdateEvent) => {
-      console.log({ event });
       try {
         const patches = event.data?.patches as Patch[] | undefined;
         const fullNotebookState = event.notebook;
