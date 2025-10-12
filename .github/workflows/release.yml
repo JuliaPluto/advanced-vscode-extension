@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main # semantic-release works on branch pushes, not tags
+  workflow_dispatch: # Allow manual trigger
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no actual release)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # Required for creating releases and pushing commits
@@ -27,7 +34,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history for semantic-release
-          persist-credentials: false # Use custom token for pushing
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true # Need credentials for semantic-release to push
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -53,10 +61,19 @@ jobs:
 
       - name: Run semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
         run: |
-          npx semantic-release
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Running in dry-run mode..."
+            npx semantic-release --dry-run
+          else
+            npx semantic-release
+          fi
 
       - name: Upload VSIX to release (fallback if semantic-release fails)
         if: failure()
