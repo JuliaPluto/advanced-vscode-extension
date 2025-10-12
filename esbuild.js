@@ -52,7 +52,7 @@ async function main() {
     sourcesContent: false,
     platform: "node",
     outfile: "dist/extension.cjs",
-    external: ["vscode", "jsdom", "ws"],
+    external: ["vscode"],
     logLevel: "silent",
     loader: {
       ".md": "text", // Load markdown files as text

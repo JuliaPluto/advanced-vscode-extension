@@ -2,7 +2,7 @@
   "name": "advanced-vscode-extension",
   "displayName": "Advanced Pluto Notebook for VSCode",
   "description": "VSCode extension for Julia Pluto notebooks",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "juliapluto-pankgeorg",
   "repository": {
     "type": "git",
@@ -269,8 +269,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.19.1",
-    "@plutojl/rainbow": "^0.6.10",
-    "jsdom": "^27.0.0",
+    "@plutojl/rainbow": "^0.6.12",
     "uuid": "^13.0.0",
     "ws": "^8.18.3",
     "zod": "^3.25.76"
