@@ -3,12 +3,12 @@ name: Release
 on:
   push:
     branches:
-      - main  # semantic-release works on branch pushes, not tags
+      - main # semantic-release works on branch pushes, not tags
 
 permissions:
-  contents: write  # Required for creating releases and pushing commits
-  issues: write    # Required for commenting on issues
-  pull-requests: write  # Required for commenting on PRs
+  contents: write # Required for creating releases and pushing commits
+  issues: write # Required for commenting on issues
+  pull-requests: write # Required for commenting on PRs
 
 jobs:
   # Call the CI workflow to run all validation, linting, tests, and build
@@ -26,14 +26,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for semantic-release
-          persist-credentials: false  # Use custom token for pushing
+          fetch-depth: 0 # Fetch all history for semantic-release
+          persist-credentials: false # Use custom token for pushing
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -41,13 +41,32 @@ jobs:
       - name: Verify package.json and package-lock.json are in sync
         run: npm ci --dry-run
 
+      - name: Build and package VSIX
+        run: npm run package
+
+      - name: Get VSIX filename
+        id: vsix_file
+        run: |
+          VSIX_FILE=$(ls *.vsix | head -n 1)
+          echo "filename=$VSIX_FILE" >> $GITHUB_OUTPUT
+          echo "Built VSIX file: $VSIX_FILE"
+
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Uncomment if publishing to VS Code Marketplace
-          # VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           npx semantic-release
+
+      - name: Upload VSIX to release (fallback if semantic-release fails)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        with:
+          name: vsix-package-release
+          path: ${{ steps.vsix_file.outputs.filename }}
+          retention-days: 90
 
   # Optional: Manual tag-based release (fallback if semantic-release is not used)
   # This job only runs when a tag is pushed
