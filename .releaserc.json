@@ -1,14 +1,8 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main"
+  ],
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
-    [
-      "@semantic-release/npm",
-      {
-        "npmPublish": false
-      }
-    ],
     [
       "semantic-release-vsce",
       {
@@ -21,7 +15,7 @@
         "assets": [
           {
             "path": "*.vsix",
-            "label": "VS Code Extension (VSIX)"
+            "label": "VSCode Extension (VSIX)"
           }
         ]
       }
