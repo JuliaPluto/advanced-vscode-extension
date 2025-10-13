@@ -17,6 +17,7 @@ export * from "./mcpConfigCommands.ts";
 export * from "./terminalCommands.ts";
 export * from "./notebooksTreeCommands.ts";
 export * from "./viewToggleCommands.ts";
+export * from "./notebookCommands.ts";
 // Import for registerAllCommands
 import {
   registerStartServerCommand,
@@ -44,6 +45,7 @@ import {
 } from "./notebooksTreeCommands.ts";
 import { registerCreateTerminalCommand } from "./terminalCommands.ts";
 import { registerToggleViewCommand } from "./viewToggleCommands.ts";
+import { registerCreateNewNotebookCommand } from "./notebookCommands.ts";
 
 /**
  * Register all commands at once
@@ -82,4 +84,7 @@ export function registerAllCommands(
 
   // Register View Toggle commands
   registerToggleViewCommand(context);
+
+  // Register Notebook commands
+  registerCreateNewNotebookCommand(context);
 }

@@ -180,6 +180,11 @@
         "command": "pluto-notebook.toggleView",
         "title": "🔄 Pluto: Toggle Code/Notebook View",
         "icon": "$(split-vertical)"
+      },
+      {
+        "command": "pluto-notebook.createNewNotebook",
+        "title": "📝 Pluto: Create New Notebook",
+        "icon": "$(new-file)"
       }
     ],
     "menus": {
