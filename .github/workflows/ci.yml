@@ -74,12 +74,20 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.11'
+
+      - name: Install Pluto.jl
+        run: julia -e 'using Pkg; Pkg.add("Pluto")'
+
       - name: Install dependencies
         run: npm ci
 
       - name: Run unit tests
         run: npm run test:unit
-      # //TODO: figureout how to run these in CI and what actually to test there  
+      # //TODO: figureout how to run these in CI and what actually to test there
       # - name: Run vscode tests
       #   run: npm test:unit
 

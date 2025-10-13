@@ -1,5 +1,7 @@
 // Mock vscode module for Jest tests
+// Only includes what's actually used by the tests
 
+// Notebook-related types (for serializer tests)
 export enum NotebookCellKind {
   Markup = 1,
   Code = 2,
@@ -18,7 +20,7 @@ export class NotebookData {
 }
 
 export class NotebookCellOutputItem {
-  public static json(data: any, mime?: string): NotebookCellOutputItem {
+  public static json(data: unknown, mime?: string): NotebookCellOutputItem {
     return new NotebookCellOutputItem(
       JSON.stringify(data),
       mime ?? "application/json"
@@ -35,22 +37,106 @@ export class NotebookCellOutput {
   constructor(public items: NotebookCellOutputItem[]) {}
 }
 
-const promiseVoid = async (): Promise<void> => await Promise.resolve();
-// Add other vscode mocks as needed
+// Workspace (used by PlutoServerTaskManager)
 export const workspace = {
-  fs: {
-    readFile: async (): Promise<Uint8Array> =>
-      await Promise.resolve(new Uint8Array()),
-    writeFile: promiseVoid,
+  getConfiguration: (section?: string) => ({
+    get: (key: string, defaultValue?: unknown) => {
+      if (section === "julia" || !section) {
+        if (key === "executablePath") return "julia";
+        if (key === "environmentPath") return "";
+      }
+      return defaultValue;
+    },
+  }),
+};
+
+// Task-related types (used by PlutoServerTaskManager)
+export enum TaskScope {
+  Global = 1,
+  Workspace = 2,
+}
+
+export enum TaskRevealKind {
+  Always = 1,
+  Silent = 2,
+  Never = 3,
+}
+
+export enum TaskPanelKind {
+  Shared = 1,
+  Dedicated = 2,
+  New = 3,
+}
+
+export class TaskExecution {
+  constructor(public task: Task) {}
+  terminate() {}
+}
+
+export class ShellExecution {
+  constructor(
+    public command: string,
+    public args?: string[],
+    public options?: Record<string, unknown>
+  ) {}
+}
+
+export interface TaskDefinition {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface TaskPresentationOptions {
+  reveal?: TaskRevealKind;
+  panel?: TaskPanelKind;
+  showReuseMessage?: boolean;
+  clear?: boolean;
+  focus?: boolean;
+  echo?: boolean;
+}
+
+export class Task {
+  public presentationOptions?: TaskPresentationOptions;
+  public isBackground: boolean = false;
+
+  constructor(
+    public definition: TaskDefinition,
+    public scope: TaskScope | { uri: unknown; name?: string },
+    public name: string,
+    public source: string,
+    public execution: ShellExecution,
+    public problemMatchers?: string[]
+  ) {}
+}
+
+// Tasks namespace (used by PlutoServerTaskManager)
+const taskEndListeners: Array<(e: { execution: TaskExecution }) => void> = [];
+
+export const tasks = {
+  executeTask: async (task: Task): Promise<TaskExecution> =>
+    await Promise.resolve(new TaskExecution(task)),
+  onDidEndTaskProcess: (
+    listener: (e: { execution: TaskExecution }) => void
+  ) => {
+    taskEndListeners.push(listener);
+    return {
+      dispose: () => {
+        const index = taskEndListeners.indexOf(listener);
+        if (index > -1) {
+          taskEndListeners.splice(index, 1);
+        }
+      },
+    };
   },
+  taskExecutions: [] as TaskExecution[],
 };
 
-export const window = {
-  showInformationMessage: promiseVoid,
-  showErrorMessage: promiseVoid,
-  showWarningMessage: promiseVoid,
-};
+// Disposable interface
+export interface Disposable {
+  dispose(): void;
+}
 
+// Uri (for general use)
 export const Uri = {
   file: (path: string) => ({ fsPath: path, toString: () => path }),
   parse: (uri: string) => ({ fsPath: uri, toString: () => uri }),

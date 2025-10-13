@@ -13,6 +13,7 @@ export interface PlutoManagerEvents {
   notebookOpened: (notebookPath: string) => void;
   notebookClosed: (notebookPath: string) => void;
   cellUpdated: (notebookPath: string, cellId: string) => void;
+  workerRecreated: (notebookPath: string, worker: Worker) => void;
 }
 
 export interface PlutoManagerLogger {
@@ -207,7 +208,12 @@ export class PlutoManager {
     for (const notebookPath of notebookPaths) {
       try {
         // Use getWorker to recreate the worker
-        await this.getWorker(notebookPath);
+        const worker = await this.getWorker(notebookPath);
+
+        // Emit event to notify controller about recreated worker
+        if (worker) {
+          this.emit("workerRecreated", notebookPath, worker);
+        }
       } catch (error) {
         // Log error but continue with other notebooks
         console.error(`Failed to recreate worker for ${notebookPath}:`, error);
@@ -246,9 +252,14 @@ export class PlutoManager {
 
   /**
    * Get or create a worker for a notebook
-   * const notebookPath = notebookUri.fsPath;
+   * @param notebookPath - File system path to the notebook
+   * @param documentContent - Optional notebook content from VSCode document (overrides file read)
+   * @returns Worker instance for the notebook
    */
-  public async getWorker(notebookPath: string): Promise<Worker | undefined> {
+  public async getWorker(
+    notebookPath: string,
+    documentContent?: string
+  ): Promise<Worker | undefined> {
     if (!this.isConnected()) {
       await this.start();
     }
@@ -257,11 +268,18 @@ export class PlutoManager {
     let worker = this.workers.get(notebookPath);
 
     if (!worker && this.host) {
-      // Read notebook content from file
+      // Get notebook content - use provided content or read from file
       let notebookContent: string;
       try {
-        const fileContent = await readFile(notebookPath);
-        notebookContent = new TextDecoder().decode(fileContent);
+        if (documentContent) {
+          // Use provided VSCode document content
+          notebookContent = documentContent;
+        } else {
+          // Read from file system
+          const fileContent = await readFile(notebookPath);
+          notebookContent = new TextDecoder().decode(fileContent);
+        }
+
         worker = await this.host.createWorker(notebookContent.trim());
         this.workers.set(notebookPath, worker);
 
@@ -354,8 +372,7 @@ export class PlutoManager {
 
       // Emit notebook closed event
       this.emit("notebookClosed", notebookPath);
-      await worker.shutdown();
-      worker.close();
+      void worker.shutdown();
     }
   }
 
