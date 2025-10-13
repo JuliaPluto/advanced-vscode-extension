@@ -452,23 +452,40 @@ export class PlutoNotebookController {
     //   );
     // }
   }
-  private updateAllCellsFromState = (
+  private updateAllCellsFromState = async (
     notebook: vscode.NotebookDocument,
     update: UpdateEvent
   ) => {
+    console.warn("Using nuclear reset flow");
     // Optimistically send data. May be ignored.
     // If not ignored, this makes sure logs, stdout and progress
     // are properly propagated to state object
     const fullNotebookState = update.notebook;
-    Object.entries(fullNotebookState?.cell_results ?? {}).forEach(
-      ([cell_id, state]) => {
-        this.sendMessageToRenderer(notebook, {
-          type: "setState",
-          state,
-          cell_id,
-        });
+    for (const [cell_id, state] of Object.entries(
+      fullNotebookState?.cell_results ?? {}
+    )) {
+      const start = Date.now();
+      const { execution } = this.startExecution(cell_id, notebook);
+      try {
+        await execution.replaceOutput([formatCellOutput(state)]);
+      } catch (e) {
+        console.error(e);
+        //
       }
-    );
+      if (!state.queued || !state.running) {
+        // This results to many "cannot resolve twice" messages
+        try {
+          execution.end(!state.errored, start + (state.runtime ?? 0) / 1000);
+        } catch (x) {
+          console.error(x);
+        }
+      }
+      this.sendMessageToRenderer(notebook, {
+        type: "setState",
+        state,
+        cell_id,
+      });
+    }
   };
 
   /**
@@ -490,6 +507,11 @@ export class PlutoNotebookController {
         for (const patch of patches) {
           const path = patch.path;
           const [action, ...rest] = path;
+          if (path.length === 0 && patches.length === 0) {
+            // This is a state reset; handle it accordingly
+            anyWeird = true;
+            break;
+          }
           switch (action) {
             case "bonds": {
               // TODO here we do bound send to the renderers
@@ -635,7 +657,7 @@ export class PlutoNotebookController {
         // Update the cell's metadata with the Pluto cell ID
         const edit = new vscode.WorkspaceEdit();
         const cellMetadata = {
-          ...addedCell.metadata,
+          ...addedCell?.metadata,
           pluto_cell_id: cellId,
         };
 
