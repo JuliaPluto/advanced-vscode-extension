@@ -7,12 +7,14 @@ The PlutoManager tests use **comprehensive integration testing** with a real Plu
 ### Test Approach
 
 **Single Workflow Test** - One comprehensive test that:
+
 - Opens a notebook
 - Performs all operations sequentially
 - Verifies each step works correctly
 - Tests the complete lifecycle end-to-end
 
 This approach provides:
+
 - ✅ Realistic usage patterns
 - ✅ Fast execution (no repeated setup/teardown)
 - ✅ Clear verification of functionality
@@ -88,6 +90,7 @@ This approach provides:
     - No notebooks open
 
 **Plus 2 constructor tests**:
+
 - Default port initialization
 - Custom server URL
 
@@ -117,18 +120,21 @@ npm run test:unit -- --runInBand plutoManager.test.ts
 ### Mocking Strategy
 
 **What we mock:**
+
 - `vscode` module - Only what's needed by PlutoServerTaskManager:
   - `workspace.getConfiguration` (for Julia settings)
   - Task-related types (TaskExecution, ShellExecution, etc.)
   - Notebook types (for serializer tests)
 
 **What we DON'T mock:**
+
 - ❌ Pluto server - use real Julia Pluto server
 - ❌ File system - use real file operations
 - ❌ @plutojl/rainbow - use real library
 - ❌ PlutoServerTaskManager - use real implementation
 
 This integration testing approach provides:
+
 - ✅ More realistic test scenarios
 - ✅ Better confidence in functionality
 - ✅ Easier test maintenance
@@ -137,12 +143,21 @@ This integration testing approach provides:
 
 ### Prerequisites
 
-- Julia must be installed and available in PATH
+**Local Development:**
+
+- Julia 1.11+ must be installed and available in PATH
 - Pluto.jl package must be installed: `julia -e 'using Pkg; Pkg.add("Pluto")'`
+
+**CI/CD:**
+
+- GitHub Actions CI automatically installs Julia 1.11 and Pluto.jl
+- The test job uses `julia-actions/setup-julia@v2` to set up Julia
+- Pluto.jl is installed before running tests
 
 ### Test Structure
 
 **Sequential Workflow Test**:
+
 ```typescript
 it("should perform complete notebook lifecycle workflow", async () => {
   // Step 1: Test initial state
@@ -163,6 +178,7 @@ it("should perform complete notebook lifecycle workflow", async () => {
 ```
 
 **Benefits of Sequential Testing**:
+
 - ✅ Tests realistic usage patterns
 - ✅ Verifies operations work together
 - ✅ Faster than isolated tests (no repeated setup)
