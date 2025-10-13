@@ -249,21 +249,23 @@ export class PlutoNotebookController {
   private startExecution(
     cellId: CellId,
     notebook: vscode.NotebookDocument
-  ): vscode.NotebookCellExecution {
+  ): { execution: vscode.NotebookCellExecution; cell: vscode.NotebookCell } {
+    const cell = this.getCellByPlutoId(notebook, cellId);
+    if (!cell) {
+      throw new Error("Can not determine notebook cell");
+    }
     let execution = this.activeExecutions.get(cellId);
+
     if (!execution) {
       this.outputChannel.appendLine(
         `[EXEC INIT] Starting initial execution for cell ${cellId}`
       );
-      const notebookCell = this.getCellByPlutoId(notebook, cellId);
-      if (!notebookCell) {
-        throw new Error("Can not determine notebook cell");
-      }
-      execution = this.controller.createNotebookCellExecution(notebookCell);
+
+      execution = this.controller.createNotebookCellExecution(cell);
       this.activeExecutions.set(cellId, execution);
       execution.start(Date.now());
     }
-    return execution;
+    return { execution, cell };
   }
   /**
    * Handles cell-specific patch updates (execution status, output, logs).
@@ -323,20 +325,26 @@ export class PlutoNotebookController {
     }
     if (isStarting) {
       // Start execution
-      const execution = this.startExecution(cellId, notebook);
-      execution.replaceOutput([formatCellOutput(currentCellState)]);
+      const { execution } = this.startExecution(cellId, notebook);
+      const formatted = formatCellOutput(currentCellState);
+      execution.replaceOutput([formatted]);
     }
 
     // 2. Update Cell Output (only if an execution object exists)
     if (segment2 === "output") {
       // Handle final output/result update
-      const execution = this.startExecution(cellId, notebook);
+      const { execution, cell } = this.startExecution(cellId, notebook);
       // execution.replaceOutput([formatCellOutput(currentCellState)]);
 
       this.outputChannel.appendLine(
         `[OUTPUT] Cell ${cellId} for notebook ${notebook.uri} output updated.`
       );
-
+      // TODO HERE WE NEED TO CHECK IF VSCODE NOTEBOOK HAS THE OUTPUT CELL OR NOT
+      // IF NOT, WE NEED TO ADD IT (BECAUSE IT MAY HAVE BEEN CLEARED)
+      // OTHERWISE, IT WILL NOT SHOW UP
+      if (cell.outputs.length === 0) {
+        execution.replaceOutput([formatCellOutput(currentCellState)]);
+      }
       execution.end(true, Date.now());
       this.activeExecutions.delete(cellId);
       this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
@@ -747,7 +755,7 @@ export class PlutoNotebookController {
     }
 
     // Ensure there is at least an initial execution object for this cell
-    const execution = this.startExecution(cellId, notebook);
+    const { execution } = this.startExecution(cellId, notebook);
 
     try {
       // Get or create worker - this will start the server if needed
