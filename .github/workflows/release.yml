@@ -36,8 +36,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history for semantic-release
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: false # No need to push commits in no-commit mode
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,7 +63,7 @@ jobs:
 
       - name: Run semantic-release (no-commit mode)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
@@ -85,38 +85,3 @@ jobs:
           name: vsix-package-release
           path: ${{ steps.vsix_file.outputs.filename }}
           retention-days: 90
-
-  # Optional: Manual tag-based release (fallback if semantic-release is not used)
-  # This job only runs when a tag is pushed
-  # manual-release:
-  #   name: Manual Tag Release
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   runs-on: ubuntu-latest
-  #
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #       with:
-  #         fetch-depth: 0
-  #
-  #     - name: Get version from tag
-  #       id: get_version
-  #       run: |
-  #         TAG=${GITHUB_REF#refs/tags/}
-  #         VERSION=${TAG#v}
-  #         echo "version=$VERSION" >> $GITHUB_OUTPUT
-  #         echo "tag=$TAG" >> $GITHUB_OUTPUT
-  #
-  #     - name: Download VSIX artifact
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: vsix-package
-  #
-  #     - name: Create GitHub Release
-  #       uses: softprops/action-gh-release@v2
-  #       with:
-  #         tag_name: ${{ steps.get_version.outputs.tag }}
-  #         name: Release ${{ steps.get_version.outputs.version }}
-  #         files: '*.vsix'
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
