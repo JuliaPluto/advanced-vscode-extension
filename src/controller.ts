@@ -45,6 +45,8 @@ export class PlutoNotebookController {
     new Map();
   // Renderer messaging API
   private rendererMessaging?: vscode.NotebookRendererMessaging;
+  // Track worker subscriptions to prevent duplicates and allow cleanup
+  private readonly workerSubscriptions: Map<string, () => void> = new Map();
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
@@ -93,6 +95,11 @@ export class PlutoNotebookController {
 
     // Setup messaging bridge between controller and renderer
     this.setupMessaging();
+
+    // Listen for worker recreation after server restart
+    this.plutoManager.on("workerRecreated", (notebookPath, worker) => {
+      this.handleWorkerRecreated(notebookPath, worker);
+    });
   }
 
   /**
@@ -186,6 +193,57 @@ export class PlutoNotebookController {
     plutoCellId: CellId
   ): vscode.NotebookCell | undefined {
     return this.getCodeCellRecord(notebook)[plutoCellId];
+  }
+
+  /**
+   * Subscribe to worker updates, cleaning up any existing subscription
+   */
+  private subscribeToWorker(
+    notebookPath: string,
+    notebook: vscode.NotebookDocument,
+    worker: import("@plutojl/rainbow").Worker
+  ): void {
+    // Unsubscribe from old worker if exists
+    const oldUnsubscribe = this.workerSubscriptions.get(notebookPath);
+    if (oldUnsubscribe) {
+      oldUnsubscribe();
+      this.outputChannel.appendLine(
+        `[SUBSCRIPTION] Cleaned up old subscription for ${notebookPath}`
+      );
+    }
+
+    // Subscribe to new worker
+    const unsubscribe = worker.onUpdate(this.onPlutoNotebookUpdate(notebook));
+    this.workerSubscriptions.set(notebookPath, unsubscribe);
+
+    this.outputChannel.appendLine(
+      `[SUBSCRIPTION] Subscribed to updates for ${notebookPath}`
+    );
+  }
+
+  /**
+   * Handle worker recreation after server restart
+   */
+  private handleWorkerRecreated(
+    notebookPath: string,
+    worker: import("@plutojl/rainbow").Worker
+  ): void {
+    this.outputChannel.appendLine(
+      `[WORKER RECREATED] Resubscribing to ${notebookPath}`
+    );
+
+    // Find the corresponding VSCode notebook document
+    const notebook = vscode.workspace.notebookDocuments.find(
+      (doc) => doc.uri.fsPath === notebookPath
+    );
+
+    if (notebook) {
+      this.subscribeToWorker(notebookPath, notebook, worker);
+    } else {
+      this.outputChannel.appendLine(
+        `[WORKER RECREATED] No open VSCode document found for ${notebookPath}`
+      );
+    }
   }
 
   private startExecution(
@@ -514,13 +572,14 @@ export class PlutoNotebookController {
       if (this.plutoManager.isRunning()) {
         try {
           const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+
           if (worker) {
             this.outputChannel.appendLine(
               `Worker initialized for: ${notebook.uri.fsPath}`
             );
 
-            // Subscribe to updates from this worker
-            worker.onUpdate(this.onPlutoNotebookUpdate(notebook));
+            // Subscribe to updates from this worker (manages cleanup automatically)
+            this.subscribeToWorker(notebook.uri.fsPath, notebook, worker);
           }
         } catch (error) {
           const errorMessage =
@@ -691,16 +750,22 @@ export class PlutoNotebookController {
     const execution = this.startExecution(cellId, notebook);
 
     try {
-      if (!this.plutoManager.isRunning()) {
-        throw new Error(
-          "Pluto server is not running. Please start the server first."
-        );
-      }
-
+      // Get or create worker - this will start the server if needed
       const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
 
       if (!worker) {
         throw new Error(`Failed to initialize Pluto worker.`);
+      }
+
+      // Ensure we're subscribed to this worker's updates
+      // This handles the case where the worker was created during first execution
+      // (i.e., when registration happened before server was ready)
+      const notebookPath = notebook.uri.fsPath;
+      if (!this.workerSubscriptions.has(notebookPath)) {
+        this.outputChannel.appendLine(
+          `[EXEC] No subscription found for ${notebookPath}, subscribing now`
+        );
+        this.subscribeToWorker(notebookPath, notebook, worker);
       }
 
       // Execute the cell. This sends the message to the Pluto kernel.

@@ -77,6 +77,13 @@ export async function activate(
   );
   context.subscriptions.push(controller);
 
+  // Register already-open notebooks
+  for (const notebook of vscode.workspace.notebookDocuments) {
+    if (notebook.notebookType === "pluto-notebook") {
+      await controller.registerNotebookDocument(notebook);
+    }
+  }
+
   // Initialize workers when notebooks are opened
   context.subscriptions.push(
     vscode.workspace.onDidOpenNotebookDocument(async (notebook) => {
