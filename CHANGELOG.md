@@ -1,3 +1,10 @@
+## [0.0.6](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.5...v0.0.6) (2025-10-14)
+
+
+### Bug Fixes
+
+* release 0.0.6 ([dd1c89a](https://github.com/JuliaPluto/advanced-vscode-extension/commit/dd1c89a1eb80126bddc5172ab1154d01419b8323))
+
 # Changelog
 
 All notable changes to the Pluto Notebook VSCode extension will be documented in this file.
