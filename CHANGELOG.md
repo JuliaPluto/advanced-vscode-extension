@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Create New Notebook command to generate new Pluto notebooks with a single empty cell ([3bcaf2d](https://github.com/JuliaPluto/advanced-vscode-extension/commit/3bcaf2d))
+
+### Fixed
+
+- CI workflow now uses PAT with bypass permissions for protected branch ([46e57a7](https://github.com/JuliaPluto/advanced-vscode-extension/commit/46e57a7))
+- Manage reset state patch for improved state handling ([a7240eb](https://github.com/JuliaPluto/advanced-vscode-extension/commit/a7240eb))
+
+### Changed
+
+- Re-enabled semantic release version bumping with proper configuration ([e0a2a72](https://github.com/JuliaPluto/advanced-vscode-extension/commit/e0a2a72))
+
 ## [0.1.0-alpha] - 2025-10-12
 
 Initial alpha release of the Pluto Notebook VSCode extension.

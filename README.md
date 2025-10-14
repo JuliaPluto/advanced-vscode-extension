@@ -3,7 +3,7 @@
 A VS Code extension for working with Julia Pluto notebooks, featuring an integrated MCP (Model Context Protocol) server for AI assistant interaction.
 Note that this is an advanced tool meant for power users who mostly want to stay in VSCode but still leverage Pluto's execution infrastructure without the UI.
 
-This is a collaboration between @dr14-make and @pankgeorg, is at "experiment" quality, under heavy development and will change drastically in the future and may be abandonded without notice.
+This is a collaboration between [@dr14-make](https://github.com/dr14-make) and [@pankgeorg](https://github.com/pankgeorg), is at "experiment" quality, under heavy development and will change drastically in the future and may be abandonded without notice.
 
 While tightly coupled with [Pluto.jl](https://github.com/fonsp/Pluto.jl), this project follows a highly experimental, different path,
 so please don't raise issues about this in the official Pluto.jl channels or repositories. Instead, reach out directly to the contributors above in your favourite platform!
@@ -32,7 +32,7 @@ so please don't raise issues about this in the official Pluto.jl channels or rep
 
 ## Quick Start
 
-1. Open any `.pluto.jl` or `.dyad.jl` file in VS Code
+1. Open any `.pluto.jl` file in VS Code
 2. The extension automatically starts the Pluto server and MCP server
 3. Start working with your notebooks!
 
@@ -111,23 +111,8 @@ MCP HTTP Server  ───┘
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
-### 0.0.1
-
-Initial release featuring:
-
-- Basic Pluto notebook support in VS Code (`.pluto.jl` and `.dyad.jl` files)
-- Integrated Pluto server management with VSCode task integration
-- Interactive terminal for executing Julia code with rich output rendering
-- HTTP-based MCP server for AI assistant integration
-- Shared state between extension and MCP clients
-- Interactive configuration for Claude Desktop and GitHub Copilot
-- Real-time and ephemeral code execution
-- Support for HTML, images, plots, and interactive content
-
----
-
 ## Support
 
-For issues, questions, or contributions, please visit the project repository.
+For issues, questions, or contributions, please visit the project repository on github.
 
 **Enjoy!**
