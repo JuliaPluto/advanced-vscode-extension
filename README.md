@@ -1,6 +1,6 @@
 # Pluto Notebook for VS Code
 
-A VS Code extension for working with Julia Pluto notebooks, featuring an integrated MCP (Model Context Protocol) server for AI assistant interaction.
+A [VS Code extension](https://marketplace.visualstudio.com/items?itemName=juliapluto-pankgeorg.advanced-vscode-extension) for working with Julia Pluto notebooks, featuring an integrated MCP (Model Context Protocol) server for AI assistant interaction.
 Note that this is an advanced tool meant for power users who mostly want to stay in VSCode but still leverage Pluto's execution infrastructure without the UI.
 
 This is a collaboration between [@dr14-make](https://github.com/dr14-make) and [@pankgeorg](https://github.com/pankgeorg), is at "experiment" quality, under heavy development and will change drastically in the future and may be abandonded without notice.
