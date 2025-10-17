@@ -23,9 +23,8 @@ jobs:
     name: Run CI
     uses: ./.github/workflows/ci.yml
 
-  # Automated release with semantic-release (no-commit mode)
-  # This configuration creates releases without pushing version commits back to main
-  # Perfect for repositories with strict branch protection/rulesets
+  # Automated release with semantic-release
+  # Creates GitHub releases, updates package.json and CHANGELOG.md, and commits changes back to main
   release:
     name: Semantic Release
     runs-on: ubuntu-latest
@@ -61,7 +60,7 @@ jobs:
           echo "filename=$VSIX_FILE" >> $GITHUB_OUTPUT
           echo "Built VSIX file: $VSIX_FILE"
 
-      - name: Run semantic-release (no-commit mode)
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -70,10 +69,24 @@ jobs:
             echo "Running in dry-run mode (no commits will be pushed)..."
             npx semantic-release --dry-run
           else
-            echo "Running semantic-release in no-commit mode..."
-            echo "This will create a GitHub release with VSIX but won't update package.json/CHANGELOG in the repo"
-            echo "TODO: (and good first issue) actually introduce semantic release updating (after stable release) "
+            echo "Running semantic-release..."
+            echo "This will create a GitHub release, update package.json/CHANGELOG.md, and commit changes back to main"
             npx semantic-release
+          fi
+
+      - name: Format CHANGELOG after semantic-release
+        if: success() && github.event.inputs.dry_run != 'true'
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "CHANGELOG.md"; then
+            echo "CHANGELOG.md was updated, formatting it..."
+            npx prettier --write CHANGELOG.md
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "chore: format CHANGELOG [skip ci]" || echo "No formatting changes needed"
+            git push
+          else
+            echo "CHANGELOG.md was not updated, skipping formatting"
           fi
 
       - name: Upload VSIX to release (fallback if semantic-release fails)
