@@ -571,7 +571,6 @@ export class PlutoNotebookController {
             case "last_save_time":
               break;
             default:
-              anyWeird = true;
               this.outputChannel.appendLine(
                 `[UNHANDLED]  ${patch.path.join(".")} action ${patch.op}`
               );
