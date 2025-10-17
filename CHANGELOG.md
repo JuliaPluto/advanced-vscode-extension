@@ -1,3 +1,10 @@
+## [0.0.7](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.6...v0.0.7) (2025-10-17)
+
+
+### Bug Fixes
+
+* do less state resets ([#18](https://github.com/JuliaPluto/advanced-vscode-extension/issues/18)) ([7ef3707](https://github.com/JuliaPluto/advanced-vscode-extension/commit/7ef37077aa593440c889eb8b28dd7b4c1d465a1d))
+
 ## [0.0.6](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.5...v0.0.6) (2025-10-14)
 
 ### Bug Fixes
