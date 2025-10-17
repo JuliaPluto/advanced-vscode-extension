@@ -7,8 +7,8 @@ on:
     branches:
       - main
     tags:
-      - 'v*.*.*'
-  workflow_call:  # Allow this workflow to be called by other workflows
+      - "v*.*.*"
+  workflow_call: # Allow this workflow to be called by other workflows
 
 jobs:
   validate:
@@ -22,8 +22,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -44,8 +44,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -71,13 +71,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: '1.11'
+          version: "1.11"
 
       - name: Install Pluto.jl
         run: julia -e 'using Pkg; Pkg.add("Pluto")'
@@ -103,8 +103,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci

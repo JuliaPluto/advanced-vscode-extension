@@ -45,7 +45,10 @@ import {
 } from "./notebooksTreeCommands.ts";
 import { registerCreateTerminalCommand } from "./terminalCommands.ts";
 import { registerToggleViewCommand } from "./viewToggleCommands.ts";
-import { registerCreateNewNotebookCommand } from "./notebookCommands.ts";
+import {
+  registerCreateNewNotebookCommand,
+  registerBundleProjectToCellCommand,
+} from "./notebookCommands.ts";
 
 /**
  * Register all commands at once
@@ -87,4 +90,5 @@ export function registerAllCommands(
 
   // Register Notebook commands
   registerCreateNewNotebookCommand(context);
+  registerBundleProjectToCellCommand(context);
 }

@@ -49,20 +49,23 @@ We use a Personal Access Token (PAT) with bypass permissions to allow semantic-r
 3. Configure bypass permissions:
 
 **Method 1: Bypass for Repository Admin (Simplest)**
-   - Under "Bypass list", click "Add bypass"
-   - Select "Repository admin"
-   - This allows repository admins to bypass (semantic-release will use admin PAT)
+
+- Under "Bypass list", click "Add bypass"
+- Select "Repository admin"
+- This allows repository admins to bypass (semantic-release will use admin PAT)
 
 **Method 2: Bypass for GitHub App**
-   - Under "Bypass list", click "Add bypass"
-   - Select "GitHub Apps"
-   - Add the GitHub Actions app if available
+
+- Under "Bypass list", click "Add bypass"
+- Select "GitHub Apps"
+- Add the GitHub Actions app if available
 
 **Method 3: Bypass for Specific User**
-   - Create a PAT (see step 1)
-   - Under "Bypass list", click "Add bypass"
-   - Select "Organization members" or "Repository collaborators"
-   - Add the user who owns the PAT
+
+- Create a PAT (see step 1)
+- Under "Bypass list", click "Add bypass"
+- Select "Organization members" or "Repository collaborators"
+- Add the user who owns the PAT
 
 4. Ensure these ruleset settings allow semantic-release to work:
    - **Require pull request before merging**: Add bypass for your chosen actor
@@ -78,6 +81,7 @@ We use a Personal Access Token (PAT) with bypass permissions to allow semantic-r
 4. Add the GitHub Actions bot or your PAT user to the bypass list
 
 Alternatively, you can allow the GitHub Actions bot to bypass protection:
+
 - In branch protection, check "Do not allow bypassing the above settings" = OFF
 - Or specifically allow `github-actions[bot]` to bypass
 
@@ -180,6 +184,7 @@ Solution: The PAT needs "Workflows" permission. Recreate the token with this per
 ### "protected branch hook declined" or "Resource protected by organization SAML enforcement"
 
 **For GitHub Rulesets:**
+
 1. Verify the PAT owner is in the bypass list (not deploy keys)
 2. Check Settings → Rules → Rulesets → View ruleset runs to see why it was blocked
 3. Ensure the ruleset bypass includes the correct actor type (Repository admin, Org member, or App)
@@ -195,6 +200,7 @@ Solution: The workflow sets `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` environment
 ### Dry-run succeeds but real run fails
 
 Check:
+
 1. `GH_PAT` secret is properly set
 2. PAT has not expired
 3. PAT has correct permissions (Contents: R/W minimum)
@@ -204,6 +210,7 @@ Check:
 ### Deploy keys don't work with Rulesets
 
 This is expected. Deploy keys cannot be added to ruleset bypass lists. Solutions:
+
 1. Use a Personal Access Token (PAT) instead
 2. Add the PAT owner to the ruleset bypass list
 3. Use "Repository admin" bypass if the PAT is from an admin
@@ -235,6 +242,7 @@ git push --force
 If you can't get rulesets to allow pushes, configure semantic-release to skip version commits and only create tags/releases:
 
 Update `.releaserc.json`:
+
 ```json
 {
   "branches": ["main"],
@@ -246,9 +254,7 @@ Update `.releaserc.json`:
     [
       "@semantic-release/github",
       {
-        "assets": [
-          { "path": "*.vsix", "label": "VS Code Extension (VSIX)" }
-        ]
+        "assets": [{ "path": "*.vsix", "label": "VS Code Extension (VSIX)" }]
       }
     ]
   ]
@@ -256,6 +262,7 @@ Update `.releaserc.json`:
 ```
 
 This removes:
+
 - `@semantic-release/changelog` - no changelog updates
 - `@semantic-release/git` - no version commits to main
 

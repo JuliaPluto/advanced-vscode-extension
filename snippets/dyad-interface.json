@@ -1,9 +1,7 @@
 {
   "Run Analysis": {
     "prefix": "run analysis",
-    "body": [
-      "result = ${1:MyAnalysis}()$0"
-    ],
+    "body": ["result = ${1:MyAnalysis}()$0"],
     "description": "Run a DyadInterface analysis"
   },
   "Run Analysis with Begin Block": {
@@ -18,9 +16,7 @@
   },
   "Get Artifacts": {
     "prefix": "artifacts",
-    "body": [
-      "artifacts(${1:result}, :${2:RawSolution})$0"
-    ],
+    "body": ["artifacts(${1:result}, :${2:RawSolution})$0"],
     "description": "Extract artifacts from analysis result"
   },
   "Get Artifacts with Begin Block": {
@@ -36,16 +32,12 @@
   },
   "Plot Analysis Result": {
     "prefix": "plot result",
-    "body": [
-      "plot(${1:result})$0"
-    ],
+    "body": ["plot(${1:result})$0"],
     "description": "Plot analysis result"
   },
   "Import DyadInterface": {
     "prefix": "using dyad",
-    "body": [
-      "using DyadInterface"
-    ],
+    "body": ["using DyadInterface"],
     "description": "Import DyadInterface package"
   }
 }
