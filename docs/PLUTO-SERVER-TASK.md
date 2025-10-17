@@ -5,24 +5,28 @@ The Pluto server can now be run as a VSCode task, providing better integration w
 ## Benefits Over spawn()
 
 ### 1. **Integrated Terminal**
+
 - Server runs in a dedicated VSCode terminal panel
 - Full terminal UI with colors, formatting, and interactions
 - Visible in the "Terminal" dropdown
 - Can be brought to front or hidden as needed
 
 ### 2. **Task Management**
+
 - Appears in VSCode's task list
 - Can be stopped/restarted via Command Palette
 - Task lifecycle managed by VSCode
 - Consistent with other VSCode tasks (build, test, etc.)
 
 ### 3. **Better UX**
+
 - Users can see server output in real-time
 - Can interact with server output (copy, search, etc.)
 - Automatic cleanup when VSCode closes
 - Persistent across window reloads (if configured)
 
 ### 4. **Standard Integration**
+
 - Follows VSCode extension best practices
 - Similar to Jest extension, Python debugger, etc.
 - Users familiar with VSCode tasks know how to interact with it
@@ -35,11 +39,11 @@ New class in `src/plutoServerTask.ts` that manages the server as a VSCode task:
 
 ```typescript
 export class PlutoServerTaskManager {
-  async start(): Promise<void>  // Start server as task
-  async stop(): Promise<void>   // Stop server task
-  isRunning(): boolean          // Check if task is running
-  getServerUrl(): string        // Get server URL
-  waitForReady(): Promise<void> // Wait for server to be ready
+  async start(): Promise<void>; // Start server as task
+  async stop(): Promise<void>; // Stop server task
+  isRunning(): boolean; // Check if task is running
+  getServerUrl(): string; // Get server URL
+  waitForReady(): Promise<void>; // Wait for server to be ready
 }
 ```
 
@@ -48,6 +52,7 @@ export class PlutoServerTaskManager {
 `PlutoManager` now supports two modes:
 
 1. **Task Mode** (default, recommended):
+
    ```typescript
    const manager = new PlutoManager(port, outputChannel, serverUrl, true);
    ```
@@ -81,6 +86,7 @@ The mode is controlled by the `useTasksForServer` parameter (defaults to `true`)
 ### Background Task
 
 The task is configured as a background task (`isBackground: true`), meaning:
+
 - Doesn't block other tasks
 - Runs continuously
 - Only stops when explicitly terminated
@@ -122,12 +128,14 @@ Uses **HTTP polling** to detect when server is ready:
 5. If server doesn't respond in time, task is terminated and error is thrown
 
 **Why HTTP Polling?**
+
 - More reliable than arbitrary timeout
 - Works regardless of terminal output format
 - Detects actual server availability (not just process start)
 - VSCode tasks don't expose terminal output directly
 
 **Alternative approaches considered:**
+
 1. **Parse Terminal Output**: VSCode doesn't provide API to read task terminal output
 2. **Custom Pseudoterminal**: Would require reimplementing task system
 3. **Problem Matchers**: Only work for error detection, not ready state
@@ -149,11 +157,13 @@ julia.stderr?.on("data", (data) => {
 ```
 
 **Pros**:
+
 - Direct control over process
 - Can easily parse stdout/stderr
 - Lower level, more flexible
 
 **Cons**:
+
 - Output hidden in Output Channel
 - No integrated terminal UI
 - User can't interact with output
@@ -176,6 +186,7 @@ await vscode.tasks.executeTask(task);
 ```
 
 **Pros**:
+
 - Integrated terminal UI
 - User can see and interact with output
 - Visible in task list
@@ -184,6 +195,7 @@ await vscode.tasks.executeTask(task);
 - Better UX
 
 **Cons**:
+
 - Harder to parse output
 - Less direct control
 - Requires VSCode task API knowledge

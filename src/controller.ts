@@ -503,13 +503,13 @@ export class PlutoNotebookController {
           );
           return;
         }
-        let anyWeird = false;
+
         for (const patch of patches) {
           const path = patch.path;
           const [action, ...rest] = path;
           if (path.length === 0 && patches.length === 0) {
-            // This is a state reset; handle it accordingly
-            anyWeird = true;
+            // This is a state reset; handle it accordingly and break
+            this.updateAllCellsFromState(notebook, event);
             break;
           }
           switch (action) {
@@ -571,18 +571,14 @@ export class PlutoNotebookController {
             case "last_save_time":
               break;
             default:
-              anyWeird = true;
               this.outputChannel.appendLine(
                 `[UNHANDLED]  ${patch.path.join(".")} action ${patch.op}`
               );
           }
         }
-        if (anyWeird) {
-          console.log("Not sure if all ok, updating everything");
-          this.updateAllCellsFromState(notebook, event);
-        }
       } catch (e: unknown) {
-        this.updateAllCellsFromState(notebook, event);
+        // console.log("Failed to process")
+        // this.updateAllCellsFromState(notebook, event);
         this.outputChannel.appendLine(
           `Failed to process patch update: ${
             e instanceof Error ? e.message : String(e)

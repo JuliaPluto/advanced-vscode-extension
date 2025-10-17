@@ -94,7 +94,6 @@ export function createVsCodeCellFromPlutoCell(
  */
 export function parsePlutoNotebook(content: string): ParsedNotebook {
   const notebookData = parse(content);
-
   const cells: vscode.NotebookCellData[] = [];
   if (isNotDefined(notebookData)) {
     return {

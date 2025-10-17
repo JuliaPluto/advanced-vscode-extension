@@ -13,8 +13,5 @@
       "version": "18.2"
     }
   },
-  "extends": [
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended"
-  ]
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"]
 }

@@ -26,6 +26,7 @@ The Pluto Notebook extension includes an HTTP-based MCP (Model Context Protocol)
 ### Step 1: Activate the Extension
 
 Open any `.jl` file in VS Code. The extension will:
+
 - ✅ Automatically start the Pluto server
 - ✅ Automatically start the MCP HTTP server on port 3100
 - ✅ Show status in "Pluto Server" output channel
@@ -33,11 +34,13 @@ Open any `.jl` file in VS Code. The extension will:
 ### Step 2: Configure Your AI Tool
 
 Run this command in VS Code:
+
 ```
 Pluto: Create MCP Config (Claude or Copilot)
 ```
 
 Choose your tool:
+
 - **Claude Desktop** → Creates `.mcp.json`
 - **GitHub Copilot** → Creates `mcp.json`
 
@@ -49,6 +52,7 @@ Choose your tool:
 ### Step 4: Test It!
 
 Ask your AI assistant:
+
 ```
 List all open Pluto notebooks
 ```
@@ -89,8 +93,8 @@ The MCP server can be configured with the following settings:
 
 ```json
 {
-  "pluto-notebook.port": 1234,              // Pluto server port
-  "pluto-notebook.mcpPort": 3100,           // MCP HTTP server port
+  "pluto-notebook.port": 1234, // Pluto server port
+  "pluto-notebook.mcpPort": 3100, // MCP HTTP server port
   "pluto-notebook.autoStartMcpServer": true // Auto-start MCP server (default: true)
 }
 ```
@@ -104,6 +108,7 @@ By default, the MCP server starts automatically when the extension activates. To
 3. Uncheck "Auto Start Mcp Server"
 
 Or add to your `settings.json`:
+
 ```json
 {
   "pluto-notebook.autoStartMcpServer": false
@@ -136,6 +141,7 @@ Create `.mcp.json` in your workspace root:
 ```
 
 **Quick Setup:**
+
 1. Run command: `Pluto: Create MCP Config (Claude or Copilot)`
 2. Select "Claude Desktop"
 3. File `.mcp.json` is created in workspace root
@@ -158,6 +164,7 @@ Create `mcp.json` in your workspace root:
 ```
 
 **Quick Setup:**
+
 1. Run command: `Pluto: Create MCP Config (Claude or Copilot)`
 2. Select "GitHub Copilot"
 3. File `mcp.json` is created/updated
@@ -165,13 +172,13 @@ Create `mcp.json` in your workspace root:
 
 #### Configuration Differences
 
-| Feature | Claude Desktop | GitHub Copilot |
-|---------|----------------|----------------|
-| **File** | `.mcp.json` | `mcp.json` |
+| Feature      | Claude Desktop | GitHub Copilot |
+| ------------ | -------------- | -------------- |
+| **File**     | `.mcp.json`    | `mcp.json`     |
 | **Location** | Workspace root | Workspace root |
-| **Type** | `sse` | `http` |
-| **Restart** | Restart app | Reload window |
-| **Purpose** | MCP-specific | MCP-specific |
+| **Type**     | `sse`          | `http`         |
+| **Restart**  | Restart app    | Reload window  |
+| **Purpose**  | MCP-specific   | MCP-specific   |
 
 ### Port Configuration
 
@@ -179,11 +186,12 @@ Both configs use the port from VS Code settings:
 
 ```json
 {
-  "pluto-notebook.mcpPort": 3100  // Default
+  "pluto-notebook.mcpPort": 3100 // Default
 }
 ```
 
 To change the port:
+
 1. Update setting: `pluto-notebook.mcpPort`
 2. Recreate config files
 3. Restart MCP server: `Pluto: Restart MCP Server`
@@ -210,6 +218,7 @@ The MCP server exposes the following tools:
 ### Server Management
 
 #### start_pluto_server
+
 Start the Pluto server on the configured port.
 
 ```json
@@ -222,6 +231,7 @@ Start the Pluto server on the configured port.
 ```
 
 #### connect_to_pluto_server
+
 Connect to an already running Pluto server (useful if Julia is running externally).
 
 ```json
@@ -234,6 +244,7 @@ Connect to an already running Pluto server (useful if Julia is running externall
 ```
 
 #### stop_pluto_server
+
 Stop the running Pluto server.
 
 ```json
@@ -244,6 +255,7 @@ Stop the running Pluto server.
 ```
 
 #### get_notebook_status
+
 Check if the Pluto server is running.
 
 ```json
@@ -254,6 +266,7 @@ Check if the Pluto server is running.
 ```
 
 Response:
+
 ```json
 {
   "server_running": true,
@@ -264,6 +277,7 @@ Response:
 ### Learning Resources
 
 #### learn_pluto_basics
+
 Get comprehensive guide on Pluto.jl notebook structure, reactivity, PlutoUI components, and best practices.
 
 ```json
@@ -274,6 +288,7 @@ Get comprehensive guide on Pluto.jl notebook structure, reactivity, PlutoUI comp
 ```
 
 Response: Returns complete markdown documentation covering:
+
 - Notebook file format and cell structure
 - Reactive execution model and rules
 - Complete PlutoUI component reference (Slider, TextField, NumberField, CheckBox, Select, Button, etc.)
@@ -285,6 +300,7 @@ Response: Returns complete markdown documentation covering:
 ### Notebook Management
 
 #### open_notebook
+
 Open a Pluto notebook and create a worker session.
 
 ```json
@@ -297,6 +313,7 @@ Open a Pluto notebook and create a worker session.
 ```
 
 Response:
+
 ```json
 {
   "message": "Notebook opened: /path/to/notebook.jl\nNotebook ID: abc-123-def"
@@ -304,6 +321,7 @@ Response:
 ```
 
 #### list_notebooks
+
 Get a list of all currently open notebooks.
 
 ```json
@@ -314,6 +332,7 @@ Get a list of all currently open notebooks.
 ```
 
 Response:
+
 ```json
 {
   "count": 2,
@@ -333,6 +352,7 @@ Response:
 ### Cell Operations
 
 #### create_cell
+
 Create a new cell and execute it.
 
 ```json
@@ -347,6 +367,7 @@ Create a new cell and execute it.
 ```
 
 Response:
+
 ```json
 {
   "cell_id": "abc-123",
@@ -361,6 +382,7 @@ Response:
 ```
 
 #### read_cell
+
 Read the code and output of an existing cell.
 
 ```json
@@ -374,6 +396,7 @@ Read the code and output of an existing cell.
 ```
 
 Response:
+
 ```json
 {
   "cell_id": "abc-123",
@@ -390,6 +413,7 @@ Response:
 ```
 
 #### edit_cell
+
 Update the code of an existing cell.
 
 ```json
@@ -405,6 +429,7 @@ Update the code of an existing cell.
 ```
 
 Response:
+
 ```json
 {
   "cell_id": "abc-123",
@@ -419,6 +444,7 @@ Response:
 ```
 
 #### execute_cell
+
 Execute an existing cell (runs current code in the cell).
 
 ```json
@@ -432,6 +458,7 @@ Execute an existing cell (runs current code in the cell).
 ```
 
 Response:
+
 ```json
 {
   "cell_id": "abc-123",
@@ -447,9 +474,11 @@ Response:
 ### Code Execution
 
 #### execute_code
+
 Execute Julia code without creating a persistent cell (ephemeral execution).
 
 This is useful for:
+
 - Quick queries or evaluations
 - Testing code snippets
 - Inspecting variable values
@@ -468,6 +497,7 @@ The code has access to all variables defined in the notebook, but doesn't modify
 ```
 
 Response:
+
 ```json
 {
   "output": {
@@ -491,6 +521,7 @@ Response:
 Try asking Claude or Copilot:
 
 **Basic Operations:**
+
 ```
 - "List all open notebooks"
 - "Open the notebook at /path/to/analysis.jl"
@@ -498,6 +529,7 @@ Try asking Claude or Copilot:
 ```
 
 **Code Execution:**
+
 ```
 - "Execute: 2 + 2"
 - "Run this code without saving: println(x)"
@@ -505,6 +537,7 @@ Try asking Claude or Copilot:
 ```
 
 **Notebook Manipulation:**
+
 ```
 - "Create a cell that imports DataFrames"
 - "Edit cell abc-123 to use Plots instead of StatsPlots"
@@ -516,73 +549,100 @@ Try asking Claude or Copilot:
 #### Workflow 1: Quick Data Analysis
 
 1. **Start server and open notebook**:
+
 ```json
 {"name": "start_pluto_server", "arguments": {}}
 {"name": "open_notebook", "arguments": {"path": "/path/to/analysis.jl"}}
 ```
 
 2. **Check what notebooks are open**:
+
 ```json
-{"name": "list_notebooks", "arguments": {}}
+{ "name": "list_notebooks", "arguments": {} }
 ```
 
 3. **Execute quick queries without modifying notebook**:
+
 ```json
-{"name": "execute_code", "arguments": {
-  "path": "/path/to/analysis.jl",
-  "code": "summary(dataframe)"
-}}
+{
+  "name": "execute_code",
+  "arguments": {
+    "path": "/path/to/analysis.jl",
+    "code": "summary(dataframe)"
+  }
+}
 ```
 
 #### Workflow 2: Interactive Development
 
 1. **Create cells incrementally**:
+
 ```json
-{"name": "create_cell", "arguments": {
-  "path": "/path/to/notebook.jl",
-  "code": "using DataFrames",
-  "index": 0
-}}
+{
+  "name": "create_cell",
+  "arguments": {
+    "path": "/path/to/notebook.jl",
+    "code": "using DataFrames",
+    "index": 0
+  }
+}
 ```
 
 2. **Edit and refine**:
+
 ```json
-{"name": "edit_cell", "arguments": {
-  "path": "/path/to/notebook.jl",
-  "cell_id": "abc-123",
-  "code": "using DataFrames, Plots"
-}}
+{
+  "name": "edit_cell",
+  "arguments": {
+    "path": "/path/to/notebook.jl",
+    "cell_id": "abc-123",
+    "code": "using DataFrames, Plots"
+  }
+}
 ```
 
 3. **Test with ephemeral execution**:
+
 ```json
-{"name": "execute_code", "arguments": {
-  "path": "/path/to/notebook.jl",
-  "code": "plot(1:10, rand(10))"
-}}
+{
+  "name": "execute_code",
+  "arguments": {
+    "path": "/path/to/notebook.jl",
+    "code": "plot(1:10, rand(10))"
+  }
+}
 ```
 
 #### Workflow 3: Notebook Inspection
 
 1. **List all open notebooks**:
+
 ```json
-{"name": "list_notebooks", "arguments": {}}
+{ "name": "list_notebooks", "arguments": {} }
 ```
 
 2. **Read specific cells**:
+
 ```json
-{"name": "read_cell", "arguments": {
-  "path": "/path/to/notebook.jl",
-  "cell_id": "abc-123"
-}}
+{
+  "name": "read_cell",
+  "arguments": {
+    "path": "/path/to/notebook.jl",
+    "cell_id": "abc-123"
+  }
+}
 ```
 
 3. **Query variable state without creating cells**:
+
 ```json
-{"name": "execute_code", "arguments": {
-  "path": "/path/to/notebook.jl",
-  "code": "varinfo()"
-}}
+{
+  "name": "execute_code",
+  "arguments": {
+    "path": "/path/to/notebook.jl",
+    "code": "varinfo()"
+  }
+}
 ```
 
 ---
@@ -634,28 +694,29 @@ Try asking Claude or Copilot:
 
 ### Pluto Server Commands
 
-| Command | Description |
-|---------|-------------|
-| `Pluto: Start Server` | Manually start Pluto server |
-| `Pluto: Stop Server` | Stop Pluto server |
-| `Pluto: Restart Server` | Restart Pluto server |
+| Command                 | Description                 |
+| ----------------------- | --------------------------- |
+| `Pluto: Start Server`   | Manually start Pluto server |
+| `Pluto: Stop Server`    | Stop Pluto server           |
+| `Pluto: Restart Server` | Restart Pluto server        |
 
 ### MCP Server Commands
 
-| Command | Description |
-|---------|-------------|
-| `Pluto: Start MCP Server` | Manually start MCP HTTP server |
-| `Pluto: Stop MCP Server` | Stop MCP HTTP server |
-| `Pluto: Restart MCP Server` | Restart MCP HTTP server |
+| Command                     | Description                    |
+| --------------------------- | ------------------------------ |
+| `Pluto: Start MCP Server`   | Manually start MCP HTTP server |
+| `Pluto: Stop MCP Server`    | Stop MCP HTTP server           |
+| `Pluto: Restart MCP Server` | Restart MCP HTTP server        |
 
 ### Configuration Commands
 
-| Command | Description |
-|---------|-------------|
+| Command                                        | Description                                |
+| ---------------------------------------------- | ------------------------------------------ |
 | `Pluto: Create MCP Config (Claude or Copilot)` | Create config file with interactive picker |
-| `Pluto: Get MCP HTTP Server URL` | Get URL and config options |
+| `Pluto: Get MCP HTTP Server URL`               | Get URL and config options                 |
 
 The `Pluto: Get MCP HTTP Server URL` command provides actions:
+
 - **Copy URL** - Copy MCP endpoint URL to clipboard
 - **Create Claude Config** - Create `.mcp.json`
 - **Create Copilot Config** - Create `mcp.json`
@@ -668,11 +729,13 @@ The `Pluto: Get MCP HTTP Server URL` command provides actions:
 ### MCP Server Not Starting
 
 Check the "Pluto Server" output channel in VS Code:
+
 ```
 View → Output → Select "Pluto Server"
 ```
 
 **If auto-start is disabled:**
+
 1. Check if auto-start is enabled: `pluto-notebook.autoStartMcpServer`
 2. Try starting manually: `Pluto: Start MCP Server`
 3. Check the "Pluto Server" output channel for errors
@@ -680,13 +743,15 @@ View → Output → Select "Pluto Server"
 ### Port Already in Use
 
 Change the port in settings:
+
 ```json
 {
-  "pluto-notebook.mcpPort": 3200  // Use different port
+  "pluto-notebook.mcpPort": 3200 // Use different port
 }
 ```
 
 Then:
+
 1. Restart the MCP server: `Pluto: Restart MCP Server`
 2. Recreate your config files
 
@@ -700,6 +765,7 @@ Then:
 4. Restart Claude Desktop
 
 **Checklist**:
+
 1. ✅ `.mcp.json` exists in workspace root
 2. ✅ File has correct format (see above)
 3. ✅ Extension is active (open a `.jl` file)
@@ -713,6 +779,7 @@ Then:
 3. Check MCP support is enabled in Copilot settings
 
 **Checklist**:
+
 1. ✅ `mcp.json` exists in workspace root
 2. ✅ File has correct format (see above)
 3. ✅ Reloaded VS Code window
@@ -724,6 +791,7 @@ Then:
 **Symptom**: Command completes but no file appears
 
 **Solution**:
+
 1. Check workspace is open
 2. Verify write permissions
 3. Check output in "Pluto Server" channel
@@ -741,6 +809,7 @@ curl http://localhost:3100/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "ok",
@@ -754,11 +823,13 @@ Expected response:
 **Check Config File Exists**
 
 Claude:
+
 ```bash
 cat <workspace>/.mcp.json
 ```
 
 Copilot:
+
 ```bash
 cat <workspace>/mcp.json
 ```
@@ -787,6 +858,7 @@ All tools return error information when something goes wrong:
 ```
 
 Common errors:
+
 - `"Pluto server is not running"` - Start the server first
 - `"Notebook {path} is not open"` - Open the notebook first
 - `"Cell {id} not found"` - Invalid cell ID
@@ -796,6 +868,7 @@ Common errors:
 ## Best Practices
 
 💡 **Pro Tips:**
+
 - Use `execute_code` for quick queries without modifying notebooks
 - The `list_notebooks` tool shows all open notebooks with their paths
 - MCP server shares state with the VS Code extension
@@ -803,6 +876,7 @@ Common errors:
 - Close notebooks in VS Code to free up MCP resources
 
 🎯 **Best Practices:**
+
 - Keep one notebook open at a time for focused work
 - Use ephemeral execution for exploration
 - Create persistent cells for important code

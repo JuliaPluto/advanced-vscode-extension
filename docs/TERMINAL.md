@@ -16,17 +16,20 @@ An interactive terminal for executing Julia code in Pluto notebooks with rich ou
 ### Opening a Terminal
 
 **Method 1: Command Palette**
+
 1. Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
 2. Type "Pluto: Create Terminal"
 3. Press Enter
 
 **Method 2: Terminal Dropdown**
+
 1. Click the "+" button in the terminal panel
 2. Select "Pluto Terminal" from the dropdown
 
 ### First Use
 
 When you open the terminal, it will automatically:
+
 1. Try to connect to an open notebook
 2. If no notebooks are open, prompt you to create or open one
 3. If multiple notebooks are open, ask which one to connect to
@@ -53,6 +56,7 @@ Opening in webview...
 - **Arrow Down** (`↓`): Navigate to next command (or return to current input)
 
 The terminal maintains a history of all executed commands in the current session. When you press Arrow Up, it will:
+
 1. Save your current input (if any)
 2. Show the most recent command
 3. Continue showing older commands with each press
@@ -60,6 +64,7 @@ The terminal maintains a history of all executed commands in the current session
 5. Pressing Arrow Down at the end restores your original input
 
 **Example:**
+
 ```
 pluto> 1 + 1         # Execute
 pluto> 2 + 2         # Execute
@@ -72,6 +77,7 @@ pluto> start typing... # Back to your input
 ```
 
 **Features:**
+
 - History persists during the terminal session
 - Duplicate consecutive commands are not stored
 - Current partial input is preserved when navigating history
@@ -82,6 +88,7 @@ pluto> start typing... # Back to your input
 All special commands start with a dot (`.`):
 
 #### `.help`
+
 Show all available commands and tips.
 
 ```
@@ -89,6 +96,7 @@ pluto> .help
 ```
 
 #### `.connect`
+
 Connect to a notebook. Shows a list of open notebooks to choose from, or prompts to create/open one.
 
 ```
@@ -96,6 +104,7 @@ pluto> .connect
 ```
 
 #### `.disconnect`
+
 Disconnect from the current notebook. The notebook remains open, but the terminal won't execute code until reconnected.
 
 ```
@@ -103,6 +112,7 @@ pluto> .disconnect
 ```
 
 #### `.notebooks`
+
 List all currently open notebooks. The connected notebook is marked with a ✓.
 
 ```
@@ -113,6 +123,7 @@ Open Notebooks:
 ```
 
 #### `.status`
+
 Show terminal and server status information.
 
 ```
@@ -126,6 +137,7 @@ Terminal Status:
 ```
 
 #### `.clear`
+
 Clear the terminal screen and show the welcome message again.
 
 ```
@@ -137,6 +149,7 @@ pluto> .clear
 The terminal includes built-in example commands for testing. See [TERMINAL-EXAMPLES.md](./TERMINAL-EXAMPLES.md) for details.
 
 Quick examples:
+
 - `.example-html` - Test HTML rendering
 - `.example-image` - Test SVG graphics
 - `.example-table` - Test table rendering
@@ -147,12 +160,14 @@ Quick examples:
 ### Rich Content (Webview)
 
 The following MIME types automatically open in a webview panel:
+
 - `text/html` - HTML content
 - `image/png`, `image/jpeg`, `image/gif`, `image/svg+xml` - Images
 - `application/vnd.plotly.v1+json` - Plotly plots
 - `application/vnd.vegalite.v4+json` - Vega-Lite plots
 
 Webviews support:
+
 - Interactive HTML elements (buttons, forms, etc.)
 - JavaScript execution
 - Styled content
@@ -161,12 +176,14 @@ Webviews support:
 ### Terminal Rendering
 
 Plain text output is rendered directly in the terminal:
+
 - `text/plain` - Plain text with ANSI colors
 - `application/json` - Pretty-printed JSON
 
 ### Example Outputs
 
 **HTML:**
+
 ```julia
 pluto> HTML("<h1 style='color: blue;'>Hello World</h1>")
 [Rich Output: text/html]
@@ -175,6 +192,7 @@ Opening in webview...
 ```
 
 **Plot:**
+
 ```julia
 pluto> using Plots; plot(sin, 0, 2π)
 [Rich Output: image/png]
@@ -183,6 +201,7 @@ Opening in webview...
 ```
 
 **Plain Text:**
+
 ```julia
 pluto> println("Hello from Pluto!")
 Hello from Pluto!
@@ -259,6 +278,7 @@ renderOutput() → Check MIME type
 **Problem**: Terminal shows "Not connected to a notebook"
 
 **Solution**:
+
 1. Check if any notebooks are open
 2. Use `.connect` command
 3. If no notebooks exist, create one first
@@ -268,6 +288,7 @@ renderOutput() → Check MIME type
 **Problem**: Code executes but no output appears
 
 **Solution**:
+
 1. Check if code actually produces output
 2. Try wrapping in `println()` or explicit return
 3. Check "Pluto Terminal" output channel for errors
@@ -277,6 +298,7 @@ renderOutput() → Check MIME type
 **Problem**: Rich content shows error instead of webview
 
 **Solution**:
+
 1. Check that extension context is properly initialized
 2. Verify renderer files exist in `dist/` directory
 3. Check for CSP (Content Security Policy) errors in Developer Tools
@@ -286,6 +308,7 @@ renderOutput() → Check MIME type
 **Problem**: Arrow keys print characters instead of navigating history
 
 **Solution**:
+
 1. This shouldn't happen in VSCode integrated terminal
 2. If it does, it may be a VSCode issue - try restarting
 3. Command history is session-based; restarting terminal clears it
@@ -295,6 +318,7 @@ renderOutput() → Check MIME type
 **Problem**: "Failed to start Pluto server"
 
 **Solution**:
+
 1. Check if Julia is installed and in PATH
 2. Check if Pluto.jl is installed: `julia -e "using Pluto"`
 3. Check if port 1234 (default) is already in use
@@ -309,6 +333,7 @@ renderOutput() → Check MIME type
 ## Future Enhancements
 
 Potential improvements:
+
 - [ ] Persistent command history across sessions
 - [ ] History search (Ctrl+R)
 - [ ] Tab completion for Julia code

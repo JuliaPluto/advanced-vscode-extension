@@ -24,6 +24,7 @@ git push origin main
 ```
 
 The CI workflow will:
+
 1. Run validation, linting, and tests
 2. Build the extension
 3. Run semantic-release to create the release
@@ -36,12 +37,12 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/) f
 
 ### Version Bumping Rules
 
-| Commit Type | Version Bump | Example |
-|------------|--------------|---------|
-| `fix:` | Patch (0.0.x) | `fix: handle empty cells` |
-| `feat:` | Minor (0.x.0) | `feat: add cell execution` |
-| `BREAKING CHANGE:` or `!` | Major (x.0.0) | `feat!: remove old API` |
-| `docs:`, `style:`, `chore:` | No release | - |
+| Commit Type                 | Version Bump  | Example                    |
+| --------------------------- | ------------- | -------------------------- |
+| `fix:`                      | Patch (0.0.x) | `fix: handle empty cells`  |
+| `feat:`                     | Minor (0.x.0) | `feat: add cell execution` |
+| `BREAKING CHANGE:` or `!`   | Major (x.0.0) | `feat!: remove old API`    |
+| `docs:`, `style:`, `chore:` | No release    | -                          |
 
 ### Examples
 
@@ -90,9 +91,9 @@ The configuration is in `.releaserc.json`:
 {
   "branches": ["main"],
   "plugins": [
-    "@semantic-release/commit-analyzer",      // Analyzes commits
+    "@semantic-release/commit-analyzer", // Analyzes commits
     "@semantic-release/release-notes-generator", // Generates notes
-    "@semantic-release/changelog",            // Updates CHANGELOG.md
+    "@semantic-release/changelog", // Updates CHANGELOG.md
     ["@semantic-release/npm", { "npmPublish": false }], // No npm publish
     ["semantic-release-vsce", { "packageVsix": true }], // Create VSIX
     ["@semantic-release/github", { "assets": ["*.vsix"] }], // Upload VSIX
