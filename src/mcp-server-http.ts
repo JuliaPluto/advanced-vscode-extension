@@ -511,6 +511,166 @@ export class PlutoMCPHttpServer {
         };
       }
     );
+
+    // Get Documentation
+    server.tool(
+      "get_docs",
+      "Get markdown documentation for a Julia symbol (function, type, variable, etc.) in the context of an open notebook",
+      {
+        path: z.string().describe("Path to the notebook"),
+        symbol: z
+          .string()
+          .describe(
+            "Julia symbol to get documentation for (e.g., 'sum', 'plot', 'DataFrame')"
+          ),
+      },
+      async ({ path, symbol }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        try {
+          const docs = await worker.getDocs(symbol);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: docs || `No documentation found for symbol: ${symbol}`,
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error retrieving documentation for '${symbol}': ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              },
+            ],
+          };
+        }
+      }
+    );
+
+    // Introspect Notebook
+    server.tool(
+      "introspect_notebook",
+      "Get all symbols defined in the notebook with their documentation. Returns a comprehensive list of variables, functions, and types available in the notebook's scope.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        include_docs: z
+          .boolean()
+          .describe("Whether to include documentation for each symbol")
+          .optional()
+          .default(true),
+      },
+      async ({ path, include_docs }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        try {
+          // Get notebook state and cell order
+          const notebookData = worker.getState();
+          const cellOrder = notebookData.cell_order;
+
+          if (!cellOrder || !Array.isArray(cellOrder)) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      symbols: [],
+                      count: 0,
+                      message: "No cells found in notebook",
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          // Collect all symbols from all cells
+          const symbolsSet = new Set<string>();
+
+          for (const cellId of cellOrder) {
+            const cellDependencies = notebookData.cell_dependencies[cellId];
+            if (cellDependencies?.downstream_cells_map) {
+              const symbols = Object.keys(
+                cellDependencies.downstream_cells_map
+              );
+              symbols.forEach((symbol) => symbolsSet.add(symbol));
+            }
+          }
+
+          const symbols = Array.from(symbolsSet).sort();
+
+          // Get documentation for each symbol if requested
+          let symbolsWithDocs: Array<{ symbol: string; docs?: string }> = [];
+
+          if (include_docs) {
+            symbolsWithDocs = await Promise.all(
+              symbols.map(async (symbol) => {
+                try {
+                  const docs = await worker.getDocs(symbol);
+                  return { symbol, docs: docs || undefined };
+                } catch {
+                  return { symbol, docs: undefined };
+                }
+              })
+            );
+          } else {
+            symbolsWithDocs = symbols.map((symbol) => ({ symbol }));
+          }
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    count: symbols.length,
+                    symbols: symbolsWithDocs,
+                    message: `Found ${symbols.length} symbol(s) in notebook`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error introspecting notebook: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              },
+            ],
+          };
+        }
+      }
+    );
   }
 
   private setupRoutes(): void {
