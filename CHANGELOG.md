@@ -1,9 +1,8 @@
 # [0.1.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.7...v0.1.0) (2025-10-24)
 
-
 ### Features
 
-* add notebook introspect and get_docs tool ([ee7b8f4](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ee7b8f4e8f7fe27d4d2cf8e6d8159a72a39cbc6f))
+- add notebook introspect and get_docs tool ([ee7b8f4](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ee7b8f4e8f7fe27d4d2cf8e6d8159a72a39cbc6f))
 
 ## [0.0.7](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.6...v0.0.7) (2025-10-17)
 
