@@ -3,6 +3,7 @@ import type { PlutoManager } from "./plutoManager.ts";
 import type { NotebookData, UpdateEvent } from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
+import { type Worker } from "@plutojl/rainbow";
 
 /**
  * Prepare cell code for Pluto worker
