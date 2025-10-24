@@ -22,13 +22,9 @@ so please don't raise issues about this in the official Pluto.jl channels or rep
 
 ## Requirements
 
-- **Julia**: Julia must be installed and available in your PATH
-- **Pluto.jl**: The Pluto package should be installed in Julia
-
-  ```julia
-  using Pkg
-  Pkg.add("Pluto")
-  ```
+- **juliaup**: The Julia version manager must be installed and available in your PATH
+  - Install from: https://github.com/JuliaLang/juliaup#installation
+  - The extension will automatically install Julia 1.11.7 and Pluto.jl when needed
 
 ## Quick Start
 
