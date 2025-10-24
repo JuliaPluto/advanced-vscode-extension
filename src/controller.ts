@@ -201,7 +201,7 @@ export class PlutoNotebookController {
   private subscribeToWorker(
     notebookPath: string,
     notebook: vscode.NotebookDocument,
-    worker: import("@plutojl/rainbow").Worker
+    worker: Worker
   ): void {
     // Unsubscribe from old worker if exists
     const oldUnsubscribe = this.workerSubscriptions.get(notebookPath);
@@ -452,6 +452,7 @@ export class PlutoNotebookController {
     //   );
     // }
   }
+
   private updateAllCellsFromState = async (
     notebook: vscode.NotebookDocument,
     update: UpdateEvent
@@ -507,7 +508,7 @@ export class PlutoNotebookController {
         for (const patch of patches) {
           const path = patch.path;
           const [action, ...rest] = path;
-          if (path.length === 0 && patches.length === 0) {
+          if (path.length === 0 && patches.length === 1) {
             // This is a state reset; handle it accordingly and break
             this.updateAllCellsFromState(notebook, event);
             break;
