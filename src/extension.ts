@@ -1,3 +1,5 @@
+import "@plutojl/rainbow/node-polyfill";
+
 import * as vscode from "vscode";
 import { PlutoNotebookSerializer } from "./serializer.ts";
 import { PlutoNotebookController } from "./controller.ts";
@@ -5,7 +7,7 @@ import {
   registerAllCommands,
   initializePlutoServer,
 } from "./commands/index.ts";
-import { getSharedPlutoManager } from "./shared/plutoManagerInstance.ts";
+import { getSharedPlutoManager } from "./plutoManagerInstance.ts";
 import {
   initializeMCPServer,
   startMCPServer,
