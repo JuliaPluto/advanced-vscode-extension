@@ -16,7 +16,7 @@
   },
   "type": "module",
   "engines": {
-    "vscode": "^1.104.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Notebooks"
@@ -252,7 +252,7 @@
     "@types/mathjax": "^0.0.40",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "@types/vscode": "^1.104.0",
+    "@types/vscode": "^1.75.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
