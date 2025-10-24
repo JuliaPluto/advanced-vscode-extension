@@ -1,4 +1,3 @@
-import "@plutojl/rainbow/node-polyfill";
 import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host } from "@plutojl/rainbow";
 import { readFile } from "fs/promises";

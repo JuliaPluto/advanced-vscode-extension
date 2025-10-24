@@ -169,7 +169,8 @@ export class PlutoServerTaskManager {
         fs.mkdirSync(envPath, { recursive: true });
       }
     }
-
+    // TODO: 1.11.7 should be the default of a "Julia Version" setting that a user can change.
+    // A user must be able to remove or adjust the setting from VSCode
     // Ensure Julia 1.11.7 is installed via juliaup
     const juliaupCommand =
       process.platform === "win32" ? "juliaup.exe" : "juliaup";

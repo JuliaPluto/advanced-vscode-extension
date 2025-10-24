@@ -1,4 +1,3 @@
-import "@plutojl/rainbow/node-polyfill";
 import express from "express";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";

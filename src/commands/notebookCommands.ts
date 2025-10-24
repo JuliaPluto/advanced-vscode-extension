@@ -20,7 +20,10 @@ async function bundleProjectToString(): Promise<string> {
     )
     .map(([name]) => name);
 
-  const module = resolveIncludes(vscode.workspace.fs, `./src/${juliaFiles[0]}`);
+  const module = resolveIncludes(
+    vscode.workspace.fs as any,
+    `./src/${juliaFiles[0]}`
+  );
 
   // Create analyses directory if it doesn't exist
   const analysesDir = vscode.Uri.file("./analyses");
