@@ -2,7 +2,7 @@
   "name": "advanced-vscode-extension",
   "displayName": "Advanced Pluto Notebook for VSCode",
   "description": "VSCode extension for Julia Pluto notebooks",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "juliapluto-pankgeorg",
   "repository": {
     "type": "git",
