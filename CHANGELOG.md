@@ -1,9 +1,8 @@
 ## [0.1.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.0...v0.1.1) (2025-10-24)
 
-
 ### Bug Fixes
 
-* relax vscode version ([9bfbdf8](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9bfbdf89d146a14324031d2722e38e7dc86cdf86))
+- relax vscode version ([9bfbdf8](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9bfbdf89d146a14324031d2722e38e7dc86cdf86))
 
 # [0.1.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.0.7...v0.1.0) (2025-10-24)
 
