@@ -133,7 +133,9 @@ export class PlutoServerTaskManager {
 
     // Get Julia settings
     const juliaConfig = vscode.workspace.getConfiguration("julia");
-    const executablePath = juliaConfig.get<string>("executablePath") || "julia";
+    const defaultJulia = process.platform === "win32" ? "julia.exe" : "julia";
+    const executablePath =
+      juliaConfig.get<string>("executablePath") || defaultJulia;
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
     let packageServer = juliaConfig.get<string>("packageServer") ?? "";
     if (packageServer) {
@@ -152,9 +154,10 @@ export class PlutoServerTaskManager {
         );
 
         // Julia script that runs `jh auth env` and writes output to file
+        const jhCommand = process.platform === "win32" ? "jh.exe" : "jh";
         const juliaScript = `
 try
-    output = read(\`jh auth env\`, String)
+    output = read(\`${jhCommand} auth env\`, String)
     open("${authOutputUri.fsPath}", "w") do io
         write(io, output)
     end
@@ -163,7 +166,7 @@ catch e
     open("${authOutputUri.fsPath}", "w") do io
         write(io, "")
     end
-end; try read(\`jh run --setup\`, String) catch; end
+end; try read(\`${jhCommand} run --setup\`, String) catch; end
 `.trim();
 
         // Create task to run the Julia script
@@ -171,7 +174,7 @@ end; try read(\`jh run --setup\`, String) catch; end
           type: "pluto-auth-setup",
         };
 
-        const authExecution = new vscode.ShellExecution("julia", [
+        const authExecution = new vscode.ShellExecution(defaultJulia, [
           "-e",
           juliaScript,
         ]);
