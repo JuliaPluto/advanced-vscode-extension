@@ -1,12 +1,11 @@
 ## [0.1.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.1...v0.1.2) (2025-10-25)
 
-
 ### Bug Fixes
 
-* do our own setup on julia 1.11.7 ([ecf1da2](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ecf1da209d86c31bf6e06d86257b019c608425bc))
-* make pluto-notebook's default julia version a setting ([3f972e4](https://github.com/JuliaPluto/advanced-vscode-extension/commit/3f972e4b8ab71b48b1563c8c94cc37ca6a92a291))
-* remove usage of node's fs, in favor of VSCode apis ([6248445](https://github.com/JuliaPluto/advanced-vscode-extension/commit/62484450ea5c4e72fccc2a4d8c3c9f6d1c8bcdbe))
-* reorganize to sanitize and limit polyfill usage, include new rainbow ([4b027a0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/4b027a057771efb3c9faee894cd3beae306b93c5))
+- do our own setup on julia 1.11.7 ([ecf1da2](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ecf1da209d86c31bf6e06d86257b019c608425bc))
+- make pluto-notebook's default julia version a setting ([3f972e4](https://github.com/JuliaPluto/advanced-vscode-extension/commit/3f972e4b8ab71b48b1563c8c94cc37ca6a92a291))
+- remove usage of node's fs, in favor of VSCode apis ([6248445](https://github.com/JuliaPluto/advanced-vscode-extension/commit/62484450ea5c4e72fccc2a4d8c3c9f6d1c8bcdbe))
+- reorganize to sanitize and limit polyfill usage, include new rainbow ([4b027a0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/4b027a057771efb3c9faee894cd3beae306b93c5))
 
 ## [0.1.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.0...v0.1.1) (2025-10-24)
 
