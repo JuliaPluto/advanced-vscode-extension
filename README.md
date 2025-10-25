@@ -39,6 +39,7 @@ This extension contributes the following settings:
 - `pluto-notebook.port`: Port number for the Pluto server (default: 1234)
 - `pluto-notebook.mcpPort`: Port number for the MCP HTTP server (default: 3100)
 - `pluto-notebook.autoStartMcpServer`: Automatically start the MCP HTTP server when the extension activates (default: true)
+- `pluto-notebook.juliaVersion`: Julia version to use with juliaup (default: "1.11.7"). The extension will automatically install this version via juliaup if not already available. You can use specific versions like "1.10.0" or special channels like "release", "lts", etc.
 
 ## Available Commands
 
