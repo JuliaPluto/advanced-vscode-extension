@@ -1,8 +1,6 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
-import * as fs from "fs";
-import * as path from "path";
 
 /**
  * Parse Julia executable path to extract command and arguments
@@ -167,10 +165,17 @@ export class PlutoServerTaskManager {
 
     // Check if .env folder exists and create it if not
     if (workspacePath) {
-      const envPath = path.join(workspacePath, ".env");
-      if (!fs.existsSync(envPath)) {
-        console.log(`[PlutoServerTask] Creating .env folder at ${envPath}`);
-        fs.mkdirSync(envPath, { recursive: true });
+      const envUri = vscode.Uri.joinPath(
+        vscode.Uri.file(workspacePath),
+        ".env"
+      );
+      try {
+        await vscode.workspace.fs.stat(envUri);
+        // Directory exists, do nothing
+      } catch {
+        // Directory doesn't exist, create it
+        console.log(`[PlutoServerTask] Creating .env folder at ${envUri.fsPath}`);
+        await vscode.workspace.fs.createDirectory(envUri);
       }
     }
     // Ensure configured Julia version is installed via juliaup

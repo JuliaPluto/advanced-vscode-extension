@@ -1,6 +1,6 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host } from "@plutojl/rainbow";
-import { readFile } from "fs/promises";
+import * as vscode from "vscode";
 import { PlutoServerTaskManager } from "./plutoServerTask.js";
 import { EventEmitter } from "events";
 
@@ -274,8 +274,9 @@ export class PlutoManager {
           // Use provided VSCode document content
           notebookContent = documentContent;
         } else {
-          // Read from file system
-          const fileContent = await readFile(notebookPath);
+          // Read from file system using VSCode API
+          const fileUri = vscode.Uri.file(notebookPath);
+          const fileContent = await vscode.workspace.fs.readFile(fileUri);
           notebookContent = new TextDecoder().decode(fileContent);
         }
 
