@@ -55,7 +55,10 @@ export const workspace = {
       const { readFile } = await import("fs/promises");
       return await readFile(uri.fsPath);
     },
-    writeFile: async (uri: { fsPath: string }, content: Uint8Array): Promise<void> => {
+    writeFile: async (
+      uri: { fsPath: string },
+      content: Uint8Array
+    ): Promise<void> => {
       const { writeFile } = await import("fs/promises");
       await writeFile(uri.fsPath, content);
     },
@@ -72,13 +75,12 @@ export const workspace = {
       const { mkdir } = await import("fs/promises");
       await mkdir(uri.fsPath, { recursive: true });
     },
-    readDirectory: async (uri: { fsPath: string }): Promise<Array<[string, number]>> => {
+    readDirectory: async (uri: {
+      fsPath: string;
+    }): Promise<Array<[string, number]>> => {
       const { readdir } = await import("fs/promises");
       const entries = await readdir(uri.fsPath, { withFileTypes: true });
-      return entries.map((entry) => [
-        entry.name,
-        entry.isDirectory() ? 2 : 1,
-      ]);
+      return entries.map((entry) => [entry.name, entry.isDirectory() ? 2 : 1]);
     },
   },
 };
