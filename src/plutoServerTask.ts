@@ -127,10 +127,128 @@ export class PlutoServerTaskManager {
       this.serverReadyResolve = resolve;
     });
 
+    // Get workspace path
+    const workspacePath =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+
     // Get Julia settings
     const juliaConfig = vscode.workspace.getConfiguration("julia");
     const executablePath = juliaConfig.get<string>("executablePath") || "julia";
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
+    let packageServer = juliaConfig.get<string>("packageServer") ?? "";
+    if (packageServer) {
+      console.log("[PlutoServerTask] Found pkgserver in julia extension");
+    }
+    if (workspacePath) {
+      try {
+        console.log(
+          "[PlutoServerTask] Attempting to read JuliaHub configuration from 'jh auth env'"
+        );
+
+        // Create a temporary file path for the auth output
+        const authOutputUri = vscode.Uri.joinPath(
+          vscode.Uri.file(workspacePath),
+          ".vscode-pluto-auth-tmp.txt"
+        );
+
+        // Julia script that runs `jh auth env` and writes output to file
+        const juliaScript = `
+try
+    output = read(\`jh auth env\`, String)
+    open("${authOutputUri.fsPath}", "w") do io
+        write(io, output)
+    end
+catch e
+    # Command failed or not found - write empty file to signal completion
+    open("${authOutputUri.fsPath}", "w") do io
+        write(io, "")
+    end
+end; try read(\`jh run --setup\`, String) catch; end
+`.trim();
+
+        // Create task to run the Julia script
+        const authTaskDefinition: vscode.TaskDefinition = {
+          type: "pluto-auth-setup",
+        };
+
+        const authExecution = new vscode.ShellExecution("julia", [
+          "-e",
+          juliaScript,
+        ]);
+
+        const authTask = new vscode.Task(
+          authTaskDefinition,
+          vscode.TaskScope.Workspace,
+          "Attempt to setup auth",
+          "pluto-notebook",
+          authExecution,
+          []
+        );
+        authTask.isBackground = false;
+        authTask.presentationOptions = {
+          reveal: vscode.TaskRevealKind.Never,
+          echo: false,
+          focus: false,
+          panel: vscode.TaskPanelKind.Shared,
+          showReuseMessage: false,
+          clear: false,
+        };
+
+        const authTaskExecution = await vscode.tasks.executeTask(authTask);
+
+        // Wait for task to complete (with timeout)
+        await new Promise<void>((resolve, reject) => {
+          const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+            if (e.execution === authTaskExecution) {
+              disposable.dispose();
+              resolve();
+            }
+          });
+
+          setTimeout(() => {
+            disposable.dispose();
+            reject(new Error("Auth setup timeout"));
+          }, 10000);
+        });
+
+        // Read the output file
+        try {
+          const fileContent = await vscode.workspace.fs.readFile(authOutputUri);
+          const result = new TextDecoder().decode(fileContent);
+
+          // Parse KEY=VALUE pairs
+          const envVars: Record<string, string> = {};
+          for (const line of result.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed && trimmed.includes("=")) {
+              const [key, ...valueParts] = trimmed.split("=");
+              const value = valueParts.join("="); // Handle values with '=' in them
+              envVars[key.trim()] = value.trim();
+            }
+          }
+
+          // Use JULIAHUB_HOST if available
+          if (envVars.JULIAHUB_HOST) {
+            packageServer = envVars.JULIAHUB_HOST;
+            console.log(
+              `[PlutoServerTask] Using JULIAHUB_HOST from 'jh auth env': ${packageServer}`
+            );
+          }
+        } finally {
+          // Delete the temporary file
+          try {
+            await vscode.workspace.fs.delete(authOutputUri);
+          } catch {
+            // Ignore deletion errors
+          }
+        }
+      } catch {
+        // Task failed or timed out - this is fine, just continue
+        console.log(
+          "[PlutoServerTask] Could not read 'jh auth env' (command may not be available)"
+        );
+      }
+    }
 
     // Get Pluto extension settings
     const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
@@ -152,32 +270,18 @@ export class PlutoServerTaskManager {
     );
 
     // Build environment variables
-    const workspacePath =
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_PKG_USE_CLI_GIT: "true",
       // JULIA_CPU_TARGET: "generic",
     };
+    if (packageServer) {
+      env.JULIA_PKG_SERVER = packageServer;
+    }
     if (environmentPath) {
       env.JULIA_LOAD_PATH = environmentPath;
     }
 
-    // Check if .env folder exists and create it if not
-    if (workspacePath) {
-      const envUri = vscode.Uri.joinPath(
-        vscode.Uri.file(workspacePath),
-        ".env"
-      );
-      try {
-        await vscode.workspace.fs.stat(envUri);
-        // Directory exists, do nothing
-      } catch {
-        // Directory doesn't exist, create it
-        console.log(`[PlutoServerTask] Creating .env folder at ${envUri.fsPath}`);
-        await vscode.workspace.fs.createDirectory(envUri);
-      }
-    }
     // Ensure configured Julia version is installed via juliaup
     const juliaupCommand =
       process.platform === "win32" ? "juliaup.exe" : "juliaup";
@@ -249,12 +353,12 @@ export class PlutoServerTaskManager {
       type: "pluto-setup",
     };
 
+    // Create an envrionment for the SERVER where Pluto will run in. Let julia manage paths
     const setupExecution = new vscode.ShellExecution(command, [
       `+${juliaVersion}`,
       ...baseArgs,
-      `--project=${workspacePath}/.env`,
       `-e`,
-      `import Pkg; Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`,
+      `import Pkg; Pkg.activate(mkpath(joinpath(Pkg.depots1(), "environments", "vscode-pluto-notebook", string(VERSION)))); Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`,
     ]);
 
     const task1 = new vscode.Task(
