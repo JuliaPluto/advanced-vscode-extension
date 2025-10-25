@@ -48,6 +48,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start the MCP HTTP server when the extension activates"
+        },
+        "pluto-notebook.juliaVersion": {
+          "type": "string",
+          "default": "1.11.7",
+          "description": "Julia version to use with juliaup (e.g., '1.11.7', '1.10.0', 'release'). The extension will automatically install this version via juliaup if not already available."
         }
       }
     },

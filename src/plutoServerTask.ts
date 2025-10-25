@@ -134,12 +134,16 @@ export class PlutoServerTaskManager {
     const executablePath = juliaConfig.get<string>("executablePath") || "julia";
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
 
+    // Get Pluto extension settings
+    const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
+    const juliaVersion = plutoConfig.get<string>("juliaVersion") || "1.11.7";
+
     // Parse Julia executable to handle arguments like --sysimage
     const { command, args: baseArgs } = parseJuliaExecutable(executablePath);
 
     // Build Julia command arguments
     const juliaArgs = [
-      "+1.11.7",
+      `+${juliaVersion}`,
       ...baseArgs,
       "-e",
       `using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
@@ -169,14 +173,12 @@ export class PlutoServerTaskManager {
         fs.mkdirSync(envPath, { recursive: true });
       }
     }
-    // TODO: 1.11.7 should be the default of a "Julia Version" setting that a user can change.
-    // A user must be able to remove or adjust the setting from VSCode
-    // Ensure Julia 1.11.7 is installed via juliaup
+    // Ensure configured Julia version is installed via juliaup
     const juliaupCommand =
       process.platform === "win32" ? "juliaup.exe" : "juliaup";
     try {
       console.log(
-        `[PlutoServerTask] Checking if Julia 1.11.7 is available via juliaup`
+        `[PlutoServerTask] Checking if Julia ${juliaVersion} is available via juliaup`
       );
 
       const juliaupTaskDefinition: vscode.TaskDefinition = {
@@ -185,13 +187,13 @@ export class PlutoServerTaskManager {
 
       const juliaupExecution = new vscode.ShellExecution(juliaupCommand, [
         "add",
-        "1.11.7",
+        juliaVersion,
       ]);
 
       const juliaupTask = new vscode.Task(
         juliaupTaskDefinition,
         vscode.TaskScope.Workspace,
-        `Install Julia 1.11.7`,
+        `Install Julia ${juliaVersion}`,
         "pluto-notebook",
         juliaupExecution,
         []
@@ -205,7 +207,7 @@ export class PlutoServerTaskManager {
             disposable.dispose();
             if (e.exitCode === 0) {
               console.log(
-                "[PlutoServerTask] Julia 1.11.7 installed/verified successfully"
+                `[PlutoServerTask] Julia ${juliaVersion} installed/verified successfully`
               );
               resolve();
             } else {
@@ -224,7 +226,7 @@ export class PlutoServerTaskManager {
       );
 
       const action = await vscode.window.showErrorMessage(
-        `Failed to install Julia 1.11.7 via juliaup. Please ensure juliaup is installed.`,
+        `Failed to install Julia ${juliaVersion} via juliaup. Please ensure juliaup is installed.`,
         "Install juliaup",
         "Continue anyway"
       );
@@ -243,7 +245,7 @@ export class PlutoServerTaskManager {
     };
 
     const setupExecution = new vscode.ShellExecution(command, [
-      "+1.11.7",
+      `+${juliaVersion}`,
       ...baseArgs,
       `--project=${workspacePath}/.env`,
       `-e`,
