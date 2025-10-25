@@ -127,16 +127,142 @@ export class PlutoServerTaskManager {
       this.serverReadyResolve = resolve;
     });
 
+    // Get workspace path
+    const workspacePath =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+
     // Get Julia settings
     const juliaConfig = vscode.workspace.getConfiguration("julia");
-    const executablePath = juliaConfig.get<string>("executablePath") || "julia";
+    const defaultJulia = process.platform === "win32" ? "julia.exe" : "julia";
+    const executablePath =
+      juliaConfig.get<string>("executablePath") || defaultJulia;
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
+    let packageServer = juliaConfig.get<string>("packageServer") ?? "";
+    if (packageServer) {
+      console.log("[PlutoServerTask] Found pkgserver in julia extension");
+    }
+    if (workspacePath) {
+      try {
+        console.log(
+          "[PlutoServerTask] Attempting to read JuliaHub configuration from 'jh auth env'"
+        );
+
+        // Create a temporary file path for the auth output
+        const authOutputUri = vscode.Uri.joinPath(
+          vscode.Uri.file(workspacePath),
+          ".vscode-pluto-auth-tmp.txt"
+        );
+
+        // Julia script that runs `jh auth env` and writes output to file
+        const jhCommand = process.platform === "win32" ? "jh.exe" : "jh";
+        const juliaScript = `
+try
+    output = read(\`${jhCommand} auth env\`, String)
+    open("${authOutputUri.fsPath}", "w") do io
+        write(io, output)
+    end
+catch e
+    # Command failed or not found - write empty file to signal completion
+    open("${authOutputUri.fsPath}", "w") do io
+        write(io, "")
+    end
+end; try read(\`${jhCommand} run --setup\`, String) catch; end
+`.trim();
+
+        // Create task to run the Julia script
+        const authTaskDefinition: vscode.TaskDefinition = {
+          type: "pluto-auth-setup",
+        };
+
+        const authExecution = new vscode.ShellExecution(defaultJulia, [
+          "-e",
+          juliaScript,
+        ]);
+
+        const authTask = new vscode.Task(
+          authTaskDefinition,
+          vscode.TaskScope.Workspace,
+          "Attempt to setup auth",
+          "pluto-notebook",
+          authExecution,
+          []
+        );
+        authTask.isBackground = false;
+        authTask.presentationOptions = {
+          reveal: vscode.TaskRevealKind.Never,
+          echo: false,
+          focus: false,
+          panel: vscode.TaskPanelKind.Shared,
+          showReuseMessage: false,
+          clear: false,
+        };
+
+        const authTaskExecution = await vscode.tasks.executeTask(authTask);
+
+        // Wait for task to complete (with timeout)
+        await new Promise<void>((resolve, reject) => {
+          const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+            if (e.execution === authTaskExecution) {
+              disposable.dispose();
+              resolve();
+            }
+          });
+
+          setTimeout(() => {
+            disposable.dispose();
+            reject(new Error("Auth setup timeout"));
+          }, 10000);
+        });
+
+        // Read the output file
+        try {
+          const fileContent = await vscode.workspace.fs.readFile(authOutputUri);
+          const result = new TextDecoder().decode(fileContent);
+
+          // Parse KEY=VALUE pairs
+          const envVars: Record<string, string> = {};
+          for (const line of result.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed && trimmed.includes("=")) {
+              const [key, ...valueParts] = trimmed.split("=");
+              const value = valueParts.join("="); // Handle values with '=' in them
+              envVars[key.trim()] = value.trim();
+            }
+          }
+
+          // Use JULIAHUB_HOST if available
+          if (envVars.JULIAHUB_HOST) {
+            packageServer = envVars.JULIAHUB_HOST;
+            console.log(
+              `[PlutoServerTask] Using JULIAHUB_HOST from 'jh auth env': ${packageServer}`
+            );
+          }
+        } finally {
+          // Delete the temporary file
+          try {
+            await vscode.workspace.fs.delete(authOutputUri);
+          } catch {
+            // Ignore deletion errors
+          }
+        }
+      } catch {
+        // Task failed or timed out - this is fine, just continue
+        console.log(
+          "[PlutoServerTask] Could not read 'jh auth env' (command may not be available)"
+        );
+      }
+    }
+
+    // Get Pluto extension settings
+    const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
+    const juliaVersion = plutoConfig.get<string>("juliaVersion") || "1.11.7";
 
     // Parse Julia executable to handle arguments like --sysimage
     const { command, args: baseArgs } = parseJuliaExecutable(executablePath);
 
     // Build Julia command arguments
     const juliaArgs = [
+      `+${juliaVersion}`,
       ...baseArgs,
       "-e",
       `using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
@@ -147,10 +273,122 @@ export class PlutoServerTaskManager {
     );
 
     // Build environment variables
-    const env: { [key: string]: string } = {};
+    const env: { [key: string]: string } = {
+      JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
+      JULIA_PKG_USE_CLI_GIT: "true",
+      // JULIA_CPU_TARGET: "generic",
+    };
+    if (packageServer) {
+      env.JULIA_PKG_SERVER = packageServer;
+    }
     if (environmentPath) {
       env.JULIA_LOAD_PATH = environmentPath;
     }
+
+    // Ensure configured Julia version is installed via juliaup
+    const juliaupCommand =
+      process.platform === "win32" ? "juliaup.exe" : "juliaup";
+    try {
+      console.log(
+        `[PlutoServerTask] Checking if Julia ${juliaVersion} is available via juliaup`
+      );
+
+      const juliaupTaskDefinition: vscode.TaskDefinition = {
+        type: "juliaup-add",
+      };
+
+      const juliaupExecution = new vscode.ShellExecution(juliaupCommand, [
+        "add",
+        juliaVersion,
+      ]);
+
+      const juliaupTask = new vscode.Task(
+        juliaupTaskDefinition,
+        vscode.TaskScope.Workspace,
+        `Install Julia ${juliaVersion}`,
+        "pluto-notebook",
+        juliaupExecution,
+        []
+      );
+      juliaupTask.isBackground = false;
+
+      const juliaupTaskExecution = await vscode.tasks.executeTask(juliaupTask);
+      await new Promise<void>((resolve, reject) => {
+        const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+          if (e.execution === juliaupTaskExecution) {
+            disposable.dispose();
+            if (e.exitCode === 0) {
+              console.log(
+                `[PlutoServerTask] Julia ${juliaVersion} installed/verified successfully`
+              );
+              resolve();
+            } else {
+              reject(
+                new Error(`juliaup add failed with exit code ${e.exitCode}`)
+              );
+            }
+          }
+        });
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[PlutoServerTask] juliaup command failed: ${errorMessage}`
+      );
+
+      const action = await vscode.window.showErrorMessage(
+        `Failed to install Julia ${juliaVersion} via juliaup. Please ensure juliaup is installed.`,
+        "Install juliaup",
+        "Continue anyway"
+      );
+
+      if (action === "Install juliaup") {
+        await vscode.env.openExternal(
+          vscode.Uri.parse("https://github.com/JuliaLang/juliaup#installation")
+        );
+        throw new Error("Please install juliaup and try again");
+      }
+      // If "Continue anyway" is selected, proceed without juliaup check
+    }
+
+    const setupTaskDefinition: vscode.TaskDefinition = {
+      type: "pluto-setup",
+    };
+
+    // Create an envrionment for the SERVER where Pluto will run in. Let julia manage paths
+    const setupExecution = new vscode.ShellExecution(command, [
+      `+${juliaVersion}`,
+      ...baseArgs,
+      `-e`,
+      `import Pkg; Pkg.activate(mkpath(joinpath(Pkg.depots1(), "environments", "vscode-pluto-notebook", string(VERSION)))); Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`,
+    ]);
+
+    const task1 = new vscode.Task(
+      setupTaskDefinition,
+      vscode.TaskScope.Workspace,
+      `Instantiate Pluto`,
+      "pluto-notebook",
+      setupExecution,
+      [] // No problem matchers
+    );
+    task1.isBackground = false;
+
+    // Execute setup task and wait for it to complete
+    const setupExecution1 = await vscode.tasks.executeTask(task1);
+    await new Promise<void>((resolve, reject) => {
+      const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === setupExecution1) {
+          disposable.dispose();
+          if (e.exitCode === 0) {
+            console.log("[PlutoServerTask] Setup task completed successfully");
+            resolve();
+          } else {
+            reject(new Error(`Setup task failed with exit code ${e.exitCode}`));
+          }
+        }
+      });
+    });
 
     // Create the task definition
     const taskDefinition: vscode.TaskDefinition = {
@@ -215,7 +453,8 @@ export class PlutoServerTaskManager {
 
     // Poll server URL until it responds (more reliable than timeout)
     try {
-      // TODO some wierd behaviour with julia command executing twice in the begining so bandage for 15 sec wait
+      // Wait for Julia environment setup and Pluto installation before polling
+      // This gives time for Pkg.activate, Pkg.add, and Pkg.instantiate to complete
       await new Promise((r) => setTimeout(r, 15000)); // Initial wait before polling
       await this.pollServerReady();
       if (this.serverReadyResolve) {

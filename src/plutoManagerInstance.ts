@@ -1,6 +1,5 @@
-import "@plutojl/rainbow/node-polyfill";
-import type { PlutoManagerLogger } from "../plutoManager.ts";
-import { PlutoManager } from "../plutoManager.ts";
+import type { PlutoManagerLogger } from "./plutoManager.ts";
+import { PlutoManager } from "./plutoManager.ts";
 
 /**
  * Shared PlutoManager instance that can be used by both the extension and MCP server

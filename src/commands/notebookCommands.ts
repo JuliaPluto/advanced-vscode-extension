@@ -1,6 +1,4 @@
 import * as vscode from "vscode";
-import * as path from "path";
-import * as fs from "fs";
 import { serializePlutoNotebook } from "../plutoSerializer.ts";
 import { resolveIncludes } from "@plutojl/rainbow";
 
@@ -20,7 +18,10 @@ async function bundleProjectToString(): Promise<string> {
     )
     .map(([name]) => name);
 
-  const module = resolveIncludes(vscode.workspace.fs, `./src/${juliaFiles[0]}`);
+  const module = resolveIncludes(
+    vscode.workspace.fs as any,
+    `./src/${juliaFiles[0]}`
+  );
 
   // Create analyses directory if it doesn't exist
   const analysesDir = vscode.Uri.file("./analyses");
@@ -156,10 +157,12 @@ export function registerCreateNewNotebookCommand(
 
           // Get the file path
           const workspaceFolder = workspaceFolders[0];
-          const filePath = path.join(workspaceFolder.uri.fsPath, filename);
+          const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filename);
 
           // Check if file already exists
-          if (fs.existsSync(filePath)) {
+          try {
+            await vscode.workspace.fs.stat(fileUri);
+            // File exists, ask for confirmation
             const overwrite = await vscode.window.showWarningMessage(
               `File ${filename} already exists. Overwrite?`,
               "Yes",
@@ -168,6 +171,8 @@ export function registerCreateNewNotebookCommand(
             if (overwrite !== "Yes") {
               return;
             }
+          } catch {
+            // File doesn't exist, proceed
           }
 
           // Create a single empty cell
@@ -181,12 +186,14 @@ export function registerCreateNewNotebookCommand(
           const notebookContent = serializePlutoNotebook([emptyCell]);
 
           // Write to file
-          fs.writeFileSync(filePath, notebookContent, "utf-8");
+          const encoder = new TextEncoder();
+          await vscode.workspace.fs.writeFile(
+            fileUri,
+            encoder.encode(notebookContent)
+          );
 
           // Open the file in VSCode
-          const document = await vscode.workspace.openNotebookDocument(
-            vscode.Uri.file(filePath)
-          );
+          const document = await vscode.workspace.openNotebookDocument(fileUri);
           await vscode.window.showNotebookDocument(document);
 
           vscode.window.showInformationMessage(
