@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
-import { getExecutableName, escapeJuliaCode } from "./platformUtils.ts";
+import { getExecutableName } from "./platformUtils.ts";
 
 /**
  * Parse Julia executable path to extract command and arguments
@@ -156,29 +156,34 @@ export class PlutoServerTaskManager {
 
         // Julia script that runs `jh auth env` and writes output to file
         const jhCommand = getExecutableName("jh");
+        // Pass the auth file path via environment variable to avoid any escaping issues
         const juliaScript = `
-try
-    output = read(\`${jhCommand} auth env\`, String)
-    open("${authOutputUri.fsPath}", "w") do io
-        write(io, output)
-    end
+          s = string; auth_path = ENV[s(:VSCODE_PLUTO_AUTH_FILE)]
+try output = read(\`${jhCommand} auth env\`, String)
+    open(io -> write(io, output), auth_path, s(:w))
 catch e
-    # Command failed or not found - write empty file to signal completion
-    open("${authOutputUri.fsPath}", "w") do io
-        write(io, "")
-    end
-end; try read(\`${jhCommand} auth refresh\`, String) catch; end
-`.trim();
+    open(io -> write(io, s()), auth_path, s(:w))
+end
+try read(\`${jhCommand} auth refresh\`, String)
+catch e;
+end`
+          .replaceAll("\n", ";")
+          .trim();
 
         // Create task to run the Julia script
         const authTaskDefinition: vscode.TaskDefinition = {
           type: "pluto-auth-setup",
         };
 
-        const authExecution = new vscode.ShellExecution(defaultJulia, [
-          "-e",
-          escapeJuliaCode(juliaScript),
-        ]);
+        const authExecution = new vscode.ShellExecution(
+          defaultJulia,
+          ["-e", juliaScript],
+          {
+            env: {
+              VSCODE_PLUTO_AUTH_FILE: authOutputUri.fsPath,
+            },
+          }
+        );
 
         const authTask = new vscode.Task(
           authTaskDefinition,
@@ -262,13 +267,8 @@ end; try read(\`${jhCommand} auth refresh\`, String) catch; end
     const { command, args: baseArgs } = parseJuliaExecutable(executablePath);
 
     // Build Julia command arguments
-    const plutoCode = `using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
-    const juliaArgs = [
-      `+${juliaVersion}`,
-      ...baseArgs,
-      "-e",
-      escapeJuliaCode(plutoCode),
-    ];
+    const plutoCode = `import Pkg;s = string;Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
+    const juliaArgs = [`+${juliaVersion}`, ...baseArgs, "-e", plutoCode];
 
     console.log(
       `[PlutoServerTask] Resolved command: ${command} ${juliaArgs.join(" ")}`
@@ -306,12 +306,20 @@ end; try read(\`${jhCommand} auth refresh\`, String) catch; end
       const juliaupTask = new vscode.Task(
         juliaupTaskDefinition,
         vscode.TaskScope.Workspace,
-        `Install Julia ${juliaVersion}`,
+        `Pluto Server (port ${this.actualPort})`,
         "pluto-notebook",
         juliaupExecution,
         []
       );
       juliaupTask.isBackground = false;
+      juliaupTask.presentationOptions = {
+        reveal: vscode.TaskRevealKind.Always,
+        panel: vscode.TaskPanelKind.Shared,
+        showReuseMessage: false,
+        clear: false,
+        focus: false,
+        echo: true,
+      };
 
       const juliaupTaskExecution = await vscode.tasks.executeTask(juliaupTask);
       await new Promise<void>((resolve, reject) => {
@@ -358,23 +366,39 @@ end; try read(\`${jhCommand} auth refresh\`, String) catch; end
     };
 
     // Create an envrionment for the SERVER where Pluto will run in. Let julia manage paths
-    const setupCode = `import Pkg; Pkg.activate(mkpath(joinpath(Pkg.depots1(), "environments", "vscode-pluto-notebook", string(VERSION)))); Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`;
+    const setupCode = `import Pkg;
+      s = string
+      Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));
+      Pkg.Registry.add();
+      Pkg.add(s(:Pluto));
+      Pkg.instantiate();
+      Pkg.precompile();`
+      .replaceAll("\n", ";")
+      .trim();
     const setupExecution = new vscode.ShellExecution(command, [
       `+${juliaVersion}`,
       ...baseArgs,
       `-e`,
-      escapeJuliaCode(setupCode),
+      setupCode,
     ]);
 
     const task1 = new vscode.Task(
       setupTaskDefinition,
       vscode.TaskScope.Workspace,
-      `Instantiate Pluto`,
+      `Pluto Server (port ${this.actualPort})`,
       "pluto-notebook",
       setupExecution,
       [] // No problem matchers
     );
     task1.isBackground = false;
+    task1.presentationOptions = {
+      reveal: vscode.TaskRevealKind.Always,
+      panel: vscode.TaskPanelKind.Shared,
+      showReuseMessage: false,
+      clear: false,
+      focus: false,
+      echo: true,
+    };
 
     // Execute setup task and wait for it to complete
     const setupExecution1 = await vscode.tasks.executeTask(task1);
@@ -413,10 +437,10 @@ end; try read(\`${jhCommand} auth refresh\`, String) catch; end
       [] // No problem matchers
     );
 
-    // Configure task presentation
+    // Configure task presentation - use Shared panel to reuse the same terminal as setup task
     task.presentationOptions = {
       reveal: vscode.TaskRevealKind.Always,
-      panel: vscode.TaskPanelKind.Dedicated,
+      panel: vscode.TaskPanelKind.Shared,
       showReuseMessage: false,
       clear: false,
       focus: false,
