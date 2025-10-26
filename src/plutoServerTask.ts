@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
+import { getExecutableName, escapeJuliaCode } from "./platformUtils.ts";
 
 /**
  * Parse Julia executable path to extract command and arguments
@@ -133,7 +134,7 @@ export class PlutoServerTaskManager {
 
     // Get Julia settings
     const juliaConfig = vscode.workspace.getConfiguration("julia");
-    const defaultJulia = process.platform === "win32" ? "julia.exe" : "julia";
+    const defaultJulia = getExecutableName("julia");
     const executablePath =
       juliaConfig.get<string>("executablePath") || defaultJulia;
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
@@ -154,7 +155,7 @@ export class PlutoServerTaskManager {
         );
 
         // Julia script that runs `jh auth env` and writes output to file
-        const jhCommand = process.platform === "win32" ? "jh.exe" : "jh";
+        const jhCommand = getExecutableName("jh");
         const juliaScript = `
 try
     output = read(\`${jhCommand} auth env\`, String)
@@ -166,7 +167,7 @@ catch e
     open("${authOutputUri.fsPath}", "w") do io
         write(io, "")
     end
-end; try read(\`${jhCommand} run --setup\`, String) catch; end
+end; try read(\`${jhCommand} auth refresh\`, String) catch; end
 `.trim();
 
         // Create task to run the Julia script
@@ -176,7 +177,7 @@ end; try read(\`${jhCommand} run --setup\`, String) catch; end
 
         const authExecution = new vscode.ShellExecution(defaultJulia, [
           "-e",
-          juliaScript,
+          escapeJuliaCode(juliaScript),
         ]);
 
         const authTask = new vscode.Task(
@@ -261,11 +262,12 @@ end; try read(\`${jhCommand} run --setup\`, String) catch; end
     const { command, args: baseArgs } = parseJuliaExecutable(executablePath);
 
     // Build Julia command arguments
+    const plutoCode = `using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
     const juliaArgs = [
       `+${juliaVersion}`,
       ...baseArgs,
       "-e",
-      `using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
+      escapeJuliaCode(plutoCode),
     ];
 
     console.log(
@@ -286,8 +288,7 @@ end; try read(\`${jhCommand} run --setup\`, String) catch; end
     }
 
     // Ensure configured Julia version is installed via juliaup
-    const juliaupCommand =
-      process.platform === "win32" ? "juliaup.exe" : "juliaup";
+    const juliaupCommand = getExecutableName("juliaup");
     try {
       console.log(
         `[PlutoServerTask] Checking if Julia ${juliaVersion} is available via juliaup`
@@ -357,11 +358,12 @@ end; try read(\`${jhCommand} run --setup\`, String) catch; end
     };
 
     // Create an envrionment for the SERVER where Pluto will run in. Let julia manage paths
+    const setupCode = `import Pkg; Pkg.activate(mkpath(joinpath(Pkg.depots1(), "environments", "vscode-pluto-notebook", string(VERSION)))); Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`;
     const setupExecution = new vscode.ShellExecution(command, [
       `+${juliaVersion}`,
       ...baseArgs,
       `-e`,
-      `import Pkg; Pkg.activate(mkpath(joinpath(Pkg.depots1(), "environments", "vscode-pluto-notebook", string(VERSION)))); Pkg.add("Pluto"); Pkg.instantiate(); Pkg.precompile();`,
+      escapeJuliaCode(setupCode),
     ]);
 
     const task1 = new vscode.Task(
