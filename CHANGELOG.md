@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.2...v0.2.0) (2025-10-26)
+
+
+### Features
+
+* windows installation working (after juliaup) ([03bc90f](https://github.com/JuliaPluto/advanced-vscode-extension/commit/03bc90fe5b0bed9540d5f9c84604e25bcad8b577))
+
 ## [0.1.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.1...v0.1.2) (2025-10-25)
 
 ### Bug Fixes
