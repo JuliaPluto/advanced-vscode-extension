@@ -134,9 +134,9 @@ export class PlutoServerTaskManager {
 
     // Get Julia settings
     const juliaConfig = vscode.workspace.getConfiguration("julia");
-    const defaultJulia = getExecutableName("julia");
-    const executablePath =
-      juliaConfig.get<string>("executablePath") || defaultJulia;
+    const command = getExecutableName("julia");
+    //TODO: play well with juliaConfig.get<string>("executablePath")
+    const executablePath = command;
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
     let packageServer = juliaConfig.get<string>("packageServer") ?? "";
     if (packageServer) {
@@ -175,8 +175,8 @@ end`
           type: "pluto-auth-setup",
         };
 
-        const authExecution = new vscode.ShellExecution(
-          defaultJulia,
+        const authExecution = new vscode.ProcessExecution(
+          command,
           ["-e", juliaScript],
           {
             env: {
@@ -264,11 +264,11 @@ end`
     const juliaVersion = plutoConfig.get<string>("juliaVersion") || "1.11.7";
 
     // Parse Julia executable to handle arguments like --sysimage
-    const { command, args: baseArgs } = parseJuliaExecutable(executablePath);
+    const { args: baseArgs } = parseJuliaExecutable(executablePath);
 
     // Build Julia command arguments
-    const plutoCode = `import Pkg;s = string;Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
-    const juliaArgs = [`+${juliaVersion}`, ...baseArgs, "-e", plutoCode];
+    const runPlutoCode = `import Pkg;s = string;Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
+    const juliaArgs = [`+${juliaVersion}`, ...baseArgs, "-e", runPlutoCode];
 
     console.log(
       `[PlutoServerTask] Resolved command: ${command} ${juliaArgs.join(" ")}`
@@ -298,7 +298,7 @@ end`
         type: "juliaup-add",
       };
 
-      const juliaupExecution = new vscode.ShellExecution(juliaupCommand, [
+      const juliaupExecution = new vscode.ProcessExecution(juliaupCommand, [
         "add",
         juliaVersion,
       ]);
@@ -375,12 +375,11 @@ end`
       Pkg.precompile();`
       .replaceAll("\n", ";")
       .trim();
-    const setupExecution = new vscode.ShellExecution(command, [
-      `+${juliaVersion}`,
-      ...baseArgs,
-      `-e`,
-      setupCode,
-    ]);
+    const setupExecution = new vscode.ProcessExecution(
+      command,
+      [`+${juliaVersion}`, ...baseArgs, "-e", setupCode],
+      { env }
+    );
 
     const task1 = new vscode.Task(
       setupTaskDefinition,
@@ -422,10 +421,14 @@ end`
       port: this.actualPort,
     };
 
-    // Create shell execution for Julia command
-    const shellExecution = new vscode.ShellExecution(command, juliaArgs, {
-      env,
-    });
+    // Create process execution for Julia command (bypasses shell to avoid quoting issues)
+    const processExecution = new vscode.ProcessExecution(
+      command,
+      [`+${juliaVersion}`, ...baseArgs, "-e", runPlutoCode],
+      {
+        env,
+      }
+    );
 
     // Create the task
     const task = new vscode.Task(
@@ -433,7 +436,7 @@ end`
       vscode.TaskScope.Workspace,
       `Pluto Server (port ${this.actualPort})`,
       "pluto-notebook",
-      shellExecution,
+      processExecution,
       [] // No problem matchers
     );
 
