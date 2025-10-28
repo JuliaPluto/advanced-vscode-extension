@@ -1,9 +1,8 @@
 ## [0.2.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.0...v0.2.1) (2025-10-28)
 
-
 ### Bug Fixes
 
-* use ProcessExecution to avoid shell quote issues ([d30bcac](https://github.com/JuliaPluto/advanced-vscode-extension/commit/d30bcac058978754cf51a70b56419496d6d7b706))
+- use ProcessExecution to avoid shell quote issues ([d30bcac](https://github.com/JuliaPluto/advanced-vscode-extension/commit/d30bcac058978754cf51a70b56419496d6d7b706))
 
 # [0.2.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.1.2...v0.2.0) (2025-10-26)
 
