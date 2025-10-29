@@ -138,6 +138,85 @@ export class PlutoServerTaskManager {
     //TODO: play well with juliaConfig.get<string>("executablePath")
     const executablePath = command;
     const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
+
+    // Get Pluto extension settings
+    const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
+    const juliaVersion = plutoConfig.get<string>("juliaVersion") || "1.11.7";
+
+    // Ensure configured Julia version is installed via juliaup
+    const juliaupCommand = getExecutableName("juliaup");
+    try {
+      console.log(
+        `[PlutoServerTask] Checking if Julia ${juliaVersion} is available via juliaup`
+      );
+
+      const juliaupTaskDefinition: vscode.TaskDefinition = {
+        type: "juliaup-add",
+      };
+
+      const juliaupExecution = new vscode.ShellExecution(juliaupCommand, [
+        "add",
+        juliaVersion,
+      ]);
+
+      const juliaupTask = new vscode.Task(
+        juliaupTaskDefinition,
+        vscode.TaskScope.Workspace,
+        `Pluto Server (port ${this.actualPort})`,
+        "pluto-notebook",
+        juliaupExecution,
+        []
+      );
+      juliaupTask.isBackground = false;
+      juliaupTask.presentationOptions = {
+        reveal: vscode.TaskRevealKind.Always,
+        panel: vscode.TaskPanelKind.Shared,
+        showReuseMessage: false,
+        clear: false,
+        focus: false,
+        echo: true,
+      };
+
+      const juliaupTaskExecution = await vscode.tasks.executeTask(juliaupTask);
+      await new Promise<void>((resolve, reject) => {
+        const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
+          if (e.execution === juliaupTaskExecution) {
+            disposable.dispose();
+            if (e.exitCode === 0) {
+              console.log(
+                `[PlutoServerTask] Julia ${juliaVersion} installed/verified successfully`
+              );
+              resolve();
+            } else {
+              reject(
+                new Error(`juliaup add failed with exit code ${e.exitCode}`)
+              );
+            }
+          }
+        });
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[PlutoServerTask] juliaup command failed: ${errorMessage}`
+      );
+
+      const action = await vscode.window.showErrorMessage(
+        `Failed to install Julia ${juliaVersion} via juliaup. Please ensure juliaup is installed.`,
+        "Install juliaup",
+        "Continue anyway"
+      );
+
+      if (action === "Install juliaup") {
+        await vscode.env.openExternal(
+          vscode.Uri.parse("https://github.com/JuliaLang/juliaup#installation")
+        );
+        throw new Error("Please install juliaup and try again");
+      }
+      // If "Continue anyway" is selected, proceed without juliaup check
+    }
+
     let packageServer = juliaConfig.get<string>("packageServer") ?? "";
     if (packageServer) {
       console.log("[PlutoServerTask] Found pkgserver in julia extension");
@@ -180,7 +259,9 @@ end`
           ["-e", juliaScript],
           {
             env: {
+              CODE: juliaScript,
               VSCODE_PLUTO_AUTH_FILE: authOutputUri.fsPath,
+              JULIA_DEPOT_PATH: "~/.julia",
             },
           }
         );
@@ -258,11 +339,6 @@ end`
         );
       }
     }
-
-    // Get Pluto extension settings
-    const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
-    const juliaVersion = plutoConfig.get<string>("juliaVersion") || "1.11.7";
-
     // Parse Julia executable to handle arguments like --sysimage
     const { args: baseArgs } = parseJuliaExecutable(executablePath);
 
@@ -277,8 +353,8 @@ end`
     // Build environment variables
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
-      JULIA_PKG_USE_CLI_GIT: "true",
-      // JULIA_CPU_TARGET: "generic",
+      JULIA_DEPOT_PATH: "~/.julia",
+      JULIA_CPU_TARGET: "generic",
     };
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
@@ -366,13 +442,14 @@ end`
     };
 
     // Create an envrionment for the SERVER where Pluto will run in. Let julia manage paths
-    const setupCode = `import Pkg;
+    const setupCode = `import Pkg
       s = string
-      Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));
-      Pkg.Registry.add();
-      Pkg.add(s(:Pluto));
-      Pkg.instantiate();
-      Pkg.precompile();`
+      Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))))
+      Pkg.Registry.add()
+      Pkg.add(s(:Pluto))
+      Pkg.add(s(:Pkg))
+      Pkg.instantiate()
+      Pkg.precompile()`
       .replaceAll("\n", ";")
       .trim();
     const setupExecution = new vscode.ProcessExecution(
