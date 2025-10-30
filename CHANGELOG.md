@@ -1,9 +1,8 @@
 ## [0.2.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.1...v0.2.2) (2025-10-30)
 
-
 ### Bug Fixes
 
-* adjust execution to fix some macs ([d19befe](https://github.com/JuliaPluto/advanced-vscode-extension/commit/d19befeee28bf21fba58fed42154d50ffb7ceefb))
+- adjust execution to fix some macs ([d19befe](https://github.com/JuliaPluto/advanced-vscode-extension/commit/d19befeee28bf21fba58fed42154d50ffb7ceefb))
 
 ## [0.2.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.0...v0.2.1) (2025-10-28)
 
