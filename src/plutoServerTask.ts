@@ -355,86 +355,13 @@ end`
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: "~/.julia",
       JULIA_CPU_TARGET: "generic",
+      JULIA_LOAD_PATH: ":",
     };
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
     }
     if (environmentPath) {
       env.JULIA_LOAD_PATH = environmentPath;
-    }
-
-    // Ensure configured Julia version is installed via juliaup
-    const juliaupCommand = getExecutableName("juliaup");
-    try {
-      console.log(
-        `[PlutoServerTask] Checking if Julia ${juliaVersion} is available via juliaup`
-      );
-
-      const juliaupTaskDefinition: vscode.TaskDefinition = {
-        type: "juliaup-add",
-      };
-
-      const juliaupExecution = new vscode.ProcessExecution(juliaupCommand, [
-        "add",
-        juliaVersion,
-      ]);
-
-      const juliaupTask = new vscode.Task(
-        juliaupTaskDefinition,
-        vscode.TaskScope.Workspace,
-        `Pluto Server (port ${this.actualPort})`,
-        "pluto-notebook",
-        juliaupExecution,
-        []
-      );
-      juliaupTask.isBackground = false;
-      juliaupTask.presentationOptions = {
-        reveal: vscode.TaskRevealKind.Always,
-        panel: vscode.TaskPanelKind.Shared,
-        showReuseMessage: false,
-        clear: false,
-        focus: false,
-        echo: true,
-      };
-
-      const juliaupTaskExecution = await vscode.tasks.executeTask(juliaupTask);
-      await new Promise<void>((resolve, reject) => {
-        const disposable = vscode.tasks.onDidEndTaskProcess((e) => {
-          if (e.execution === juliaupTaskExecution) {
-            disposable.dispose();
-            if (e.exitCode === 0) {
-              console.log(
-                `[PlutoServerTask] Julia ${juliaVersion} installed/verified successfully`
-              );
-              resolve();
-            } else {
-              reject(
-                new Error(`juliaup add failed with exit code ${e.exitCode}`)
-              );
-            }
-          }
-        });
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(
-        `[PlutoServerTask] juliaup command failed: ${errorMessage}`
-      );
-
-      const action = await vscode.window.showErrorMessage(
-        `Failed to install Julia ${juliaVersion} via juliaup. Please ensure juliaup is installed.`,
-        "Install juliaup",
-        "Continue anyway"
-      );
-
-      if (action === "Install juliaup") {
-        await vscode.env.openExternal(
-          vscode.Uri.parse("https://github.com/JuliaLang/juliaup#installation")
-        );
-        throw new Error("Please install juliaup and try again");
-      }
-      // If "Continue anyway" is selected, proceed without juliaup check
     }
 
     const setupTaskDefinition: vscode.TaskDefinition = {
