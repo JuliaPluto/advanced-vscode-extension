@@ -137,7 +137,6 @@ export class PlutoServerTaskManager {
     const command = getExecutableName("julia");
     //TODO: play well with juliaConfig.get<string>("executablePath")
     const executablePath = command;
-    const environmentPath = juliaConfig.get<string>("environmentPath") ?? "";
 
     // Get Pluto extension settings
     const plutoConfig = vscode.workspace.getConfiguration("pluto-notebook");
@@ -359,9 +358,6 @@ end`
     };
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
-    }
-    if (environmentPath) {
-      env.JULIA_LOAD_PATH = environmentPath;
     }
 
     const setupTaskDefinition: vscode.TaskDefinition = {
