@@ -1,9 +1,8 @@
 ## [0.2.3](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.2...v0.2.3) (2025-11-03)
 
-
 ### Bug Fixes
 
-* never set load_path to '' ([c904383](https://github.com/JuliaPluto/advanced-vscode-extension/commit/c904383f2fa7670baebd184f8432653f91fb9811))
+- never set load_path to '' ([c904383](https://github.com/JuliaPluto/advanced-vscode-extension/commit/c904383f2fa7670baebd184f8432653f91fb9811))
 
 ## [0.2.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.1...v0.2.2) (2025-10-30)
 
