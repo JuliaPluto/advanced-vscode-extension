@@ -50,12 +50,6 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
   const [logs, setLogs] = useState<any>(null);
 
   useEffect(() => {
-    if (error) {
-      setTimeout(resetError);
-    }
-  }, [error]);
-
-  useEffect(() => {
     // Listen for messages from the controller
     const d = context.onDidReceiveMessage?.((message) => {
       if (message.cell_id !== localState.cell_id) {
@@ -84,9 +78,9 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
           // TODO: This is more sophisticated; it has mime type in
           const result = prog[prog.length - 1]?.kwargs?.[0]?.[1]?.[0];
           setProgress(100 * parseFloat(result === "done" ? "1" : result));
+          break;
         }
         case "bond":
-          break;
         default:
           console.log("[RENDERER] Unknown message type:", message.type);
       }
@@ -95,8 +89,6 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
   }, [state.cell_id, context]);
 
   const OUTPUT = useMemo(() => {
-    // This is probably a bug in the immer bundling; the mime edits don't propagate ;/
-    // TODO: @pankgeorg investigate pls
     const { mime, body } = localState.output ?? {};
     const fixedMime =
       (mime === "application/vnd.pluto.stacktrace+object" &&
@@ -108,7 +100,7 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
         : localState.output.mime;
     if (localState.output?.mime)
       return html`<${OutputBody}
-    persist_js_state="${localState.output.persist_js_state}"
+    persist_js_state="${localState.output?.persist_js_state}"
     body="${localState.output?.body}"
     mime="${fixedMime}"
     sanitize_html="${false /* Maybe reconsider */}"
@@ -117,8 +109,8 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
   }, [
     localState,
     localState.cell_id,
-    localState.output.mime,
-    localState.output.body,
+    localState.output?.mime,
+    localState.output?.body,
     localState.running,
     localState.errored,
   ]);
