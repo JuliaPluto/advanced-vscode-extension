@@ -1,12 +1,11 @@
 ## [0.2.4](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.3...v0.2.4) (2025-11-07)
 
-
 ### Bug Fixes
 
-* apply image filter in carets in dark mode ([3cb283c](https://github.com/JuliaPluto/advanced-vscode-extension/commit/3cb283c57fcee6589d00160ad79d3b4923d7b34c))
-* notebook serialization ([ef87360](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ef8736049487e1be19a252ac2b7b0d1fb7c94ad5))
-* remove infinite loop from renderer when view errors ([740744c](https://github.com/JuliaPluto/advanced-vscode-extension/commit/740744cd87c341f892ee875ea6763de1f9f9b736))
-* stability issue with actions ([85dd298](https://github.com/JuliaPluto/advanced-vscode-extension/commit/85dd29845b751499969a5c90e2d5fb5f3563ee7a))
+- apply image filter in carets in dark mode ([3cb283c](https://github.com/JuliaPluto/advanced-vscode-extension/commit/3cb283c57fcee6589d00160ad79d3b4923d7b34c))
+- notebook serialization ([ef87360](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ef8736049487e1be19a252ac2b7b0d1fb7c94ad5))
+- remove infinite loop from renderer when view errors ([740744c](https://github.com/JuliaPluto/advanced-vscode-extension/commit/740744cd87c341f892ee875ea6763de1f9f9b736))
+- stability issue with actions ([85dd298](https://github.com/JuliaPluto/advanced-vscode-extension/commit/85dd29845b751499969a5c90e2d5fb5f3563ee7a))
 
 ## [0.2.3](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.2...v0.2.3) (2025-11-03)
 
