@@ -51,7 +51,8 @@ export const activate: ActivationFunction = (
       // Render directly into the provided element
       // This ensures VS Code can properly clear/replace outputs
       const actions = {
-        get_notebook: () => ({}),
+        // TODO: Make get notebook actually get the notebook
+        get_notebook: () => ({ cell_inputs: {} }),
         request_js_link_response: () => {},
         update_notebook: () => {},
         set_bond: (name: string, value: any) => {
