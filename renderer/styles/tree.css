@@ -1,3 +1,7 @@
+body.vscode-dark {
+  --image-filters: invert(1) hue-rotate(180deg) contrast(0.8);
+}
+
 /* Vendored from Pluto.jl/frontend/treeview.css */
 /* Adapted for VSCode theme variables */
 pluto-tree,
@@ -41,6 +45,7 @@ pluto-tree > pluto-tree-prefix::before {
   background-size: 100%;
   height: 1em;
   width: 1em;
+  filter: var(--image-filters);
   bottom: -2px;
   opacity: 0.5;
   cursor: pointer;
