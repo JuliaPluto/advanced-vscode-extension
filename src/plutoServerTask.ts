@@ -353,7 +353,6 @@ end`
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: "~/.julia",
-      JULIA_CPU_TARGET: "generic",
       JULIA_LOAD_PATH: ":",
     };
     if (packageServer) {
