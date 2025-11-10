@@ -1,3 +1,10 @@
+## [0.2.5](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.4...v0.2.5) (2025-11-10)
+
+
+### Bug Fixes
+
+* **deps:** bump rainbow to fix toml parsing/deparsing ([2b8c7aa](https://github.com/JuliaPluto/advanced-vscode-extension/commit/2b8c7aa4dc1485125feee06f0dff5c8cf629ca61))
+
 ## [0.2.4](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.3...v0.2.4) (2025-11-07)
 
 ### Bug Fixes
