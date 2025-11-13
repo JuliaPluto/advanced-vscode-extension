@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
-import { getExecutableName } from "./platformUtils.ts";
+import { getExecutableName, isWindows } from "./platformUtils.ts";
 
 /**
  * Parse Julia executable path to extract command and arguments
@@ -353,7 +353,7 @@ end`
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: "~/.julia",
-      JULIA_LOAD_PATH: ":",
+      JULIA_LOAD_PATH: isWindows() ? ";" : ":",
     };
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
