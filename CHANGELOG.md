@@ -1,3 +1,10 @@
+## [0.2.6](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.5...v0.2.6) (2025-11-14)
+
+
+### Bug Fixes
+
+* LOAD_PATH on windows ([f0fa9c0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f0fa9c07fe49335566c4f51c1d3be83252176405))
+
 ## [0.2.5](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.4...v0.2.5) (2025-11-10)
 
 ### Bug Fixes
