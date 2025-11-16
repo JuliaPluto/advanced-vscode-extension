@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as os from "os";
+import * as path from "path";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { getExecutableName, isWindows } from "./platformUtils.ts";
@@ -260,7 +262,7 @@ end`
             env: {
               CODE: juliaScript,
               VSCODE_PLUTO_AUTH_FILE: authOutputUri.fsPath,
-              JULIA_DEPOT_PATH: "~/.julia",
+              JULIA_DEPOT_PATH: path.join(os.homedir(), ".julia"),
             },
           }
         );
@@ -352,7 +354,7 @@ end`
     // Build environment variables
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
-      JULIA_DEPOT_PATH: "~/.julia",
+      JULIA_DEPOT_PATH: path.join(os.homedir(), ".julia"),
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
     };
     if (packageServer) {
