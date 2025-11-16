@@ -1,3 +1,10 @@
+## [0.2.7](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.6...v0.2.7) (2025-11-16)
+
+
+### Bug Fixes
+
+* use full homepath ([1dd7b85](https://github.com/JuliaPluto/advanced-vscode-extension/commit/1dd7b85c0376796b2f681acf77174759525f8385))
+
 ## [0.2.6](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.5...v0.2.6) (2025-11-14)
 
 ### Bug Fixes
