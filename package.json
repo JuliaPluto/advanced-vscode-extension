@@ -24,6 +24,9 @@
   "activationEvents": [
     "onNotebook:pluto-notebook"
   ],
+  "extensionDependencies": [
+    "julialang.language-julia"
+  ],
   "main": "./dist/extension.cjs",
   "contributes": {
     "configuration": {
@@ -51,8 +54,8 @@
         },
         "pluto-notebook.juliaVersion": {
           "type": "string",
-          "default": "1.11.7",
-          "description": "Julia version to use with juliaup (e.g., '1.11.7', '1.10.0', 'release'). The extension will automatically install this version via juliaup if not already available."
+          "default": "",
+          "description": "Fallback Julia version for juliaup when the Julia extension is unavailable (e.g. '1.11.7'). Normally the active Julia channel is sourced from the julialang.language-julia extension."
         }
       }
     },
