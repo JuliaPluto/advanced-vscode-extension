@@ -143,12 +143,10 @@ export class PlutoServerTaskManager {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: path.join(os.homedir(), ".julia"),
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
+      JULIAHUB_TOKEN: juliaHubToken,
     };
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
-    }
-    if (juliaHubToken) {
-      env.JULIAHUB_TOKEN = juliaHubToken;
     }
 
     // --- Step 5: Start the Pluto server task (setup + run in one process) ---
