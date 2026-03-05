@@ -36,7 +36,7 @@ interface JuliaExtAPI {
 }
 
 // ---------------------------------------------------------------------------
-// JuliaHub auth extension API types (optional dependency)
+// JuliaHub auth extension API types
 // ---------------------------------------------------------------------------
 
 interface JuliaHubAuthAPI {
@@ -134,29 +134,27 @@ export async function runPackageCommand(
 }
 
 // ---------------------------------------------------------------------------
-// JuliaHub auth extension helpers (optional)
+// JuliaHub auth extension helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Attempts to retrieve a JuliaHub authentication token via the
+ * Retrieves a JuliaHub authentication token via the
  * `JuliaComputing.juliahub-vscode-auth` extension.
  *
- * Returns `undefined` if the auth extension is not installed, so callers
- * must not block Pluto startup on this value.
+ * Throws if the extension is not installed or authentication fails.
+ * The extension is listed in `extensionDependencies` so it is guaranteed
+ * to be present at activation time.
  */
-export async function getJuliaHubToken(
-  hostname?: string
-): Promise<string | undefined> {
+export async function getJuliaHubToken(hostname?: string): Promise<string> {
   const ext = vscode.extensions.getExtension<JuliaHubAuthAPI>(
     "JuliaComputing.juliahub-vscode-auth"
   );
-  if (!ext) return undefined;
-  try {
-    if (!ext.isActive) await ext.activate();
-    const server = hostname ? `https://${hostname}` : undefined;
-    return await ext.exports.authenticate(server);
-  } catch (err) {
-    console.warn("[julia-utils] JuliaHub auth failed:", err);
-    return undefined;
+  if (!ext) {
+    throw new Error(
+      "JuliaHub auth extension (JuliaComputing.juliahub-vscode-auth) not found"
+    );
   }
+  if (!ext.isActive) await ext.activate();
+  const server = hostname ? `https://${hostname}` : undefined;
+  return await ext.exports.authenticate(server);
 }

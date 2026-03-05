@@ -25,7 +25,8 @@
     "onNotebook:pluto-notebook"
   ],
   "extensionDependencies": [
-    "julialang.language-julia"
+    "julialang.language-julia",
+    "JuliaComputing.juliahub-vscode-auth"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
