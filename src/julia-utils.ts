@@ -58,7 +58,10 @@ function getJuliaAPI(): vscode.Extension<JuliaExtAPI> | undefined {
 
 export async function activateJulia(): Promise<vscode.Extension<JuliaExtAPI>> {
   const api = getJuliaAPI();
-  if (!api) throw new Error("Julia language extension (julialang.language-julia) not found");
+  if (!api)
+    throw new Error(
+      "Julia language extension (julialang.language-julia) not found"
+    );
   if (!api.isActive) await api.activate();
   return api;
 }
@@ -90,9 +93,8 @@ export async function getJuliaExecutable(): Promise<{
 
 function getFallbackJuliaCommand(): string {
   return (
-    vscode.workspace
-      .getConfiguration("julia")
-      .get<string>("executablePath") ?? getExecutableName("julia")
+    vscode.workspace.getConfiguration("julia").get<string>("executablePath") ??
+    getExecutableName("julia")
   );
 }
 
@@ -107,9 +109,8 @@ export async function getPackageServer(): Promise<string | undefined> {
     return server || undefined;
   } catch {
     return (
-      vscode.workspace
-        .getConfiguration("julia")
-        .get<string>("packageServer") || undefined
+      vscode.workspace.getConfiguration("julia").get<string>("packageServer") ||
+      undefined
     );
   }
 }
