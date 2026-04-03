@@ -174,11 +174,9 @@ export class PlutoServerTaskManager {
       port: this.actualPort,
     };
 
-    const processExecution = new vscode.ProcessExecution(
-      command,
-      juliaArgs,
-      { env }
-    );
+    const processExecution = new vscode.ProcessExecution(command, juliaArgs, {
+      env,
+    });
 
     const task = new vscode.Task(
       taskDefinition,
