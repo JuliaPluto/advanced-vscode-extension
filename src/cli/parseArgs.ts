@@ -11,6 +11,8 @@ export interface RawArgs {
   global?: boolean;
   dryRun?: boolean;
   force?: boolean;
+  // run-specific
+  noPluto?: boolean;
   // call-specific
   toolName?: string;
   toolArgs?: string;
@@ -35,6 +37,7 @@ Run options:
   --pluto-port <port>      Pluto server port (default: ${DEFAULTS.plutoPort})
   --pluto-url <url>        Connect to existing Pluto server (skip starting one)
   --julia-version <ver>    Julia version via juliaup (default: ${DEFAULTS.juliaVersion})
+  --no-pluto               Start MCP server only, without starting Pluto
 
 Install options:
   --target <target>        Config target: claude-code, copilot, all (default: claude-code)
@@ -143,6 +146,8 @@ export function parseArgs(argv: string[]): RawArgs {
       args.force = true;
     } else if (flag === "--raw") {
       args.raw = true;
+    } else if (flag === "--no-pluto") {
+      args.noPluto = true;
     } else {
       console.warn(`Unknown flag: ${flag}`);
     }

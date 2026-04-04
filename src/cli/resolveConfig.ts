@@ -54,6 +54,7 @@ export function resolveRunConfig(args: RawArgs): CliConfig {
       file.juliaVersion ??
       DEFAULTS.juliaVersion,
     workDir,
+    noPluto: args.noPluto ?? false,
   };
 }
 

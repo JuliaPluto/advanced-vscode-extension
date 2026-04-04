@@ -2,6 +2,16 @@
 
 This guide explains how to work with Pluto.jl notebooks, including cell structure, reactivity rules, PlutoUI components, and best practices.
 
+## Important: Server Startup Times
+
+Starting a Pluto server involves installing Julia packages and precompiling them. **The first run can take several minutes** (2-10 minutes depending on the system). If `start_pluto_server` or `open_notebook` appears to hang or times out:
+
+1. **Do not retry immediately** — the server is likely still starting up.
+2. **Wait 30-60 seconds**, then call `get_notebook_status` to check progress.
+3. **Subsequent runs are much faster** since packages are cached.
+
+If a tool call times out, that does NOT mean it failed — the server may still be starting in the background. Check `get_notebook_status` before retrying.
+
 ## Table of Contents
 
 - [Notebook Structure](#notebook-structure)

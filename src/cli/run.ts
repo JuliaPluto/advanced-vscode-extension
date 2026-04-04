@@ -9,51 +9,58 @@ import type { CliConfig } from "./config.ts";
 export async function run(config: CliConfig): Promise<void> {
   console.log("@plutojl/mcp — Standalone MCP server for Pluto.jl\n");
 
-  let serverManager: NodeServerManager | undefined;
-  let plutoManager: PlutoManager;
+  const serverManager = new NodeServerManager(
+    config.plutoPort,
+    config.juliaVersion,
+    config.workDir
+  );
 
-  if (config.plutoUrl) {
-    // Connect to existing Pluto server
-    console.log(
-      `[cli] Connecting to existing Pluto server at ${config.plutoUrl}`
-    );
-    // Create a dummy server manager that does nothing (Pluto is externally managed)
-    serverManager = new NodeServerManager(
-      config.plutoPort,
-      config.juliaVersion,
-      config.workDir
-    );
-    plutoManager = new PlutoManager(
-      config.plutoPort,
-      consoleLogger,
-      serverManager,
-      new NodeFileReader(),
-      config.plutoUrl
-    );
-  } else {
-    // Start our own Pluto server
-    serverManager = new NodeServerManager(
-      config.plutoPort,
-      config.juliaVersion,
-      config.workDir
-    );
-    plutoManager = new PlutoManager(
-      config.plutoPort,
-      consoleLogger,
-      serverManager,
-      new NodeFileReader()
-    );
-  }
+  const plutoManager = new PlutoManager(
+    config.plutoPort,
+    consoleLogger,
+    serverManager,
+    new NodeFileReader(),
+    config.plutoUrl
+  );
 
-  // Start the MCP HTTP server (handleSignals = true for CLI)
+  // Start the MCP HTTP server first (so health endpoint is available during Pluto startup)
   const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort, true);
   await mcpServer.start();
 
   console.log(
-    `\n[cli] MCP server listening at http://localhost:${config.mcpPort}/mcp`
+    `[cli] MCP server listening at http://localhost:${config.mcpPort}/mcp`
   );
   console.log(`[cli] Health check: http://localhost:${config.mcpPort}/health`);
-  console.log(`[cli] Press Ctrl+C to stop\n`);
+
+  // Auto-start Pluto unless --no-pluto was passed
+  if (!config.noPluto) {
+    if (config.plutoUrl) {
+      console.log(
+        `[cli] Connecting to existing Pluto server at ${config.plutoUrl}...`
+      );
+    } else {
+      console.log(`[cli] Starting Pluto server on port ${config.plutoPort}...`);
+    }
+    try {
+      await plutoManager.start();
+      console.log(`[cli] Pluto server is ready.`);
+    } catch (err) {
+      console.error(
+        `[cli] Failed to start Pluto: ${err instanceof Error ? err.message : String(err)}`
+      );
+      console.error(
+        `[cli] MCP server is still running — you can start Pluto later via:`
+      );
+      console.error(`[cli]   npx @plutojl/mcp call start_pluto_server`);
+    }
+  } else {
+    console.log(`[cli] Pluto auto-start skipped (--no-pluto).`);
+    console.log(
+      `[cli] Start it later: npx @plutojl/mcp call start_pluto_server`
+    );
+  }
+
+  console.log(`\n[cli] Press Ctrl+C to stop\n`);
   console.log(`Tip: Run 'npx @plutojl/mcp install' to configure Claude Code\n`);
 
   // Graceful shutdown

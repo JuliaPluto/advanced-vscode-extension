@@ -4,6 +4,7 @@ export interface CliConfig {
   plutoUrl: string | undefined;
   juliaVersion: string;
   workDir: string;
+  noPluto: boolean;
 }
 
 export interface InstallArgs {
