@@ -1,6 +1,6 @@
 {
   "name": "@plutojl/cli",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Standalone MCP server for Pluto.jl notebooks — run with npx @plutojl/cli",
   "license": "MIT",
   "repository": {

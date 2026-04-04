@@ -636,7 +636,8 @@ Aim for this top-to-bottom layout:
 2. **Table of Contents** — a markdown cell with `TableOfContents()` from PlutoUI
 3. **Key results and summary** — the main outputs, plots, or conclusions the reader cares about
 4. **Analysis sections** — the substantive work, organized under markdown headers
-5. **Boilerplate at the bottom** — package imports, helper functions, constants, and configuration cells
+5. **Boilerplate at the bottom** — helper functions, constants, and configuration cells
+6. **`Pkg` cells at the very end** — any manual `Pkg.activate` / `Pkg.add` cells should be the last cells in the notebook
 
 Use `move_cells` to reorder cells into this layout.
 
@@ -654,9 +655,11 @@ This renders a sticky sidebar that links to all `#`, `##`, `###` headings in you
 
 Use `fold_cell` to hide source code while keeping the rendered output visible:
 
-- **Always fold**: markdown-only cells (the reader sees the rendered text, not the `md"""` wrapper), plot-only cells, `TableOfContents()` cells
+Folding hides the **source code**, not the output — the rendered result is always visible.
+
+- **Always fold**: markdown cells (`md"""`, `@mdx`), `@bind` widget cells, plot-only cells, `TableOfContents()` cells
 - **Usually fold**: helper function definitions, data loading, configuration
-- **Don't fold**: cells the reader needs to see the code for (interactive widgets with `@bind`, key computations)
+- **Don't fold**: cells where the source code itself is meant to be read (tutorials, examples, key algorithms)
 
 ### Section Headers
 
@@ -696,6 +699,41 @@ md"""
 """
 ```
 
+### HTML in Markdown
+
+If you need raw HTML in markdown cells (custom styling, embedded iframes, etc.), use `MarkdownLiteral`:
+
+```julia
+using MarkdownLiteral: @mdx
+```
+
+Then use `@mdx` instead of `md`:
+
+```julia
+@mdx """
+<div style="background: #f0f0f0; padding: 1em; border-radius: 8px;">
+  <h3>Custom styled block</h3>
+  <p>This supports full HTML.</p>
+</div>
+"""
+```
+
+**Note:** You cannot combine `:` imports with comma-separated `using` — each must be its own cell:
+
+```julia
+# ✅ CORRECT — separate cells
+using PlutoUI
+```
+
+```julia
+using MarkdownLiteral: @mdx
+```
+
+```julia
+# ❌ WRONG — syntax error
+using PlutoUI, MarkdownLiteral: @mdx
+```
+
 ### Checklist
 
 After finishing the notebook content, run through these steps:
@@ -704,9 +742,11 @@ After finishing the notebook content, run through these steps:
 2. Add `TableOfContents()` right after the title
 3. Move results/summary cells near the top, below the TOC
 4. Move boilerplate (imports, helpers, constants) to the bottom
-5. Fold all markdown cells, plot cells, TOC, and boilerplate
-6. Ensure each section has a markdown header
-7. `save_notebook` to persist the final layout
+5. Move any `Pkg` cells to the very end
+6. Fold all markdown cells, plot cells, TOC, and boilerplate
+7. Ensure each section has a markdown header
+8. **Run `list_cells` and check for errors** — verify no cells are in an errored state. If something crashed, fix it before saving. A beautified notebook that doesn't run is worse than an ugly one that does.
+9. `save_notebook` to persist the final layout
 
 ---
 
