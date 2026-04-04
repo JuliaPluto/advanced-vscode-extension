@@ -2,6 +2,7 @@ import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host, serialize } from "@plutojl/rainbow";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
+import { unlink } from "fs/promises";
 
 /**
  * Events emitted by PlutoManager
@@ -289,7 +290,9 @@ export class PlutoManager {
 
         // Tell Pluto which file this notebook lives at so it can track saves.
         // Only works when the server shares the same filesystem (localhost).
+        // We must delete the file first — moveTo throws if the path already exists.
         if (this.isLocalServer()) {
+          await unlink(notebookPath);
           await worker.moveTo(notebookPath);
         }
 
