@@ -21,10 +21,10 @@ export interface RawArgs {
 
 function printHelp(): void {
   console.log(`
-@plutojl/mcp v${VERSION} — Standalone MCP server for Pluto.jl notebooks
+@plutojl/cli v${VERSION} — Standalone MCP server for Pluto.jl notebooks
 
 Usage:
-  npx @plutojl/mcp <command> [options]
+  npx @plutojl/cli <command> [options]
 
 Commands:
   run       Start the MCP server (and Pluto server if needed)
@@ -47,7 +47,7 @@ Install options:
   --force                  Overwrite existing config without prompting
 
 Call options:
-  npx @plutojl/mcp call <tool_name> [json_args]
+  npx @plutojl/cli call <tool_name> [json_args]
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
   --raw                    Output raw JSON response
 
@@ -55,14 +55,14 @@ Tools options:
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
 
 Examples:
-  npx @plutojl/mcp run
-  npx @plutojl/mcp run --pluto-url http://localhost:1234
-  npx @plutojl/mcp install
-  npx @plutojl/mcp install --target all --global
-  npx @plutojl/mcp tools
-  npx @plutojl/mcp call get_notebook_status
-  npx @plutojl/mcp call start_pluto_server '{"port": 1234}'
-  npx @plutojl/mcp call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
+  npx @plutojl/cli run
+  npx @plutojl/cli run --pluto-url http://localhost:1234
+  npx @plutojl/cli install
+  npx @plutojl/cli install --target all --global
+  npx @plutojl/cli tools
+  npx @plutojl/cli call get_notebook_status
+  npx @plutojl/cli call start_pluto_server '{"port": 1234}'
+  npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 `);
 }
 

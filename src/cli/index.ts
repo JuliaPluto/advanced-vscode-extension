@@ -28,7 +28,7 @@ async function main() {
     }
     case "call": {
       if (!args.toolName) {
-        console.error("Usage: npx @plutojl/mcp call <tool_name> [json_args]");
+        console.error("Usage: npx @plutojl/cli call <tool_name> [json_args]");
         process.exit(1);
       }
       await preflight(mcpPort);

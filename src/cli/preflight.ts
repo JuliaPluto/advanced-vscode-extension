@@ -32,7 +32,7 @@ export async function preflight(
     console.error(``);
     console.error(`The MCP server is not running. Start it first:`);
     console.error(``);
-    console.error(`  npx @plutojl/mcp run`);
+    console.error(`  npx @plutojl/cli run`);
     console.error(``);
     console.error(
       `Or, if you are using a different port, pass --mcp-port <port>.`
@@ -46,12 +46,12 @@ export async function preflight(
     console.error(``);
     console.error(`Start Pluto via the MCP server:`);
     console.error(``);
-    console.error(`  npx @plutojl/mcp call start_pluto_server`);
+    console.error(`  npx @plutojl/cli call start_pluto_server`);
     console.error(``);
     console.error(`Or connect to an existing Pluto server:`);
     console.error(``);
     console.error(
-      `  npx @plutojl/mcp call connect_to_pluto_server '{"port": 1234}'`
+      `  npx @plutojl/cli call connect_to_pluto_server '{"port": 1234}'`
     );
     process.exit(1);
   }

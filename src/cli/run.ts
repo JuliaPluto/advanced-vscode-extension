@@ -8,7 +8,7 @@ import { type CliConfig, VERSION } from "./config.ts";
 
 export async function run(config: CliConfig): Promise<void> {
   console.log(
-    `@plutojl/mcp v${VERSION} — Standalone MCP server for Pluto.jl\n`
+    `@plutojl/cli v${VERSION} — Standalone MCP server for Pluto.jl\n`
   );
 
   const serverManager = new NodeServerManager(
@@ -53,17 +53,17 @@ export async function run(config: CliConfig): Promise<void> {
       console.error(
         `[cli] MCP server is still running — you can start Pluto later via:`
       );
-      console.error(`[cli]   npx @plutojl/mcp call start_pluto_server`);
+      console.error(`[cli]   npx @plutojl/cli call start_pluto_server`);
     }
   } else {
     console.log(`[cli] Pluto auto-start skipped (--no-pluto).`);
     console.log(
-      `[cli] Start it later: npx @plutojl/mcp call start_pluto_server`
+      `[cli] Start it later: npx @plutojl/cli call start_pluto_server`
     );
   }
 
   console.log(`\n[cli] Press Ctrl+C to stop\n`);
-  console.log(`Tip: Run 'npx @plutojl/mcp install' to configure Claude Code\n`);
+  console.log(`Tip: Run 'npx @plutojl/cli install' to configure Claude Code\n`);
 
   // Graceful shutdown
   const shutdown = async () => {

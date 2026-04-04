@@ -1,4 +1,4 @@
-# @plutojl/mcp
+# @plutojl/cli
 
 Standalone MCP (Model Context Protocol) server for [Pluto.jl](https://plutojl.org/) notebooks. Enables AI assistants like Claude and GitHub Copilot to interact with Julia Pluto notebooks.
 
@@ -6,10 +6,10 @@ Standalone MCP (Model Context Protocol) server for [Pluto.jl](https://plutojl.or
 
 ```bash
 # Start the MCP server (also starts a Pluto server)
-npx @plutojl/mcp run
+npx @plutojl/cli run
 
 # Install MCP config for Claude Code
-npx @plutojl/mcp install
+npx @plutojl/cli install
 ```
 
 ## Prerequisites
@@ -25,7 +25,7 @@ npx @plutojl/mcp install
 Start the MCP server (and a Pluto server if needed).
 
 ```bash
-npx @plutojl/mcp run [options]
+npx @plutojl/cli run [options]
 ```
 
 | Option                  | Default  | Description                                          |
@@ -40,7 +40,7 @@ npx @plutojl/mcp run [options]
 Add MCP configuration files for AI assistants.
 
 ```bash
-npx @plutojl/mcp install [options]
+npx @plutojl/cli install [options]
 ```
 
 | Option              | Default       | Description                                       |
