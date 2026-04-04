@@ -1,5 +1,5 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
-import { Host } from "@plutojl/rainbow";
+import { Host, serialize } from "@plutojl/rainbow";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 
@@ -403,6 +403,17 @@ export class PlutoManager {
     await worker.deleteSnippets([result.cell_id]);
 
     return result;
+  }
+
+  /**
+   * Get the serialized notebook content (.jl format) for saving to disk
+   */
+  public getNotebookContent(worker: Worker): string {
+    const state = worker.getState();
+    if (!state) {
+      throw new Error("Notebook state not available");
+    }
+    return serialize(state);
   }
 
   /**

@@ -12,6 +12,37 @@ Starting a Pluto server involves installing Julia packages and precompiling them
 
 If a tool call times out, that does NOT mean it failed — the server may still be starting in the background. Check `get_notebook_status` before retrying.
 
+## Working with Notebooks via MCP
+
+These rules are critical when interacting with Pluto notebooks through the MCP API:
+
+### File Ownership
+
+- **Never edit the `.pluto.jl` file on disk while the notebook is open** — Pluto owns that file. Changes made outside the MCP API will be ignored or overwritten.
+- All cell mutations (create, edit, delete) must go through the MCP tools.
+- To persist changes to disk, call `save_notebook` explicitly. **Notebooks are NOT auto-saved.**
+
+### Handling Timeouts
+
+- If `create_cell` times out, the cell was likely still created in Pluto. Use `list_cells` to check before retrying — creating the same cell twice causes "Multiple definitions" errors.
+- For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it. This avoids timeout-induced phantom cells.
+- Use `delete_cell` to remove any accidental duplicate cells.
+
+### Pluto Reactivity Rules
+
+- **Each variable can only be defined in one cell.** If you get a "Multiple definitions" error, use `list_cells` to find the duplicate, then `delete_cell` to remove it.
+- When you edit a cell, Pluto automatically re-runs all cells that depend on the changed variables.
+- Prefer creating package cells with `import Pkg; Pkg.activate(; temp=true); Pkg.add([...])` in one cell, and `using PackageName` in a separate cell.
+
+### Recommended Workflow
+
+1. `open_notebook` (file must exist on disk first)
+2. `list_cells` to see current state
+3. `create_cell` / `edit_cell` / `delete_cell` to make changes
+4. `read_cell` to inspect outputs
+5. `save_notebook` to persist to disk when done
+6. `get_notebook_url` to give the user a browser link
+
 ## Table of Contents
 
 - [Notebook Structure](#notebook-structure)

@@ -1,6 +1,7 @@
 import express from "express";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
+import { writeFile } from "fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { PlutoManager } from "./plutoManager.ts";
@@ -178,7 +179,7 @@ export class PlutoMCPHttpServer {
     // Open Notebook
     server.tool(
       "open_notebook",
-      "Open a Pluto notebook file and create a worker session",
+      "Open a Pluto notebook file and create a worker session. The .jl file must already exist on disk — Pluto will not create a new file from a nonexistent path. Create the file first if needed.",
       {
         path: z.string().describe("Path to the .jl notebook file"),
       },
@@ -260,7 +261,7 @@ export class PlutoMCPHttpServer {
     // Create Cell
     server.tool(
       "create_cell",
-      "Create and execute a new cell in a notebook",
+      "Create and execute a new cell in a notebook. WARNING: This always executes the code. If the code is slow (e.g. package installs), the call may time out but the cell IS still created in Pluto. Use list_cells to check before retrying. For slow operations, prefer edit_cell with run=false then execute_cell separately.",
       {
         path: z.string().describe("Path to the notebook"),
         code: z.string().describe("Julia code for the new cell"),
@@ -303,7 +304,7 @@ export class PlutoMCPHttpServer {
     // Edit Cell
     server.tool(
       "edit_cell",
-      "Update the code of an existing cell",
+      "Update the code of an existing cell. Note: editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through the MCP API. Use save_notebook to persist changes to disk.",
       {
         path: z.string().describe("Path to the notebook"),
         cell_id: z.string().describe("UUID of the cell to edit"),
@@ -676,6 +677,148 @@ export class PlutoMCPHttpServer {
             ],
           };
         }
+      }
+    );
+
+    // Save Notebook
+    server.tool(
+      "save_notebook",
+      "Save the running notebook to disk as a .pluto.jl file. Notebooks are NOT auto-saved — you must call this explicitly to persist changes made via create_cell, edit_cell, or delete_cell.",
+      {
+        path: z.string().describe("Path of the open notebook"),
+        output_path: z
+          .string()
+          .describe(
+            "Optional alternative file path to save to (defaults to the notebook's original path)"
+          )
+          .optional(),
+      },
+      async ({ path, output_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const content = this.plutoManager.getNotebookContent(worker);
+        const savePath = output_path ?? path;
+        await writeFile(savePath, content, "utf-8");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook saved to ${savePath} (${content.length} bytes)`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Delete Cell
+    server.tool(
+      "delete_cell",
+      "Permanently remove a cell from the notebook by its ID. Use list_cells to find cell IDs.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_id: z.string().describe("UUID of the cell to delete"),
+      },
+      async ({ path, cell_id }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.deleteCell(worker, cell_id);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cell ${cell_id} deleted`,
+            },
+          ],
+        };
+      }
+    );
+
+    // List Cells
+    server.tool(
+      "list_cells",
+      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, or delete_cell.",
+      {
+        path: z.string().describe("Path to the notebook"),
+      },
+      async ({ path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const snippets = worker.getSnippets();
+
+        const cells = snippets.map((snippet, index) => ({
+          cell_id: snippet.cell_id,
+          index,
+          code_preview: snippet.input.code.split("\n")[0].slice(0, 80),
+          errored: snippet.result.errored,
+          running: snippet.result.running,
+          queued: snippet.result.queued,
+        }));
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ count: cells.length, cells }, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
+    // Get Notebook URL
+    server.tool(
+      "get_notebook_url",
+      "Get the browser URL to open the notebook in Pluto's web interface",
+      {
+        path: z.string().describe("Path to the notebook"),
+      },
+      async ({ path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const url = `${this.plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: url,
+            },
+          ],
+        };
       }
     );
   }
