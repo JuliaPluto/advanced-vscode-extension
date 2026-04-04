@@ -1,4 +1,4 @@
-import { DEFAULTS } from "./config.ts";
+import { DEFAULTS, VERSION } from "./config.ts";
 
 export interface RawArgs {
   command: "run" | "install" | "call" | "tools" | "help";
@@ -21,7 +21,7 @@ export interface RawArgs {
 
 function printHelp(): void {
   console.log(`
-@plutojl/mcp — Standalone MCP server for Pluto.jl notebooks
+@plutojl/mcp v${VERSION} — Standalone MCP server for Pluto.jl notebooks
 
 Usage:
   npx @plutojl/mcp <command> [options]

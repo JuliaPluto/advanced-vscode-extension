@@ -15,6 +15,11 @@ export interface InstallArgs {
   force: boolean;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pkg = require("../../packages/advanced-pluto-mcp/package.json");
+
+export const VERSION: string = pkg.version;
+
 export const DEFAULTS = {
   mcpPort: 3100,
   plutoPort: 1234,

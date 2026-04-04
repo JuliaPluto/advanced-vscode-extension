@@ -4,10 +4,12 @@ import { PlutoMCPHttpServer } from "../mcp-server-http.ts";
 import { NodeServerManager } from "./nodeServerManager.ts";
 import { NodeFileReader } from "./nodeFileReader.ts";
 import { consoleLogger } from "./logger.ts";
-import type { CliConfig } from "./config.ts";
+import { type CliConfig, VERSION } from "./config.ts";
 
 export async function run(config: CliConfig): Promise<void> {
-  console.log("@plutojl/mcp — Standalone MCP server for Pluto.jl\n");
+  console.log(
+    `@plutojl/mcp v${VERSION} — Standalone MCP server for Pluto.jl\n`
+  );
 
   const serverManager = new NodeServerManager(
     config.plutoPort,
