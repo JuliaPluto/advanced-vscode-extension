@@ -1,7 +1,7 @@
 import { DEFAULTS } from "./config.ts";
 
 export interface RawArgs {
-  command: "run" | "install" | "help";
+  command: "run" | "install" | "call" | "tools" | "help";
   mcpPort?: number;
   plutoPort?: number;
   plutoUrl?: string;
@@ -11,6 +11,10 @@ export interface RawArgs {
   global?: boolean;
   dryRun?: boolean;
   force?: boolean;
+  // call-specific
+  toolName?: string;
+  toolArgs?: string;
+  raw?: boolean;
 }
 
 function printHelp(): void {
@@ -22,7 +26,9 @@ Usage:
 
 Commands:
   run       Start the MCP server (and Pluto server if needed)
-  install   Add MCP config to .claude/ or .vscode/ directory
+  install   Add MCP config to .mcp.json or mcp.json
+  tools     List available MCP tools on a running server
+  call      Call an MCP tool on a running server
 
 Run options:
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
@@ -37,13 +43,27 @@ Install options:
   --dry-run                Print config without writing
   --force                  Overwrite existing config without prompting
 
+Call options:
+  npx @plutojl/mcp call <tool_name> [json_args]
+  --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
+  --raw                    Output raw JSON response
+
+Tools options:
+  --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
+
 Examples:
   npx @plutojl/mcp run
   npx @plutojl/mcp run --pluto-url http://localhost:1234
   npx @plutojl/mcp install
   npx @plutojl/mcp install --target all --global
+  npx @plutojl/mcp tools
+  npx @plutojl/mcp call get_notebook_status
+  npx @plutojl/mcp call start_pluto_server '{"port": 1234}'
+  npx @plutojl/mcp call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 `);
 }
+
+const COMMANDS = new Set(["run", "install", "call", "tools", "help"]);
 
 export function parseArgs(argv: string[]): RawArgs {
   const args: RawArgs = { command: "help" };
@@ -61,14 +81,27 @@ export function parseArgs(argv: string[]): RawArgs {
 
   if (i < argv.length) {
     const cmd = argv[i];
-    if (cmd === "run" || cmd === "install" || cmd === "help") {
-      args.command = cmd;
+    if (COMMANDS.has(cmd)) {
+      args.command = cmd as RawArgs["command"];
     } else {
       console.error(`Unknown command: ${cmd}`);
       printHelp();
       process.exit(1);
     }
     i++;
+  }
+
+  // For `call`, grab positional args: tool_name and optional json_args
+  if (args.command === "call") {
+    // Collect positional args (non-flag tokens) before any flags
+    while (i < argv.length && !argv[i].startsWith("-")) {
+      if (!args.toolName) {
+        args.toolName = argv[i];
+      } else if (!args.toolArgs) {
+        args.toolArgs = argv[i];
+      }
+      i++;
+    }
   }
 
   // Parse flags
@@ -108,6 +141,8 @@ export function parseArgs(argv: string[]): RawArgs {
       args.dryRun = true;
     } else if (flag === "--force") {
       args.force = true;
+    } else if (flag === "--raw") {
+      args.raw = true;
     } else {
       console.warn(`Unknown flag: ${flag}`);
     }
