@@ -200,11 +200,56 @@ export class PlutoMCPHttpServer {
           throw new Error("Failed to create worker for notebook");
         }
 
+        const isLocal = this.plutoManager.isLocalServer();
+        const syncNote = isLocal
+          ? "Pluto is tracking this file path and will save changes to it."
+          : "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file.";
+
         return {
           content: [
             {
               type: "text",
-              text: `Notebook opened: ${path}\nNotebook ID: ${worker.notebook_id}`,
+              text: `Notebook opened: ${path}\nNotebook ID: ${worker.notebook_id}\n${syncNote}`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Move Notebook
+    server.tool(
+      "move_notebook",
+      "Move a notebook to a new file path. Pluto will save to the new path, delete the old file, and move any associated .assets directory. Only works when the server is on localhost.",
+      {
+        path: z.string().describe("Current path of the open notebook"),
+        new_path: z
+          .string()
+          .describe("Absolute path for the new notebook location"),
+      },
+      async ({ path, new_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        if (!this.plutoManager.isLocalServer()) {
+          throw new Error(
+            "move_notebook only works when the Pluto server is on localhost (shared filesystem). Use save_notebook to write a copy instead."
+          );
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.moveNotebook(worker, new_path);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook moved from ${path} to ${new_path}. Pluto is now tracking the new path.`,
             },
           ],
         };

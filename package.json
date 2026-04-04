@@ -282,7 +282,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.19.1",
-    "@plutojl/rainbow": "^0.6.19",
+    "@plutojl/rainbow": "^0.6.21",
     "uuid": "^13.0.0",
     "ws": "^8.18.3",
     "zod": "^3.25.76"

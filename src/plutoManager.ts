@@ -285,6 +285,14 @@ export class PlutoManager {
         }
 
         worker = await this.host.createWorker(notebookContent.trim());
+        await worker.connect();
+
+        // Tell Pluto which file this notebook lives at so it can track saves.
+        // Only works when the server shares the same filesystem (localhost).
+        if (this.isLocalServer()) {
+          await worker.moveTo(notebookPath);
+        }
+
         this.workers.set(notebookPath, worker);
 
         // Emit notebook opened event
@@ -395,6 +403,32 @@ export class PlutoManager {
       { notebook_id: worker.notebook_id },
       false
     );
+  }
+
+  /**
+   * Move a notebook to a new file path via Pluto (updates Pluto's tracked path,
+   * moves the file and .assets directory on the server side).
+   */
+  public async moveNotebook(worker: Worker, newPath: string): Promise<void> {
+    await worker.moveTo(newPath);
+  }
+
+  /**
+   * Whether the Pluto server is running on localhost (file paths are shared).
+   */
+  public isLocalServer(): boolean {
+    try {
+      const url = new URL(this.serverUrl);
+      const host = url.hostname;
+      return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host === "0.0.0.0"
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
