@@ -21,10 +21,12 @@ export class PlutoMCPHttpServer {
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
   private readonly port: number;
+  private readonly handleSignals: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100) {
+  constructor(plutoManager: PlutoManager, port = 3100, handleSignals = false) {
     this.plutoManager = plutoManager;
     this.port = port;
+    this.handleSignals = handleSignals;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -144,7 +146,13 @@ export class PlutoMCPHttpServer {
       "Stop the running Pluto server",
       {},
       async () => {
-        if (!this.plutoManager.isRunning()) {
+        // Use isConnected() instead of isRunning() — we may be connected
+        // to an externally-managed server (no owned process), and stop
+        // should still disconnect and clean up.
+        if (
+          !this.plutoManager.isConnected() &&
+          !this.plutoManager.isRunning()
+        ) {
           return {
             content: [
               {
@@ -747,6 +755,9 @@ export class PlutoMCPHttpServer {
   }
 
   private setupErrorHandling(): void {
+    if (!this.handleSignals) {
+      return;
+    }
     process.on("SIGINT", async () => {
       console.log("[MCP HTTP] Shutting down server...");
       await this.stop();

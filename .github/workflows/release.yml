@@ -12,6 +12,10 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: semantic-release
+  cancel-in-progress: false
+
 permissions:
   contents: write # Required for creating releases and pushing commits
   issues: write # Required for commenting on issues

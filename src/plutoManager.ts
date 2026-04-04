@@ -1,7 +1,6 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host } from "@plutojl/rainbow";
-import * as vscode from "vscode";
-import { PlutoServerTaskManager } from "./plutoServerTask.js";
+import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 
 /**
@@ -36,7 +35,6 @@ export class PlutoManager {
   private host?: Host; // Host from @plutojl/rainbow
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
   private serverUrl: string;
-  private readonly taskManager: PlutoServerTaskManager;
   private usingCustomServerUrl = false;
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
   private readonly eventEmitter: EventEmitter = new EventEmitter();
@@ -44,6 +42,8 @@ export class PlutoManager {
   constructor(
     private readonly port = 1234,
     private readonly logger: PlutoManagerLogger,
+    private readonly serverManager: IPlutoServerManager,
+    private readonly fileReader: IFileReader,
     serverUrl?: string
   ) {
     if (serverUrl) {
@@ -53,15 +53,13 @@ export class PlutoManager {
       this.serverUrl = `http://localhost:${this.port}`;
     }
 
-    this.taskManager = new PlutoServerTaskManager(this.port);
-
     // Register callback to reset state when server task stops
-    this.taskManager.onStop(() => {
+    this.serverManager.onStop(() => {
       this.onServerStopped();
     });
 
     // Register callback to update server URL when port changes
-    this.taskManager.onPortChanged((newPort: number) => {
+    this.serverManager.onPortChanged((newPort: number) => {
       this.serverUrl = `http://localhost:${newPort}`;
       // Update host with new URL
       if (this.host) {
@@ -123,7 +121,7 @@ export class PlutoManager {
     this.emit("serverStateChanged");
 
     // Show warning to user if server stopped unexpectedly
-    if (!this.taskManager.isRunning()) {
+    if (!this.serverManager.isRunning()) {
       this.logger
         .showErrorMessage(
           "Pluto server stopped unexpectedly. Click 'Restart' to start it again.",
@@ -145,7 +143,7 @@ export class PlutoManager {
    * Check if Pluto server is running
    */
   public isRunning(): boolean {
-    return this.taskManager.isRunning() && this.isConnected();
+    return this.serverManager.isRunning() && this.isConnected();
   }
 
   /**
@@ -178,12 +176,12 @@ export class PlutoManager {
     }
 
     // Check if already running
-    if (this.taskManager.isRunning()) {
+    if (this.serverManager.isRunning()) {
       return;
     }
 
-    await this.taskManager.start();
-    await this.taskManager.waitForReady();
+    await this.serverManager.start();
+    await this.serverManager.waitForReady();
     await this.connect();
 
     // Emit server state changed event
@@ -224,15 +222,19 @@ export class PlutoManager {
    * Stop Pluto server
    */
   public async stop(): Promise<void> {
-    // Close all workers
+    // Close all workers — tolerate failures (worker may already be dead)
     for (const worker of this.workers.values()) {
-      await worker.shutdown();
+      try {
+        await worker.shutdown();
+      } catch {
+        // Worker shutdown can fail if server is already gone — ignore
+      }
     }
     this.workers.clear();
 
-    // Stop task
-    if (this.taskManager.isRunning()) {
-      await this.taskManager.stop();
+    // Stop server process
+    if (this.serverManager.isRunning()) {
+      await this.serverManager.stop();
     }
 
     this.host = undefined;
@@ -271,13 +273,9 @@ export class PlutoManager {
       let notebookContent: string;
       try {
         if (documentContent) {
-          // Use provided VSCode document content
           notebookContent = documentContent;
         } else {
-          // Read from file system using VSCode API
-          const fileUri = vscode.Uri.file(notebookPath);
-          const fileContent = await vscode.workspace.fs.readFile(fileUri);
-          notebookContent = new TextDecoder().decode(fileContent);
+          notebookContent = await this.fileReader.readFile(notebookPath);
         }
 
         worker = await this.host.createWorker(notebookContent.trim());
@@ -357,7 +355,7 @@ export class PlutoManager {
    * This may differ from the configured port if the configured port was unavailable
    */
   public getActualPort(): number {
-    return this.taskManager.getActualPort();
+    return this.serverManager.getActualPort();
   }
 
   /**
@@ -417,8 +415,8 @@ export class PlutoManager {
     this.workers.clear();
 
     // Stop task (fire and forget - dispose is not async)
-    if (this.taskManager.isRunning()) {
-      await this.taskManager.stop().catch(() => {
+    if (this.serverManager.isRunning()) {
+      await this.serverManager.stop().catch(() => {
         // Ignore errors during dispose
       });
     }

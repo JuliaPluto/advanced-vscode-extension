@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../src",
+    "outDir": "./out",
+    "noEmit": true
+  },
+  "include": [
+    "../../src/cli/**/*.ts",
+    "../../src/plutoManager.ts",
+    "../../src/plutoManagerTypes.ts",
+    "../../src/mcp-server-http.ts",
+    "../../src/platformUtils.ts",
+    "../../src/portUtils.ts",
+    "../../src/helpers.ts"
+  ],
+  "exclude": []
+}

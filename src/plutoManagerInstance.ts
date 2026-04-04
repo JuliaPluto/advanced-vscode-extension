@@ -1,5 +1,7 @@
 import type { PlutoManagerLogger } from "./plutoManager.ts";
 import { PlutoManager } from "./plutoManager.ts";
+import { PlutoServerTaskManager } from "./plutoServerTask.ts";
+import { VscodeFileReader } from "./vscodeFileReader.ts";
 
 /**
  * Shared PlutoManager instance that can be used by both the extension and MCP server
@@ -12,7 +14,13 @@ export function getSharedPlutoManager(
   logger: PlutoManagerLogger,
   serverUrl?: string
 ): PlutoManager {
-  sharedPlutoManager ??= new PlutoManager(port, logger, serverUrl);
+  sharedPlutoManager ??= new PlutoManager(
+    port,
+    logger,
+    new PlutoServerTaskManager(port),
+    new VscodeFileReader(),
+    serverUrl
+  );
   return sharedPlutoManager;
 }
 
