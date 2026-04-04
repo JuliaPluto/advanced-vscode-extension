@@ -344,6 +344,17 @@ export class PlutoManager {
   }
 
   /**
+   * Move cells to a new position in the notebook
+   */
+  public async moveCells(
+    worker: Worker,
+    cellIds: string[],
+    index: number
+  ): Promise<void> {
+    await worker.moveSnippets(cellIds, index);
+  }
+
+  /**
    * Get the server URL
    */
   public getServerUrl(): string {

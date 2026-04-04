@@ -751,10 +751,49 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Move Cells
+    server.tool(
+      "move_cells",
+      "Move one or more cells to a new position in the notebook. The order of cell_ids is preserved in the result. Use list_cells to find cell IDs and their current positions.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_ids: z
+          .array(z.string())
+          .describe("Cell UUIDs to move, in desired order"),
+        index: z
+          .number()
+          .describe(
+            "Target position in the current cell order (before removing the moved cells). E.g. 0 = beginning, 1 = after first cell."
+          ),
+      },
+      async ({ path, cell_ids, index }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.moveCells(worker, cell_ids, index);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Moved ${cell_ids.length} cell(s) to position ${index}`,
+            },
+          ],
+        };
+      }
+    );
+
     // List Cells
     server.tool(
       "list_cells",
-      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, or delete_cell.",
+      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, delete_cell, or move_cells.",
       {
         path: z.string().describe("Path to the notebook"),
       },
