@@ -165,11 +165,15 @@ export class PlutoMCPHttpServer {
         }
 
         await this.plutoManager.stop();
+
+        const stillRunning = this.plutoManager.isRunning();
         return {
           content: [
             {
               type: "text",
-              text: "Pluto server stopped",
+              text: stillRunning
+                ? "Warning: stop() returned but the server process may still be running. It should be force-killed shortly."
+                : "Pluto server stopped",
             },
           ],
         };

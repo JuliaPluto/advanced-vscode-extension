@@ -219,20 +219,26 @@ export class PlutoManager {
   }
 
   /**
-   * Stop Pluto server
+   * Stop Pluto server. Times out worker shutdown after 10s to avoid hanging.
    */
   public async stop(): Promise<void> {
-    // Close all workers — tolerate failures (worker may already be dead)
-    for (const worker of this.workers.values()) {
-      try {
-        await worker.shutdown();
-      } catch {
-        // Worker shutdown can fail if server is already gone — ignore
-      }
-    }
+    // Close all workers with a timeout — don't let a hung worker block shutdown
+    const workerShutdown = Promise.allSettled(
+      [...this.workers.values()].map((worker) =>
+        worker.shutdown().catch(() => {
+          // Worker shutdown can fail if server is already gone — ignore
+        })
+      )
+    );
+
+    const timeoutMs = 10_000;
+    await Promise.race([
+      workerShutdown,
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
     this.workers.clear();
 
-    // Stop server process
+    // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
     if (this.serverManager.isRunning()) {
       await this.serverManager.stop();
     }
