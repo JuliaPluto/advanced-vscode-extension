@@ -3,6 +3,7 @@ import { resolveRunConfig, resolveInstallArgs } from "./resolveConfig.ts";
 import { run } from "./run.ts";
 import { installMcpConfig } from "./install.ts";
 import { callTool, listTools } from "./call.ts";
+import { preflight } from "./preflight.ts";
 import { DEFAULTS } from "./config.ts";
 
 async function main() {
@@ -21,6 +22,7 @@ async function main() {
       break;
     }
     case "tools": {
+      await preflight(mcpPort);
       await listTools(mcpPort);
       break;
     }
@@ -29,6 +31,7 @@ async function main() {
         console.error("Usage: npx @plutojl/mcp call <tool_name> [json_args]");
         process.exit(1);
       }
+      await preflight(mcpPort);
       await callTool(
         mcpPort,
         args.toolName,
