@@ -1,7 +1,7 @@
 {
-  "name": "advanced-pluto-mcp",
+  "name": "@plutojl/mcp",
   "version": "0.1.0",
-  "description": "Standalone MCP server for Pluto.jl notebooks — run with npx advanced-pluto-mcp",
+  "description": "Standalone MCP server for Pluto.jl notebooks — run with npx @plutojl/mcp",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -10,7 +10,7 @@
   },
   "type": "module",
   "bin": {
-    "advanced-pluto-mcp": "./dist/cli.cjs"
+    "plutojl-mcp": "./dist/cli.cjs"
   },
   "files": [
     "dist/cli.cjs",

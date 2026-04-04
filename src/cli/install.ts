@@ -94,7 +94,7 @@ function installCopilot(
 }
 
 export async function installMcpConfig(args: InstallArgs): Promise<void> {
-  console.log("advanced-pluto-mcp — Installing MCP configuration\n");
+  console.log("@plutojl/mcp — Installing MCP configuration\n");
 
   const targets =
     args.target === "all" ? ["claude-code", "copilot"] : [args.target];
@@ -110,6 +110,6 @@ export async function installMcpConfig(args: InstallArgs): Promise<void> {
   }
 
   if (!args.dryRun) {
-    console.log("Done! Start the MCP server with: npx advanced-pluto-mcp run");
+    console.log("Done! Start the MCP server with: npx @plutojl/mcp run");
   }
 }

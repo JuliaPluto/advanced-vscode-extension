@@ -15,10 +15,10 @@ export interface RawArgs {
 
 function printHelp(): void {
   console.log(`
-advanced-pluto-mcp — Standalone MCP server for Pluto.jl notebooks
+@plutojl/mcp — Standalone MCP server for Pluto.jl notebooks
 
 Usage:
-  advanced-pluto-mcp <command> [options]
+  npx @plutojl/mcp <command> [options]
 
 Commands:
   run       Start the MCP server (and Pluto server if needed)
@@ -38,10 +38,10 @@ Install options:
   --force                  Overwrite existing config without prompting
 
 Examples:
-  npx advanced-pluto-mcp run
-  npx advanced-pluto-mcp run --pluto-url http://localhost:1234
-  npx advanced-pluto-mcp install
-  npx advanced-pluto-mcp install --target all --global
+  npx @plutojl/mcp run
+  npx @plutojl/mcp run --pluto-url http://localhost:1234
+  npx @plutojl/mcp install
+  npx @plutojl/mcp install --target all --global
 `);
 }
 

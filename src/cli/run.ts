@@ -7,7 +7,7 @@ import { consoleLogger } from "./logger.ts";
 import type { CliConfig } from "./config.ts";
 
 export async function run(config: CliConfig): Promise<void> {
-  console.log("advanced-pluto-mcp — Standalone MCP server for Pluto.jl\n");
+  console.log("@plutojl/mcp — Standalone MCP server for Pluto.jl\n");
 
   let serverManager: NodeServerManager | undefined;
   let plutoManager: PlutoManager;
@@ -54,9 +54,7 @@ export async function run(config: CliConfig): Promise<void> {
   );
   console.log(`[cli] Health check: http://localhost:${config.mcpPort}/health`);
   console.log(`[cli] Press Ctrl+C to stop\n`);
-  console.log(
-    `Tip: Run 'npx advanced-pluto-mcp install' to configure Claude Code\n`
-  );
+  console.log(`Tip: Run 'npx @plutojl/mcp install' to configure Claude Code\n`);
 
   // Graceful shutdown
   const shutdown = async () => {
