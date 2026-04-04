@@ -790,10 +790,47 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Fold/Unfold Cell
+    server.tool(
+      "fold_cell",
+      "Show or hide a cell's code in the Pluto notebook. Folded cells hide their source code but still show output. Use list_cells to find cell IDs.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_id: z.string().describe("UUID of the cell to fold/unfold"),
+        folded: z
+          .boolean()
+          .describe(
+            "true to hide (fold) the cell code, false to show (unfold) it"
+          ),
+      },
+      async ({ path, cell_id, folded }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.foldCell(worker, cell_id, folded);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cell ${cell_id} ${folded ? "folded (code hidden)" : "unfolded (code visible)"}`,
+            },
+          ],
+        };
+      }
+    );
+
     // List Cells
     server.tool(
       "list_cells",
-      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, delete_cell, or move_cells.",
+      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, delete_cell, move_cells, or fold_cell.",
       {
         path: z.string().describe("Path to the notebook"),
       },
@@ -814,6 +851,7 @@ export class PlutoMCPHttpServer {
           cell_id: snippet.cell_id,
           index,
           code_preview: snippet.input.code.split("\n")[0].slice(0, 80),
+          code_folded: snippet.input.code_folded,
           errored: snippet.result.errored,
           running: snippet.result.running,
           queued: snippet.result.queued,
