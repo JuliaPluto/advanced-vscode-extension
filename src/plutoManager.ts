@@ -372,40 +372,21 @@ export class PlutoManager {
   }
 
   /**
-   * Set the code_folded state of a cell (show/hide code in Pluto UI)
+   * Set the code_folded state of a cell (show/hide code in Pluto UI).
+   *
+   * Delegates to rainbow's {@link Worker.setCellFolded}, which routes through
+   * the canonical `_update_notebook_state` patch flow so server state, the
+   * worker's local `notebook_state`, and the disk-saved `╠═`/`╟─` cell-order
+   * marker all stay in sync. The previous hand-rolled `client.send("update_notebook", …)`
+   * path bypassed local-state update, leaving `getSnippets()` (and therefore
+   * `list_cells`) reporting stale `code_folded: false` after a successful fold.
    */
   public async foldCell(
     worker: Worker,
     cellId: string,
     folded: boolean
   ): Promise<void> {
-    if (!worker.client || !worker.notebook_state) {
-      throw new Error("Not connected to notebook");
-    }
-
-    const cellInput = worker.notebook_state.cell_inputs[cellId];
-    if (!cellInput) {
-      throw new Error(`Cell ${cellId} not found`);
-    }
-
-    if (cellInput.code_folded === folded) {
-      return; // Already in desired state
-    }
-
-    const updates = [
-      {
-        op: "replace" as const,
-        path: ["cell_inputs", cellId, "code_folded"],
-        value: folded,
-      },
-    ];
-
-    await worker.client.send(
-      "update_notebook",
-      { updates },
-      { notebook_id: worker.notebook_id },
-      false
-    );
+    await worker.setCellFolded(cellId, folded);
   }
 
   /**
