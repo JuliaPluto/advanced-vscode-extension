@@ -2,7 +2,6 @@ import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host, serialize } from "@plutojl/rainbow";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
-import { unlink } from "fs/promises";
 
 /**
  * Events emitted by PlutoManager
@@ -276,29 +275,22 @@ export class PlutoManager {
     let worker = this.workers.get(notebookPath);
 
     if (!worker && this.host) {
-      // Get notebook content - use provided content or read from file
-      let notebookContent: string;
       try {
-        if (documentContent) {
-          notebookContent = documentContent;
-        } else {
-          notebookContent = await this.fileReader.readFile(notebookPath);
-        }
+        const notebookContent =
+          documentContent ?? (await this.fileReader.readFile(notebookPath));
 
-        worker = await this.host.createWorker(notebookContent.trim());
-        await worker.connect();
-
-        // Tell Pluto which file this notebook lives at so it can track saves.
-        // Only works when the server shares the same filesystem (localhost).
-        // We must delete the file first — moveTo throws if the path already exists.
+        // When server and client share a filesystem we want Pluto to track this file
+        // at `notebookPath` so saves go back there. `Host.openByPath` does the
+        // upload-then-move dance (with a best-effort unlink of any existing file).
+        // Otherwise just create an in-memory notebook.
         if (this.isLocalServer()) {
-          await unlink(notebookPath);
-          await worker.moveTo(notebookPath);
+          worker = await this.host.openByPath(notebookPath, notebookContent.trim());
+        } else {
+          worker = await this.host.createWorker(notebookContent.trim());
+          await worker.connect();
         }
 
         this.workers.set(notebookPath, worker);
-
-        // Emit notebook opened event
         this.emit("notebookOpened", notebookPath);
       } catch (error) {
         throw new Error(
