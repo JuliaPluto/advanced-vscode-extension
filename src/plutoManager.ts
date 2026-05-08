@@ -461,20 +461,15 @@ export class PlutoManager {
   }
 
   /**
-   * Execute Julia code in a notebook without creating a persistent cell
-   * This uses waitSnippet at index 0 and then immediately deletes the cell
+   * Execute Julia code in a notebook without creating a persistent cell.
+   * Delegates to rainbow's `Worker.runEphemeral`, which guarantees cleanup of
+   * the temporary cell even if the run fails.
    */
   public async executeCodeEphemeral(
     worker: Worker,
     code: string
   ): Promise<CellResultData> {
-    // Execute code at index 0 (creates a temporary cell)
-    const result = await worker.waitSnippet(0, code);
-
-    // Delete the cell immediately after execution
-    await worker.deleteSnippets([result.cell_id]);
-
-    return result;
+    return await worker.runEphemeral(code);
   }
 
   /**

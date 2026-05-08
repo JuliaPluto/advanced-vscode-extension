@@ -427,31 +427,18 @@ using InteractiveUtils
   }
 
   /**
-   * Wait for worker to become idle
+   * Wait for worker to become idle, with a progress indicator and 2-minute timeout.
    */
   private async waitForIdle(worker: Worker): Promise<void> {
-    const maxWaitTime = 2 * 60000; // 60 seconds max
-    const checkInterval = 500; // Check every 500ms
-    const startTime = Date.now();
-
-    while (!worker.isIdle()) {
-      // Check if we've exceeded max wait time
-      if (Date.now() - startTime > maxWaitTime) {
-        throw new Error(
-          "Timeout waiting for notebook to become idle (60 seconds)"
-        );
-      }
-
-      // Wait before checking again
-      await new Promise((resolve) => setTimeout(resolve, checkInterval));
-
-      // Show progress indicator every 2 seconds
-      if ((Date.now() - startTime) % 2000 < checkInterval) {
-        this.write("\x1b[33m.\x1b[0m");
-      }
+    const maxWaitTime = 2 * 60000;
+    const dotInterval = 2000;
+    const dotTimer = setInterval(() => this.write("\x1b[33m.\x1b[0m"), dotInterval);
+    try {
+      await worker.wait(true, maxWaitTime);
+    } finally {
+      clearInterval(dotTimer);
+      this.write("\r\n");
     }
-
-    this.write("\r\n");
   }
 
   /**
