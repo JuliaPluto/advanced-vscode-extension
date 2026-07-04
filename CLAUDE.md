@@ -76,7 +76,7 @@ Press `F5` in VSCode to launch Extension Development Host window for testing.
 
 - HTTP-based MCP server for AI assistant integration
 - Notebook management and code execution tools (see `packages/advanced-pluto-mcp/README.md` for the full list)
-- Server-Sent Events (SSE) for streaming responses
+- Streamable HTTP transport (modern MCP), with legacy SSE fallback on the same endpoint
 - Health check endpoint for monitoring
 - Shared PlutoManager instance with extension
 - Also bundled into the `@plutojl/cli` npm package (`src/cli/`), driven from the terminal via `npx @plutojl/cli run|tools|call`

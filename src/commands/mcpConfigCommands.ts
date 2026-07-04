@@ -18,14 +18,15 @@ function resolveMcpUrl(): string {
 }
 
 /**
- * Generate MCP server configuration for Claude Code (.mcp.json)
+ * Generate MCP server configuration for Claude Code (.mcp.json).
+ * The tool server speaks streamable HTTP (legacy SSE fallback included).
  */
 function getClaudeConfig(mcpUrl: string): object {
   return {
     mcpServers: {
       "pluto-notebook": {
         url: mcpUrl,
-        type: "sse",
+        type: "http",
       },
     },
   };
@@ -33,14 +34,13 @@ function getClaudeConfig(mcpUrl: string): object {
 
 /**
  * Generate MCP server configuration for GitHub Copilot (mcp.json).
- * The tool server speaks the SSE transport — the type must match.
  */
 function getCopilotConfig(mcpUrl: string): object {
   return {
     servers: {
       "pluto-notebook": {
         url: mcpUrl,
-        type: "sse",
+        type: "http",
       },
     },
     inputs: [],
