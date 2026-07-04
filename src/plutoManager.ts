@@ -4,6 +4,7 @@ import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { unlink } from "fs/promises";
 import { resolve as resolvePath } from "path";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Events emitted by PlutoManager
@@ -413,6 +414,17 @@ export class PlutoManager {
         const worker = host.worker(runningId);
         try {
           await worker.connect();
+
+          // A notebook opened but never granted execution (Pluto's safe
+          // preview, "waiting_for_permission") silently ignores run
+          // requests — grant permission like createWorker's init does.
+          // A notebook with a live session is left untouched.
+          if (
+            worker.notebook_state?.process_status === "waiting_for_permission"
+          ) {
+            await worker.restart();
+          }
+
           if (this.stopping || this.host !== host) {
             throw new Error(
               "Pluto server was stopped while opening the notebook"
@@ -663,15 +675,60 @@ export class PlutoManager {
   }
 
   /**
+   * Create a cell, run it, and resolve with its result — robust against
+   * rainbow's waitSnippet missing the terminal update of fast cells (its
+   * listener registers after addSnippet's round trip, by which time a
+   * trivial cell may already be done; with no further update traffic the
+   * promise then never settles). A state poll acts as the fallback.
+   */
+  public async runSnippet(
+    worker: Worker,
+    index: number,
+    code: string
+  ): Promise<CellResultData> {
+    const limitMs = 60 * 60_000;
+    const cellId = uuidv4();
+
+    const viaEvents: Promise<CellResultData> = worker
+      .waitSnippet(index, code, {}, cellId, limitMs)
+      // On timeout waitSnippet rejects with null — let the poll decide
+      .catch(() => new Promise<never>(() => {}));
+
+    let stopPolling = false;
+    const viaPolling = (async (): Promise<CellResultData> => {
+      const deadline = Date.now() + limitMs;
+      while (!stopPolling && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250));
+        const result = worker.getSnippet(cellId)?.result;
+        if (
+          result &&
+          !result.running &&
+          !result.queued &&
+          (result.output?.last_run_timestamp ?? 0) > 0
+        ) {
+          return result;
+        }
+      }
+      throw new Error("Timed out waiting for cell execution to finish");
+    })();
+
+    try {
+      return await Promise.race([viaEvents, viaPolling]);
+    } finally {
+      stopPolling = true;
+    }
+  }
+
+  /**
    * Execute Julia code in a notebook without creating a persistent cell
-   * This uses waitSnippet at index 0 and then immediately deletes the cell
+   * This uses runSnippet at index 0 and then immediately deletes the cell
    */
   public async executeCodeEphemeral(
     worker: Worker,
     code: string
   ): Promise<CellResultData> {
     // Execute code at index 0 (creates a temporary cell)
-    const result = await worker.waitSnippet(0, code);
+    const result = await this.runSnippet(worker, 0, code);
 
     // Delete the cell immediately after execution. Best-effort: the result
     // matters more than the cleanup, so a failed delete is not fatal.

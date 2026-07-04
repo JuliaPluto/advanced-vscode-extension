@@ -369,7 +369,7 @@ export class PlutoMCPHttpServer {
         }
 
         const outcome = await withExecutionTimeout(
-          worker.waitSnippet(index, code)
+          this.plutoManager.runSnippet(worker, index, code)
         );
 
         if (outcome.timedOut) {
