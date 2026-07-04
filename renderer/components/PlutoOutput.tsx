@@ -81,6 +81,9 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
           break;
         }
         case "bond":
+          // Acknowledgement of a set_bond round trip — nothing to update;
+          // the resulting recomputation arrives as setState messages
+          break;
         default:
           console.log("[RENDERER] Unknown message type:", message.type);
       }
