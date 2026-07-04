@@ -151,16 +151,18 @@ export function serializePlutoNotebook(
     // get serialized as `# ╠═╡` TOML annotations that Pluto's parser
     // rejects (see issue #28). pluto_cell_id is already encoded by the
     // cell marker; code_folded is a top-level field, not metadata.
-    const {
-      pluto_cell_id: _plutoCellId,
-      code_folded: codeFolded,
-      ...plutoMetadata
-    } = (cell.metadata ?? {}) as Record<string, unknown>;
+    const plutoMetadata = { ...(cell.metadata ?? {}) } as Record<
+      string,
+      unknown
+    >;
+    delete plutoMetadata.pluto_cell_id;
+    const codeFolded = plutoMetadata.code_folded === true;
+    delete plutoMetadata.code_folded;
 
     cellInputs[cellId] = {
       cell_id: cellId,
       code: code,
-      code_folded: codeFolded === true,
+      code_folded: codeFolded,
       metadata: {
         // Pluto defaults — only non-default values get written to the file
         disabled: false,
