@@ -338,7 +338,8 @@ export class PlutoManager {
     notebookPath: string,
     documentContent?: string
   ): Promise<Worker> {
-    if (!this.host) {
+    const host = this.host;
+    if (!host) {
       throw new Error("Cannot create worker: not connected to Pluto server");
     }
 
@@ -353,7 +354,7 @@ export class PlutoManager {
       );
     }
 
-    const worker = await this.host.createWorker(notebookContent.trim());
+    const worker = await host.createWorker(notebookContent.trim());
     try {
       await worker.connect();
 
@@ -363,6 +364,13 @@ export class PlutoManager {
       if (this.isLocalServer()) {
         await unlink(notebookPath);
         await worker.moveTo(notebookPath);
+      }
+
+      // The server may have been stopped (or replaced) while we were
+      // connecting — registering the worker now would leak it into a
+      // manager whose stop() has already run
+      if (this.stopping || this.host !== host) {
+        throw new Error("Pluto server was stopped while opening the notebook");
       }
     } catch (error) {
       // Don't leak the worker if connect/move failed

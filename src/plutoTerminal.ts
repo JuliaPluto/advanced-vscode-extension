@@ -435,16 +435,25 @@ using InteractiveUtils
   /**
    * Wait for worker to become idle
    */
-  private async waitForIdle(worker: Worker): Promise<void> {
-    const maxWaitTime = 2 * 60000; // 60 seconds max
+  private async waitForIdle(
+    worker: Worker,
+    isStale?: () => boolean
+  ): Promise<void> {
+    const maxWaitTime = 2 * 60000;
     const checkInterval = 500; // Check every 500ms
     const startTime = Date.now();
 
     while (!worker.isIdle()) {
+      // The user cancelled (Ctrl+C) — stop waiting and stop writing
+      // progress dots into whatever they're doing now
+      if (isStale?.()) {
+        return;
+      }
+
       // Check if we've exceeded max wait time
       if (Date.now() - startTime > maxWaitTime) {
         throw new Error(
-          "Timeout waiting for notebook to become idle (60 seconds)"
+          "Timeout waiting for notebook to become idle (2 minutes)"
         );
       }
 
@@ -452,12 +461,14 @@ using InteractiveUtils
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
 
       // Show progress indicator every 2 seconds
-      if ((Date.now() - startTime) % 2000 < checkInterval) {
+      if ((Date.now() - startTime) % 2000 < checkInterval && !isStale?.()) {
         this.write("\x1b[33m.\x1b[0m");
       }
     }
 
-    this.write("\r\n");
+    if (!isStale?.()) {
+      this.write("\r\n");
+    }
   }
 
   /**
@@ -507,7 +518,13 @@ using InteractiveUtils
         );
 
         // Wait for notebook to become idle
-        await this.waitForIdle(worker);
+        await this.waitForIdle(
+          worker,
+          () => generation !== this.executionGeneration
+        );
+        if (generation !== this.executionGeneration) {
+          return;
+        }
       }
 
       // Execute code ephemerally using PlutoManager

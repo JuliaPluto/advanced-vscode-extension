@@ -18,6 +18,10 @@ function runProcess(
 ): Promise<{ status: number | null; error?: Error }> {
   return new Promise((resolve) => {
     const child = spawn(command, args, options);
+    // Drain piped output — an undrained pipe blocks the child once the
+    // OS buffer (~64KB) fills, which spawnSync's buffering used to hide
+    child.stdout?.resume();
+    child.stderr?.resume();
     child.on("error", (error) => resolve({ status: null, error }));
     child.on("exit", (code) => resolve({ status: code }));
   });

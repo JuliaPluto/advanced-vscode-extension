@@ -131,16 +131,24 @@ export async function activate(
   registerAllCommands(context, plutoManager);
 
   // Start Pluto server in the background — activation must not block on
-  // (potentially minutes of) first-run Julia setup
-  void initializePlutoServer(plutoManager, controllerOutputChannel).catch(
-    (error) => {
+  // (potentially minutes of) first-run Julia setup. Once the server is up,
+  // register the notebooks that were already open so they get workers
+  // without requiring a manual cell execution first.
+  void initializePlutoServer(plutoManager, controllerOutputChannel)
+    .then(async () => {
+      for (const notebook of vscode.workspace.notebookDocuments) {
+        if (notebook.notebookType === "pluto-notebook") {
+          await controller.registerNotebookDocument(notebook);
+        }
+      }
+    })
+    .catch((error) => {
       controllerOutputChannel.appendLine(
         `Pluto server autostart failed: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
-    }
-  );
+    });
 
   // Create and register status bar
   const statusBar = new PlutoStatusBar(plutoManager);

@@ -148,10 +148,11 @@ export function parseArgs(argv: string[]): RawArgs {
       args.force = true;
     } else if (flag === "--raw") {
       args.raw = true;
-    } else if (flag === "--timeout" && i + 1 < argv.length) {
-      const seconds = parseInt(argv[++i], 10);
+    } else if (flag === "--timeout") {
+      const value = argv[++i];
+      const seconds = value === undefined ? NaN : parseInt(value, 10);
       if (isNaN(seconds) || seconds <= 0) {
-        console.error(`Invalid --timeout value: ${argv[i]}`);
+        console.error(`Invalid --timeout value: ${value ?? "(missing)"}`);
         process.exit(1);
       }
       args.timeoutSeconds = seconds;

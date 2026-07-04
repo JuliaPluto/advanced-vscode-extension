@@ -323,6 +323,18 @@ export class PlutoServerTaskManager {
       endListener?.dispose();
     }
 
+    // If the task outlived the bounded wait, stop tracking it now — its
+    // eventual exit must not fire onStopCallback (and a spurious
+    // "stopped unexpectedly" prompt) after this intentional stop returns
+    if (this.taskExecution === execution) {
+      this.taskExecution = undefined;
+      this.serverReadyPromise = undefined;
+      this.serverReadyResolve = undefined;
+      this.isStarting = false;
+      this.taskEndListener?.dispose();
+      this.taskEndListener = undefined;
+    }
+
     this.actualPort = this.port;
   }
 

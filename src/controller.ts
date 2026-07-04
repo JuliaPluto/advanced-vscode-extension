@@ -65,13 +65,16 @@ export class PlutoNotebookController {
     if (worker) {
       try {
         await worker.interrupt();
-        // End this notebook's executions only after the interrupt landed —
-        // ending them earlier lets late patches resurrect them as successes
-        this.endExecutionsForNotebook(notebook);
         vscode.window.showInformationMessage("Notebook execution interrupted");
       } catch (error) {
         this.outputChannel.appendLine(`Error interrupting notebook: ${error}`);
         vscode.window.showErrorMessage("Failed to interrupt execution");
+      } finally {
+        // End this notebook's executions after the interrupt attempt —
+        // waiting until now stops late patches from resurrecting them as
+        // successes, and a failed interrupt must still release the
+        // spinners (a still-running kernel will just re-create them)
+        this.endExecutionsForNotebook(notebook);
       }
     }
   };
@@ -949,14 +952,21 @@ export class PlutoNotebookController {
         error instanceof Error ? error.message : String(error);
       this.outputChannel.appendLine(`Error executing cell: ${errorMessage}`);
 
-      // If an error occurred BEFORE even talking to the kernel, we end the execution immediately.
-      execution?.replaceOutput([
-        new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.error(error as Error),
-        ]),
-      ]);
-      execution?.end(false, Date.now());
-      this.activeExecutions.delete(cellId);
+      // If an error occurred BEFORE even talking to the kernel, we end the
+      // execution immediately — unless a streaming patch already ended it
+      if (this.activeExecutions.get(cellId) === execution) {
+        try {
+          execution.replaceOutput([
+            new vscode.NotebookCellOutput([
+              vscode.NotebookCellOutputItem.error(error as Error),
+            ]),
+          ]);
+          execution.end(false, Date.now());
+        } catch {
+          // Execution may already be resolved
+        }
+        this.activeExecutions.delete(cellId);
+      }
 
       // Show error notification for critical failures
       if (errorMessage.includes("server") || errorMessage.includes("worker")) {
