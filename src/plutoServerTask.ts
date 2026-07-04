@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
-import * as os from "os";
-import * as path from "path";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
-import { isWindows } from "./platformUtils.ts";
+import { isWindows, resolveJuliaDepotPath } from "./platformUtils.ts";
 import {
   getJuliaExecutable,
   getPackageServer,
@@ -162,7 +160,7 @@ export class PlutoServerTaskManager {
     // --- Step 4: Build env vars for the server process ---
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
-      JULIA_DEPOT_PATH: path.join(os.homedir(), ".julia"),
+      JULIA_DEPOT_PATH: resolveJuliaDepotPath(),
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
       JULIAHUB_TOKEN: juliaHubToken,
     };

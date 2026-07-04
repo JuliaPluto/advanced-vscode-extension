@@ -3,6 +3,7 @@ import { Host, serialize } from "@plutojl/rainbow";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { unlink } from "fs/promises";
+import { resolve as resolvePath } from "path";
 
 /**
  * Events emitted by PlutoManager
@@ -36,6 +37,7 @@ export class PlutoManager {
   private host?: Host; // Host from @plutojl/rainbow
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
   private readonly pendingWorkers: Map<string, Promise<Worker>> = new Map(); // in-flight worker creation, keyed by path
+  private readonly adoptedWorkers: Set<string> = new Set(); // paths of notebooks we attached to but don't own (e.g. open in the user's browser)
   private startPromise?: Promise<void>; // in-flight start(), shared by concurrent callers
   private stopping = false; // suppresses "stopped unexpectedly" handling during intentional stop
   private serverUrl: string;
@@ -117,8 +119,8 @@ export class PlutoManager {
     }
 
     // Close all workers
-    for (const worker of this.workers.values()) {
-      void worker.shutdown();
+    for (const [notebookPath, worker] of this.workers.entries()) {
+      void this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 
@@ -265,8 +267,8 @@ export class PlutoManager {
 
       // Close all workers with a timeout — don't let a hung worker block shutdown
       const workerShutdown = Promise.allSettled(
-        [...this.workers.values()].map((worker) =>
-          worker.shutdown().catch(() => {
+        [...this.workers.entries()].map(([notebookPath, worker]) =>
+          this.releaseWorker(notebookPath, worker).catch(() => {
             // Worker shutdown can fail if server is already gone — ignore
           })
         )
@@ -349,6 +351,50 @@ export class PlutoManager {
     return pending;
   }
 
+  /**
+   * Release a worker: shut down the notebook if we own it, otherwise just
+   * close our connection — adopted notebooks (open in the user's browser)
+   * must keep running.
+   */
+  private async releaseWorker(
+    notebookPath: string,
+    worker: Worker
+  ): Promise<void> {
+    if (this.adoptedWorkers.has(notebookPath)) {
+      this.adoptedWorkers.delete(notebookPath);
+      try {
+        worker.close();
+      } catch {
+        // Connection may already be gone
+      }
+      return;
+    }
+    await worker.shutdown();
+  }
+
+  /**
+   * Find a notebook already running on the server for this file path.
+   * Returns its notebook_id, or undefined when none matches or the
+   * listing fails.
+   */
+  private async findRunningNotebook(
+    host: Host,
+    notebookPath: string
+  ): Promise<string | undefined> {
+    try {
+      const running = (await host.workers()) as unknown as Array<{
+        notebook_id?: string;
+        path?: string;
+      }>;
+      const target = resolvePath(notebookPath);
+      return running.find(
+        (nb) => nb.notebook_id && nb.path && resolvePath(nb.path) === target
+      )?.notebook_id;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async createWorkerForPath(
     notebookPath: string,
     documentContent?: string
@@ -356,6 +402,32 @@ export class PlutoManager {
     const host = this.host;
     if (!host) {
       throw new Error("Cannot create worker: not connected to Pluto server");
+    }
+
+    // If the server already manages this file (e.g. the user's own browser
+    // tab has it open), adopt that notebook — uploading a copy and calling
+    // moveTo would fail with "File exists already" (issue #40)
+    if (this.isLocalServer()) {
+      const runningId = await this.findRunningNotebook(host, notebookPath);
+      if (runningId) {
+        const worker = host.worker(runningId);
+        try {
+          await worker.connect();
+          if (this.stopping || this.host !== host) {
+            throw new Error(
+              "Pluto server was stopped while opening the notebook"
+            );
+          }
+        } catch (error) {
+          // Do NOT shut the notebook down — we don't own it (it may be
+          // open in the user's browser)
+          throw new Error(this.describeServerError(error));
+        }
+        this.workers.set(notebookPath, worker);
+        this.adoptedWorkers.add(notebookPath);
+        this.emit("notebookOpened", notebookPath);
+        return worker;
+      }
     }
 
     // Get notebook content - use provided content or read from file
@@ -572,7 +644,7 @@ export class PlutoManager {
 
       // Emit notebook closed event
       this.emit("notebookClosed", notebookPath);
-      void worker.shutdown();
+      void this.releaseWorker(notebookPath, worker).catch(() => {});
     }
   }
 
@@ -627,8 +699,8 @@ export class PlutoManager {
    * Close all notebook connections
    */
   public async dispose(): Promise<void> {
-    for (const worker of this.workers.values()) {
-      await worker.shutdown();
+    for (const [notebookPath, worker] of this.workers.entries()) {
+      await this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 

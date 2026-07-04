@@ -853,6 +853,56 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Export Notebook HTML
+    server.tool(
+      "export_notebook_html",
+      "Export the notebook's current state as a self-contained static HTML file (like Pluto's 'Export to HTML' button) and write it to disk.",
+      {
+        path: z.string().describe("Path of the open notebook"),
+        output_path: z
+          .string()
+          .describe(
+            "File path for the HTML export (defaults to the notebook path with a .html extension)"
+          )
+          .optional(),
+      },
+      async ({ path, output_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const exportUrl = `${this.plutoManager.getServerUrl()}/notebookexport?id=${worker.notebook_id}`;
+        const response = await fetch(exportUrl, {
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Export failed: ${response.status} ${response.statusText}`
+          );
+        }
+        const html = await response.text();
+
+        const savePath =
+          output_path ?? path.replace(/(\.pluto)?\.jl$/, "") + ".html";
+        await writeFile(savePath, html, "utf-8");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook exported to ${savePath} (${html.length} bytes)`,
+            },
+          ],
+        };
+      }
+    );
+
     // Delete Cell
     server.tool(
       "delete_cell",
