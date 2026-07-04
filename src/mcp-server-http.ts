@@ -5,6 +5,7 @@ import { writeFile } from "fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { PlutoManager } from "./plutoManager.ts";
+import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
 // @ts-expect-error - esbuild will load this as text
 import PlutoGuide from "./PLUTO_GUIDE.md";
@@ -21,11 +22,18 @@ export class PlutoMCPHttpServer {
   private httpServer?: HttpServer;
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
-  private readonly port: number;
+  private port: number;
+  private readonly dynamicPort: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100) {
+  /**
+   * @param dynamicPort - when the configured port is busy, move to the next
+   * free one instead of failing (used by the extension so multiple VSCode
+   * windows can coexist; the CLI stays strict so `tools`/`call` can find it)
+   */
+  constructor(plutoManager: PlutoManager, port = 3100, dynamicPort = false) {
     this.plutoManager = plutoManager;
     this.port = port;
+    this.dynamicPort = dynamicPort;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -1014,6 +1022,14 @@ export class PlutoMCPHttpServer {
   }
 
   public async start(): Promise<void> {
+    if (this.dynamicPort && !(await isPortAvailable(this.port))) {
+      const fallbackPort = await findAvailablePort(this.port + 1);
+      console.log(
+        `[MCP HTTP] Port ${this.port} is in use (another window?), using ${fallbackPort} instead`
+      );
+      this.port = fallbackPort;
+    }
+
     return await new Promise((resolve, reject) => {
       this.httpServer = this.app.listen(this.port, (error?: Error) => {
         if (error) {
@@ -1095,7 +1111,8 @@ export function initializeMCPServer(
     return;
   }
 
-  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port);
+  // Dynamic port: a second VSCode window must not fail on a busy port
+  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, true);
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
 
