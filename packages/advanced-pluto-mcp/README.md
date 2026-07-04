@@ -106,22 +106,29 @@ Example `.plutomcp.json`:
 
 These tools are callable from the command line via `call`, and exposed to AI assistants over MCP:
 
-| Tool                      | Description                        |
-| ------------------------- | ---------------------------------- |
-| `learn_pluto_basics`      | Get a comprehensive Pluto.jl guide |
-| `start_pluto_server`      | Start the Pluto server             |
-| `stop_pluto_server`       | Stop the Pluto server              |
-| `connect_to_pluto_server` | Connect to an existing server      |
-| `get_notebook_status`     | Check server status                |
-| `open_notebook`           | Open a notebook file               |
-| `list_notebooks`          | List all open notebooks            |
-| `create_cell`             | Create and execute a new cell      |
-| `read_cell`               | Read cell code and output          |
-| `edit_cell`               | Update cell code                   |
-| `execute_cell`            | Run an existing cell               |
-| `execute_code`            | Execute code ephemerally           |
-| `get_docs`                | Get Julia symbol documentation     |
-| `introspect_notebook`     | List all symbols in a notebook     |
+| Tool                      | Description                                |
+| ------------------------- | ------------------------------------------ |
+| `learn_pluto_basics`      | Get a comprehensive Pluto.jl guide         |
+| `start_pluto_server`      | Start the Pluto server                     |
+| `stop_pluto_server`       | Stop the Pluto server                      |
+| `connect_to_pluto_server` | Connect to an existing server              |
+| `get_notebook_status`     | Check server status                        |
+| `open_notebook`           | Open a notebook file                       |
+| `move_notebook`           | Move a notebook to a new path              |
+| `save_notebook`           | Save the running notebook to disk          |
+| `list_notebooks`          | List all open notebooks                    |
+| `get_notebook_url`        | Get the Pluto web UI URL for a notebook    |
+| `list_cells`              | List cells with IDs and execution status   |
+| `create_cell`             | Create and execute a new cell              |
+| `read_cell`               | Read cell code and output                  |
+| `edit_cell`               | Update cell code                           |
+| `execute_cell`            | Run an existing cell                       |
+| `delete_cell`             | Remove a cell                              |
+| `move_cells`              | Reorder cells                              |
+| `fold_cell`               | Show or hide a cell's code in the Pluto UI |
+| `execute_code`            | Execute code ephemerally (no cell created) |
+| `get_docs`                | Get Julia symbol documentation             |
+| `introspect_notebook`     | List all symbols defined in a notebook     |
 
 ## Related
 
