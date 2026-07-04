@@ -275,10 +275,11 @@ using InteractiveUtils
       if (this.isExecuting) {
         this.write("\r\n\x1b[31m^C\x1b[0m\r\n");
         // Invalidate the in-flight execution so its completion doesn't
-        // clobber state or print a stray prompt (the Julia-side
-        // computation itself is not cancelled — interrupt is a TODO)
+        // clobber state or print a stray prompt, and ask Pluto to
+        // interrupt the Julia-side computation
         this.executionGeneration++;
         this.isExecuting = false;
+        this.interruptExecution();
         this.writePrompt();
       } else {
         this.inputBuffer = "";
@@ -430,6 +431,27 @@ using InteractiveUtils
   private clearCurrentLine(): void {
     // Move cursor to beginning of line, clear to end
     this.write("\r\x1b[K");
+  }
+
+  /**
+   * Ask Pluto to interrupt the running computation (best-effort,
+   * fire-and-forget — the generation counter already reclaimed the
+   * terminal).
+   */
+  private interruptExecution(): void {
+    if (!this.notebookPath) {
+      return;
+    }
+    void this.plutoManager
+      .getWorker(this.notebookPath)
+      .then((worker) => worker?.interrupt())
+      .catch((error) => {
+        this.outputChannel.appendLine(
+          `Terminal interrupt failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
   }
 
   /**
