@@ -72,13 +72,14 @@ Press `F5` in VSCode to launch Extension Development Host window for testing.
 - Supports both spawned server and VSCode task-based server
 - Shared between extension and MCP server for consistent state
 
-**MCP HTTP Server** (`src/mcpHttpServer.ts`)
+**MCP HTTP Server** (`src/mcp-server-http.ts`)
 
 - HTTP-based MCP server for AI assistant integration
-- 12 tools for notebook management and code execution
+- Notebook management and code execution tools (see `packages/advanced-pluto-mcp/README.md` for the full list)
 - Server-Sent Events (SSE) for streaming responses
 - Health check endpoint for monitoring
 - Shared PlutoManager instance with extension
+- Also bundled into the `@plutojl/cli` npm package (`src/cli/`), driven from the terminal via `npx @plutojl/cli run|tools|call`
 
 **Interactive Terminal** (`src/plutoTerminal.ts`)
 
@@ -178,7 +179,7 @@ The extension is functional and includes:
 - Pluto server management with automatic lifecycle handling
 - Real-time cell execution using @plutojl/rainbow
 - Rich output rendering in notebooks and terminal webviews
-- MCP server with 12 tools for AI assistants
+- MCP server with notebook tools for AI assistants, shared with the `@plutojl/cli` command-line tool
 - Interactive terminal with command history
 - Configuration commands for Claude Desktop and GitHub Copilot
 
