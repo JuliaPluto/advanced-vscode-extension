@@ -17,6 +17,7 @@ export interface RawArgs {
   toolName?: string;
   toolArgs?: string;
   raw?: boolean;
+  timeoutSeconds?: number;
 }
 
 function printHelp(): void {
@@ -50,6 +51,7 @@ Call options:
   npx @plutojl/cli call <tool_name> [json_args]
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
   --raw                    Output raw JSON response
+  --timeout <seconds>      Wait this long for the tool result (default: 120)
 
 Tools options:
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
@@ -61,7 +63,7 @@ Examples:
   npx @plutojl/cli install --target all --global
   npx @plutojl/cli tools
   npx @plutojl/cli call get_notebook_status
-  npx @plutojl/cli call start_pluto_server '{"port": 1234}'
+  npx @plutojl/cli call start_pluto_server
   npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 `);
 }
@@ -146,6 +148,13 @@ export function parseArgs(argv: string[]): RawArgs {
       args.force = true;
     } else if (flag === "--raw") {
       args.raw = true;
+    } else if (flag === "--timeout" && i + 1 < argv.length) {
+      const seconds = parseInt(argv[++i], 10);
+      if (isNaN(seconds) || seconds <= 0) {
+        console.error(`Invalid --timeout value: ${argv[i]}`);
+        process.exit(1);
+      }
+      args.timeoutSeconds = seconds;
     } else if (flag === "--no-pluto") {
       args.noPluto = true;
     } else {

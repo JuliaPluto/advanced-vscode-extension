@@ -71,21 +71,15 @@ export class PlutoMCPHttpServer {
     // Start Pluto Server
     server.tool(
       "start_pluto_server",
-      "Start the Pluto server on a specified port",
-      {
-        port: z
-          .number()
-          .describe("Port number for the Pluto server")
-          .optional()
-          .default(1234),
-      },
-      async ({ port }) => {
+      "Start the Pluto server on the configured port (set via --pluto-port or extension settings)",
+      {},
+      async () => {
         if (this.plutoManager.isRunning()) {
           return {
             content: [
               {
                 type: "text",
-                text: "Pluto server is already running",
+                text: `Pluto server is already running at ${this.plutoManager.getServerUrl()}`,
               },
             ],
           };
@@ -96,7 +90,7 @@ export class PlutoMCPHttpServer {
           content: [
             {
               type: "text",
-              text: `Pluto server started on port ${port}`,
+              text: `Pluto server started at ${this.plutoManager.getServerUrl()}`,
             },
           ],
         };
@@ -106,21 +100,15 @@ export class PlutoMCPHttpServer {
     // Connect to Pluto Server
     server.tool(
       "connect_to_pluto_server",
-      "Connect to an existing Pluto server (assumes server is already running)",
-      {
-        port: z
-          .number()
-          .describe("Port number of the running Pluto server")
-          .optional()
-          .default(1234),
-      },
-      async ({ port }) => {
+      "Connect to an already-running Pluto server at the configured URL (set via --pluto-url or extension settings)",
+      {},
+      async () => {
         if (this.plutoManager.isConnected()) {
           return {
             content: [
               {
                 type: "text",
-                text: "Already connected to a Pluto server",
+                text: `Already connected to a Pluto server at ${this.plutoManager.getServerUrl()}`,
               },
             ],
           };
@@ -131,7 +119,7 @@ export class PlutoMCPHttpServer {
           content: [
             {
               type: "text",
-              text: `Connected to Pluto server at port ${port}`,
+              text: `Connected to Pluto server at ${this.plutoManager.getServerUrl()}`,
             },
           ],
         };
@@ -471,6 +459,9 @@ export class PlutoMCPHttpServer {
       {},
       async () => {
         const isConnected = this.plutoManager.isConnected();
+        const notebooks = isConnected
+          ? this.plutoManager.getOpenNotebooks()
+          : [];
 
         return {
           content: [
@@ -479,6 +470,8 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   server_running: isConnected,
+                  server_url: this.plutoManager.getServerUrl(),
+                  open_notebooks: notebooks.length,
                   message: isConnected
                     ? "Pluto server is running"
                     : "Pluto server is not running",

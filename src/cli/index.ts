@@ -1,14 +1,17 @@
 import { parseArgs } from "./parseArgs.ts";
-import { resolveRunConfig, resolveInstallArgs } from "./resolveConfig.ts";
+import {
+  resolveRunConfig,
+  resolveInstallArgs,
+  resolveMcpPort,
+} from "./resolveConfig.ts";
 import { run } from "./run.ts";
 import { installMcpConfig } from "./install.ts";
 import { callTool, listTools } from "./call.ts";
 import { preflight } from "./preflight.ts";
-import { DEFAULTS } from "./config.ts";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const mcpPort = args.mcpPort ?? DEFAULTS.mcpPort;
+  const mcpPort = resolveMcpPort(args);
 
   switch (args.command) {
     case "run": {
@@ -36,7 +39,8 @@ async function main() {
         mcpPort,
         args.toolName,
         args.toolArgs ?? "{}",
-        args.raw ?? false
+        args.raw ?? false,
+        (args.timeoutSeconds ?? 120) * 1000
       );
       break;
     }

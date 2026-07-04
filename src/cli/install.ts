@@ -56,8 +56,10 @@ function installClaudeCode(
     return;
   }
 
+  // The tool server speaks the SSE transport (GET /mcp + POST /messages),
+  // not streamable HTTP — the config type must match
   mcpServers["pluto-notebook"] = {
-    type: "http",
+    type: "sse",
     url: `http://localhost:${mcpPort}/mcp`,
   };
 
@@ -83,7 +85,7 @@ function installCopilot(
 
   servers["pluto-notebook"] = {
     url: `http://localhost:${mcpPort}/mcp`,
-    type: "http",
+    type: "sse",
   };
 
   existing.servers = servers;
@@ -110,6 +112,6 @@ export async function installMcpConfig(args: InstallArgs): Promise<void> {
   }
 
   if (!args.dryRun) {
-    console.log("Done! Start the MCP server with: npx @plutojl/cli run");
+    console.log("Done! Start the tool server with: npx @plutojl/cli run");
   }
 }

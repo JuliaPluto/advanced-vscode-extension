@@ -50,9 +50,7 @@ export async function preflight(
     console.error(``);
     console.error(`Or connect to an existing Pluto server:`);
     console.error(``);
-    console.error(
-      `  npx @plutojl/cli call connect_to_pluto_server '{"port": 1234}'`
-    );
+    console.error(`  npx @plutojl/cli call connect_to_pluto_server`);
     process.exit(1);
   }
 

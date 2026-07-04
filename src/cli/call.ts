@@ -22,7 +22,8 @@ interface JsonRpcResponse {
 async function mcpRequest(
   port: number,
   method: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  timeoutMs = 30000
 ): Promise<JsonRpcResponse["result"]> {
   const sseUrl = `http://localhost:${port}/mcp`;
 
@@ -112,9 +113,11 @@ async function mcpRequest(
 
   // 4. Read SSE events until we get our response
   buffer = "";
+  let timedOut = false;
   const timeout = setTimeout(() => {
+    timedOut = true;
     reader.cancel().catch(() => {});
-  }, 30000);
+  }, timeoutMs);
 
   try {
     while (true) {
@@ -156,6 +159,12 @@ async function mcpRequest(
     reader.cancel().catch(() => {});
   }
 
+  if (timedOut) {
+    throw new Error(
+      `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${method}. ` +
+        `The operation may still be running on the server — pass --timeout <seconds> to wait longer.`
+    );
+  }
   throw new Error("No response received from MCP server");
 }
 
@@ -185,7 +194,8 @@ export async function callTool(
   port: number,
   toolName: string,
   argsJson: string,
-  raw: boolean
+  raw: boolean,
+  timeoutMs = 120000
 ): Promise<void> {
   let args: Record<string, unknown>;
   try {
@@ -195,10 +205,15 @@ export async function callTool(
     process.exit(1);
   }
 
-  const result = await mcpRequest(port, "tools/call", {
-    name: toolName,
-    arguments: args,
-  });
+  const result = await mcpRequest(
+    port,
+    "tools/call",
+    {
+      name: toolName,
+      arguments: args,
+    },
+    timeoutMs
+  );
 
   if (raw) {
     console.log(JSON.stringify(result, null, 2));
