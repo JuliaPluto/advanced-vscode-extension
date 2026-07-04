@@ -155,15 +155,27 @@ export class PlutoServerTaskManager {
       );
     }
 
-    const juliaHubToken = await getJuliaHubToken();
+    // The JuliaHub token is optional — a declined/failed authentication
+    // must not prevent the local Pluto server from starting
+    let juliaHubToken: string | undefined;
+    try {
+      juliaHubToken = await getJuliaHubToken();
+    } catch (error) {
+      console.warn(
+        "[PlutoServerTask] Continuing without JuliaHub token:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
 
     // --- Step 4: Build env vars for the server process ---
     const env: { [key: string]: string } = {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: resolveJuliaDepotPath(),
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
-      JULIAHUB_TOKEN: juliaHubToken,
     };
+    if (juliaHubToken) {
+      env.JULIAHUB_TOKEN = juliaHubToken;
+    }
     if (packageServer) {
       env.JULIA_PKG_SERVER = packageServer;
     }

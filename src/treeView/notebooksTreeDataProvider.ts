@@ -37,11 +37,9 @@ export class PlutoNotebookTreeItem
     public readonly isConnected: boolean,
     public readonly error?: Error
   ) {
-    super(
-      notebookPath.split("/").pop() ?? notebookPath,
-      vscode.TreeItemCollapsibleState.Expanded
-    );
-    const basename = notebookPath.split("/").pop() ?? notebookPath;
+    // Split on both separators — fsPath uses backslashes on Windows
+    const basename = notebookPath.split(/[\\/]/).pop() ?? notebookPath;
+    super(basename, vscode.TreeItemCollapsibleState.Expanded);
 
     // Determine status
     let status = "";
@@ -101,13 +99,14 @@ class PlutoCellTreeItem
     public readonly notebookPath: string,
     public readonly cellId: string,
     public readonly cellData: ReturnType<Worker["getSnippet"]>,
-    public readonly dependencies: CellDependencyData
+    public readonly dependencies: CellDependencyData | undefined
   ) {
     const cellResult = cellData?.result;
     const code = cellData?.input?.code ?? "";
-    const keys = Object.keys(dependencies.downstream_cells_map ?? {});
+    // Dependency data may not exist yet for freshly created cells
+    const keys = Object.keys(dependencies?.downstream_cells_map ?? {});
     const upstream = new Set(
-      Object.values(dependencies.upstream_cells_map)
+      Object.values(dependencies?.upstream_cells_map ?? {})
         .flatMap((x) => x)
         .filter((x) => x !== cellId)
     );
@@ -152,7 +151,11 @@ class PlutoCellTreeItem
     }
 
     this.contextValue = "plutoCell";
-    this.tooltip = code ? `${code.substring(0, 100)}...` : cellId;
+    this.tooltip = code
+      ? code.length > 100
+        ? `${code.substring(0, 100)}...`
+        : code
+      : cellId;
     this.command = {
       command: "pluto-notebook.focusCellFromTree",
       title: "Focus Cell",
@@ -174,11 +177,18 @@ export class NotebooksTreeDataProvider
     NotebookTreeItemBase | undefined | null | void
   > = this._onDidChangeTreeData.event;
 
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
   /**
-   * Refresh the tree view
+   * Refresh the tree view. Bursts are coalesced — cellUpdated fires for
+   * every streaming patch during execution, and rebuilding the whole tree
+   * per patch is wasted work.
    */
   public refresh = (): void => {
-    this._onDidChangeTreeData.fire();
+    this.refreshTimer ??= setTimeout(() => {
+      this.refreshTimer = undefined;
+      this._onDidChangeTreeData.fire();
+    }, 250);
   };
 
   constructor(private readonly plutoManager: PlutoManager) {
@@ -308,6 +318,7 @@ export class NotebooksTreeDataProvider
    * Dispose of resources
    */
   public dispose(): void {
+    clearTimeout(this.refreshTimer);
     this.plutoManager.off("serverStateChanged", this.refresh);
     this.plutoManager.off("notebookOpened", this.refresh);
     this.plutoManager.off("notebookClosed", this.refresh);

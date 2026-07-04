@@ -45,10 +45,7 @@ import {
 } from "./notebooksTreeCommands.ts";
 import { registerCreateTerminalCommand } from "./terminalCommands.ts";
 import { registerToggleViewCommand } from "./viewToggleCommands.ts";
-import {
-  registerCreateNewNotebookCommand,
-  registerBundleProjectToCellCommand,
-} from "./notebookCommands.ts";
+import { registerCreateNewNotebookCommand } from "./notebookCommands.ts";
 
 /**
  * Register all commands at once
@@ -58,10 +55,12 @@ import {
  *
  * @param context - Extension context for registering commands
  * @param plutoManager - Shared PlutoManager instance
+ * @param terminalOutputChannel - Shared "Pluto Terminal" output channel
  */
 export function registerAllCommands(
   context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
+  plutoManager: PlutoManager,
+  terminalOutputChannel: vscode.OutputChannel
 ): void {
   // Register Pluto Server commands
   registerStartServerCommand(context, plutoManager);
@@ -80,7 +79,7 @@ export function registerAllCommands(
   registerGetMCPHttpUrlCommand(context);
 
   // Register Terminal commands
-  registerCreateTerminalCommand(context, plutoManager);
+  registerCreateTerminalCommand(context, plutoManager, terminalOutputChannel);
   registerFocusCellCommand(context);
   registerRevealNotebookCommand(context);
   registerReconnectCommand(context, plutoManager);
@@ -90,5 +89,4 @@ export function registerAllCommands(
 
   // Register Notebook commands
   registerCreateNewNotebookCommand(context);
-  registerBundleProjectToCellCommand(context);
 }

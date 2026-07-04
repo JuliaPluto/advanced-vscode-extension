@@ -11,12 +11,9 @@ export class PlutoStatusBar {
    * Update the status bar item based on server state
    */
   private readonly update = (): void => {
-    const isRunning = this.plutoManager.isRunning();
-    const isConnected = this.plutoManager.isConnected();
-
-    if (isRunning && isConnected) {
+    if (this.plutoManager.isRunning()) {
       this.setRunning();
-    } else if (!isConnected && isRunning) {
+    } else if (this.plutoManager.isStarting()) {
       this.setStarting();
     } else {
       this.setStopped();

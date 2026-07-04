@@ -106,14 +106,14 @@ export function registerOpenInBrowserCommand(
     vscode.commands.registerCommand(
       "pluto-notebook.openInBrowser",
       async (notebookPath?: string) => {
-        // If no path provided, try to get from active editor
+        // Prefer the active notebook editor — notebooks don't have a
+        // text editor, so activeTextEditor alone misses the main case
+        notebookPath ??=
+          vscode.window.activeNotebookEditor?.notebook.uri.fsPath ??
+          vscode.window.activeTextEditor?.document.uri.fsPath;
         if (!notebookPath) {
-          const activeEditor = vscode.window.activeTextEditor;
-          if (!activeEditor) {
-            vscode.window.showErrorMessage("No active notebook file");
-            return;
-          }
-          notebookPath = activeEditor.document.uri.fsPath;
+          vscode.window.showErrorMessage("No active notebook file");
+          return;
         }
 
         // Check if server is running
@@ -124,26 +124,25 @@ export function registerOpenInBrowserCommand(
           return;
         }
 
-        // Get the worker for this notebook
-        const worker = await plutoManager.getWorker(notebookPath);
-        if (!worker) {
+        try {
+          // Get (or create) the worker for this notebook
+          const worker = await plutoManager.getWorker(notebookPath);
+          if (!worker) {
+            vscode.window.showErrorMessage(
+              `Could not open ${notebookPath} on the Pluto server.`
+            );
+            return;
+          }
+
+          const url = `${plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
+          await vscode.env.openExternal(vscode.Uri.parse(url));
+        } catch (error) {
           vscode.window.showErrorMessage(
-            `Notebook ${notebookPath} is not open. Open the notebook first.`
+            `Failed to open notebook in browser: ${
+              error instanceof Error ? error.message : String(error)
+            }`
           );
-          return;
         }
-
-        // Get server URL from PlutoManager
-        const serverUrl = plutoManager.getServerUrl();
-
-        // Construct the URL
-        const url = `${serverUrl}/edit?id=${worker.notebook_id}`;
-
-        // Open in browser
-        await vscode.env.openExternal(vscode.Uri.parse(url));
-        vscode.window.showInformationMessage(
-          `Opening notebook in browser: ${worker.notebook_id}`
-        );
       }
     )
   );

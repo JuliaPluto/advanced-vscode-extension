@@ -127,8 +127,13 @@ export async function activate(
     })
   );
 
+  // Shared output channel for the terminal command and profile provider
+  const terminalOutputChannel =
+    vscode.window.createOutputChannel("Pluto Terminal");
+  context.subscriptions.push(terminalOutputChannel);
+
   // Register all commands
-  registerAllCommands(context, plutoManager);
+  registerAllCommands(context, plutoManager, terminalOutputChannel);
 
   // Start Pluto server in the background — activation must not block on
   // (potentially minutes of) first-run Julia setup. Once the server is up,
@@ -158,10 +163,6 @@ export async function activate(
   registerNotebooksTreeView(context, plutoManager);
 
   // Register terminal profile provider
-  const terminalOutputChannel =
-    vscode.window.createOutputChannel("Pluto Terminal");
-  context.subscriptions.push(terminalOutputChannel);
-
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider("pluto-notebook.terminal", {
       provideTerminalProfile() // _token: vscode.CancellationToken
