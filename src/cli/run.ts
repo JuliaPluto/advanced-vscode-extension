@@ -7,9 +7,7 @@ import { consoleLogger } from "./logger.ts";
 import { type CliConfig, VERSION } from "./config.ts";
 
 export async function run(config: CliConfig): Promise<void> {
-  console.log(
-    `@plutojl/cli v${VERSION} — Standalone MCP server for Pluto.jl\n`
-  );
+  console.log(`@plutojl/cli v${VERSION} — command-line tool for Pluto.jl\n`);
 
   const serverManager = new NodeServerManager(
     config.plutoPort,

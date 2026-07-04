@@ -21,16 +21,16 @@ export interface RawArgs {
 
 function printHelp(): void {
   console.log(`
-@plutojl/cli v${VERSION} — Standalone MCP server for Pluto.jl notebooks
+@plutojl/cli v${VERSION} — command-line tool for Pluto.jl notebooks
 
 Usage:
   npx @plutojl/cli <command> [options]
 
 Commands:
-  run       Start the MCP server (and Pluto server if needed)
-  install   Add MCP config to .mcp.json or mcp.json
-  tools     List available MCP tools on a running server
-  call      Call an MCP tool on a running server
+  run       Start Pluto and the tool server
+  tools     List available notebook tools
+  call      Call a notebook tool (open, edit, execute cells, ...)
+  install   Add MCP config for AI assistants (.mcp.json or mcp.json)
 
 Run options:
   --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
