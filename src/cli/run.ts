@@ -24,7 +24,7 @@ export async function run(config: CliConfig): Promise<void> {
   );
 
   // Start the MCP HTTP server first (so health endpoint is available during Pluto startup)
-  const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort, true);
+  const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort);
   await mcpServer.start();
 
   console.log(
@@ -63,8 +63,14 @@ export async function run(config: CliConfig): Promise<void> {
   console.log(`\n[cli] Press Ctrl+C to stop\n`);
   console.log(`Tip: Run 'npx @plutojl/cli install' to configure Claude Code\n`);
 
-  // Graceful shutdown
+  // Graceful shutdown — owns both signals; guard against a second signal
+  // arriving while shutdown is already in progress
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     console.log("\n[cli] Shutting down...");
     try {
       await mcpServer.stop();
@@ -79,5 +85,6 @@ export async function run(config: CliConfig): Promise<void> {
     process.exit(0);
   };
 
+  process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

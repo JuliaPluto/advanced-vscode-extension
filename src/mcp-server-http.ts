@@ -22,16 +22,13 @@ export class PlutoMCPHttpServer {
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
   private readonly port: number;
-  private readonly handleSignals: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100, handleSignals = false) {
+  constructor(plutoManager: PlutoManager, port = 3100) {
     this.plutoManager = plutoManager;
     this.port = port;
-    this.handleSignals = handleSignals;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
-    this.setupErrorHandling();
   }
 
   private createMcpServer(): McpServer {
@@ -1023,17 +1020,6 @@ export class PlutoMCPHttpServer {
     });
   }
 
-  private setupErrorHandling(): void {
-    if (!this.handleSignals) {
-      return;
-    }
-    process.on("SIGINT", async () => {
-      console.log("[MCP HTTP] Shutting down server...");
-      await this.stop();
-      process.exit(0);
-    });
-  }
-
   public async start(): Promise<void> {
     return await new Promise((resolve, reject) => {
       this.httpServer = this.app.listen(this.port, (error?: Error) => {
@@ -1073,13 +1059,20 @@ export class PlutoMCPHttpServer {
       }
     }
 
-    // Close HTTP server
+    // Close HTTP server (resolve immediately if it never started)
     await new Promise<void>((resolve) => {
-      this.httpServer?.close(() => {
+      if (!this.httpServer) {
+        resolve();
+        return;
+      }
+      this.httpServer.close(() => {
         console.log("[MCP HTTP] HTTP server closed");
         resolve();
       });
+      // Idle keep-alive connections would otherwise hold close() open
+      this.httpServer.closeIdleConnections();
     });
+    this.httpServer = undefined;
   }
 
   public getPort(): number {

@@ -1,10 +1,27 @@
-import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "child_process";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
 import type { IPlutoServerManager } from "../plutoManagerTypes.ts";
 import { isPortAvailable, findAvailablePort } from "../portUtils.ts";
 import { getExecutableName, isWindows } from "../platformUtils.ts";
+
+/**
+ * Run a child process to completion without blocking the event loop
+ * (unlike spawnSync — the MCP health endpoint must stay responsive
+ * while Julia setup runs).
+ */
+function runProcess(
+  command: string,
+  args: string[],
+  options: SpawnOptions
+): Promise<{ status: number | null; error?: Error }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, options);
+    child.on("error", (error) => resolve({ status: null, error }));
+    child.on("exit", (code) => resolve({ status: code }));
+  });
+}
 
 export class NodeServerManager implements IPlutoServerManager {
   private juliaProcess?: ChildProcess;
@@ -69,27 +86,28 @@ export class NodeServerManager implements IPlutoServerManager {
 
       // 2. Check Julia is available
       const juliaCmd = getExecutableName("julia");
-      const juliaCheck = spawnSync(juliaCmd, ["--version"], {
+      const juliaCheck = await runProcess(juliaCmd, ["--version"], {
         stdio: "pipe",
         timeout: 10000,
       });
       if (juliaCheck.error) {
-        console.error(
-          "Error: Julia not found. Please install Julia from https://julialang.org/downloads/"
+        throw new Error(
+          "Julia not found. Please install Julia from https://julialang.org/downloads/ " +
+            "or install juliaup from https://github.com/JuliaLang/juliaup#installation"
         );
-        console.error(
-          "  or install juliaup from https://github.com/JuliaLang/juliaup#installation"
-        );
-        process.exit(1);
       }
 
       // 3. Try juliaup to ensure the requested version is available
       let useJuliaupPrefix = true;
       const juliaupCmd = getExecutableName("juliaup");
-      const juliaupResult = spawnSync(juliaupCmd, ["add", this.juliaVersion], {
-        stdio: "pipe",
-        timeout: 60000,
-      });
+      const juliaupResult = await runProcess(
+        juliaupCmd,
+        ["add", this.juliaVersion],
+        {
+          stdio: "pipe",
+          timeout: 60000,
+        }
+      );
       if (juliaupResult.error) {
         console.log(
           "[pluto] juliaup not found — using system julia (ignoring --julia-version)"
@@ -116,7 +134,7 @@ export class NodeServerManager implements IPlutoServerManager {
       }
 
       // 6. Optional JuliaHub auth
-      this.tryJuliaHubAuth(env, juliaCmd, juliaArgs);
+      await this.tryJuliaHubAuth(env, juliaCmd, juliaArgs);
 
       // 7. Setup task — install Pluto if needed
       console.log(
@@ -133,11 +151,18 @@ export class NodeServerManager implements IPlutoServerManager {
         "Pkg.precompile()",
       ].join(";");
 
-      const setupResult = spawnSync(juliaCmd, [...juliaArgs, "-e", setupCode], {
-        stdio: "inherit",
-        env,
-        timeout: 600000,
-      });
+      const setupResult = await runProcess(
+        juliaCmd,
+        [...juliaArgs, "-e", setupCode],
+        {
+          stdio: "inherit",
+          env,
+          timeout: 600000,
+        }
+      );
+      if (setupResult.error) {
+        throw new Error(`Julia setup failed: ${setupResult.error.message}`);
+      }
       if (setupResult.status !== 0) {
         throw new Error(
           `Julia setup failed with exit code ${setupResult.status}`
@@ -218,11 +243,11 @@ export class NodeServerManager implements IPlutoServerManager {
     this.actualPort = this.port;
   }
 
-  private tryJuliaHubAuth(
+  private async tryJuliaHubAuth(
     env: Record<string, string>,
     juliaCmd: string,
     juliaArgs: string[]
-  ): void {
+  ): Promise<void> {
     try {
       const jhCmd = getExecutableName("jh");
       const tmpFile = path.join(
@@ -243,7 +268,7 @@ export class NodeServerManager implements IPlutoServerManager {
         `end`,
       ].join(";");
 
-      const result = spawnSync(juliaCmd, [...juliaArgs, "-e", script], {
+      const result = await runProcess(juliaCmd, [...juliaArgs, "-e", script], {
         env: { ...env, VSCODE_PLUTO_AUTH_FILE: tmpFile },
         stdio: "pipe",
         timeout: 15000,
@@ -271,9 +296,6 @@ export class NodeServerManager implements IPlutoServerManager {
   }
 
   private async pollServerReady(): Promise<void> {
-    // Initial wait for Julia to start up
-    await new Promise((r) => setTimeout(r, 5000));
-
     const maxAttempts = 120;
     const pollInterval = 1000;
 
