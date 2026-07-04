@@ -283,6 +283,99 @@ describe("Pluto Serializer Functions", () => {
     });
   });
 
+  describe("cell metadata round-trip (issue #28)", () => {
+    it("does not write pluto_cell_id or default metadata as TOML annotations", () => {
+      const cellId = uuidv4();
+      const cell: NotebookCellData = {
+        kind: NotebookCellKind.Code,
+        value: "x = 1",
+        languageId: "julia",
+        metadata: { pluto_cell_id: cellId },
+      };
+
+      const serialized = serializePlutoNotebook([cell], uuidv4(), "0.20.21");
+
+      expect(serialized).not.toContain("pluto_cell_id =");
+      expect(serialized).not.toContain("show_logs");
+      expect(serialized).not.toContain("skip_as_script");
+      // The cell id must still appear as the cell marker
+      expect(serialized).toContain(`# ╔═╡ ${cellId}`);
+    });
+
+    it("preserves real Pluto metadata like disabled", () => {
+      const cell: NotebookCellData = {
+        kind: NotebookCellKind.Code,
+        value: "x = 1",
+        languageId: "julia",
+        metadata: { pluto_cell_id: uuidv4(), disabled: true },
+      };
+
+      const serialized = serializePlutoNotebook([cell], uuidv4(), "0.20.21");
+      expect(serialized).toContain("disabled = true");
+      expect(serialized).not.toContain("pluto_cell_id =");
+    });
+
+    it("round-trips code_folded through cell metadata", () => {
+      const cellId = uuidv4();
+      const notebook = `### A Pluto.jl notebook ###
+# v0.20.21
+
+using Markdown
+using InteractiveUtils
+
+# ╔═╡ ${cellId}
+x = 1
+
+# ╔═╡ Cell order:
+# ╟─${cellId}
+`;
+
+      const parsed = parsePlutoNotebook(notebook);
+      expect(parsed.cells[0].metadata?.code_folded).toBe(true);
+
+      const serialized = serializePlutoNotebook(
+        parsed.cells,
+        parsed.notebook_id,
+        parsed.pluto_version
+      );
+      // Folded cells appear with the folded marker in the cell order
+      expect(serialized).toContain(`# ╟─${cellId}`);
+      expect(serialized).not.toContain("code_folded =");
+    });
+
+    it("self-heals files poisoned with embedded pluto_cell_id metadata", () => {
+      const markerId = uuidv4();
+      const staleId = uuidv4();
+      const notebook = `### A Pluto.jl notebook ###
+# v0.20.21
+
+using Markdown
+using InteractiveUtils
+
+# ╔═╡ ${markerId}
+# ╠═╡ show_logs = false
+# ╠═╡ pluto_cell_id = "${staleId}"
+b = 1
+
+# ╔═╡ Cell order:
+# ╠═${markerId}
+`;
+
+      const parsed = parsePlutoNotebook(notebook);
+      // The marker-derived id wins over the stale embedded one
+      expect(parsed.cells[0].metadata?.pluto_cell_id).toBe(markerId);
+
+      const serialized = serializePlutoNotebook(
+        parsed.cells,
+        parsed.notebook_id,
+        parsed.pluto_version
+      );
+      expect(serialized).not.toContain("pluto_cell_id =");
+      // Non-default show_logs=false from the file is preserved
+      expect(serialized).toContain("show_logs = false");
+    });
+  });
+
   describe("Error handling", () => {
     it("should handle empty content", async () => {
       expect(() => parsePlutoNotebook("")).toThrow();
