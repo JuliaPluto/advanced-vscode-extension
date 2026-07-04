@@ -24,12 +24,11 @@ export function registerStartMCPServerCommand(
         }
 
         try {
-          const config = vscode.workspace.getConfiguration("pluto-notebook");
-          const mcpPort = config.get<number>("mcpPort", 3100);
-
           await mcpServer.start();
+          // getPort() after start — the server may have moved to a free
+          // port when the configured one was taken
           vscode.window.showInformationMessage(
-            `MCP Server started on http://localhost:${mcpPort}`
+            `MCP Server started on http://localhost:${mcpServer.getPort()}`
           );
         } catch (error) {
           const errorMessage =
@@ -102,12 +101,9 @@ export function registerRestartMCPServerCommand(
             await mcpServer.stop();
           }
 
-          const config = vscode.workspace.getConfiguration("pluto-notebook");
-          const mcpPort = config.get<number>("mcpPort", 3100);
-
           await mcpServer.start();
           vscode.window.showInformationMessage(
-            `MCP Server restarted on http://localhost:${mcpPort}`
+            `MCP Server restarted on http://localhost:${mcpServer.getPort()}`
           );
         } catch (error) {
           const errorMessage =

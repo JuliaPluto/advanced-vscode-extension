@@ -1,7 +1,24 @@
 import * as vscode from "vscode";
+import { getMCPServer } from "../mcp-server-http.ts";
 
 /**
- * Generate MCP server configuration for Claude Desktop
+ * MCP URL of the running server (which may have moved to a fallback
+ * port), or the configured port when it isn't running.
+ */
+function resolveMcpUrl(): string {
+  const runningPort = getMCPServer()?.isRunning()
+    ? getMCPServer()?.getPort()
+    : undefined;
+  const port =
+    runningPort ??
+    vscode.workspace
+      .getConfiguration("pluto-notebook")
+      .get<number>("mcpPort", 3100);
+  return `http://localhost:${port}/mcp`;
+}
+
+/**
+ * Generate MCP server configuration for Claude Code (.mcp.json)
  */
 function getClaudeConfig(mcpUrl: string): object {
   return {
@@ -15,14 +32,15 @@ function getClaudeConfig(mcpUrl: string): object {
 }
 
 /**
- * Generate MCP server configuration for GitHub Copilot
+ * Generate MCP server configuration for GitHub Copilot (mcp.json).
+ * The tool server speaks the SSE transport — the type must match.
  */
 function getCopilotConfig(mcpUrl: string): object {
   return {
     servers: {
       "pluto-notebook": {
         url: mcpUrl,
-        type: "http",
+        type: "sse",
       },
     },
     inputs: [],
@@ -90,7 +108,7 @@ async function createProjectMCPConfig(
     await vscode.window.showTextDocument(doc);
 
     vscode.window.showInformationMessage(
-      `${configType === "claude" ? "Claude Desktop" : "Copilot"} config created/updated at ${configPath.fsPath}`
+      `${configType === "claude" ? "Claude Code" : "Copilot"} config created/updated at ${configPath.fsPath}`
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -110,15 +128,13 @@ export function registerCreateProjectMCPConfigCommand(
     vscode.commands.registerCommand(
       "pluto-notebook.createProjectMCPConfig",
       async () => {
-        const config = vscode.workspace.getConfiguration("pluto-notebook");
-        const mcpPort = config.get<number>("mcpPort", 3100);
-        const mcpUrl = `http://localhost:${mcpPort}/mcp`;
+        const mcpUrl = resolveMcpUrl();
 
         const choice = await vscode.window.showQuickPick(
           [
             {
-              label: "Claude Desktop",
-              description: "Create config for Claude Desktop (.mcp.json)",
+              label: "Claude Code",
+              description: "Create config for Claude Code (.mcp.json)",
               value: "claude" as const,
             },
             {
@@ -150,9 +166,7 @@ export function registerGetMCPHttpUrlCommand(
     vscode.commands.registerCommand(
       "pluto-notebook.getMCPHttpUrl",
       async () => {
-        const config = vscode.workspace.getConfiguration("pluto-notebook");
-        const mcpPort = config.get<number>("mcpPort", 3100);
-        const mcpUrl = `http://localhost:${mcpPort}/mcp`;
+        const mcpUrl = resolveMcpUrl();
 
         const action = await vscode.window.showInformationMessage(
           `MCP HTTP Server URL: ${mcpUrl}`,
@@ -170,7 +184,7 @@ export function registerGetMCPHttpUrlCommand(
         } else if (action === "Create Copilot Config") {
           await createProjectMCPConfig(mcpUrl, "copilot");
         } else if (action === "Open Health Check") {
-          const healthUrl = `http://localhost:${mcpPort}/health`;
+          const healthUrl = mcpUrl.replace(/\/mcp$/, "/health");
           await vscode.env.openExternal(vscode.Uri.parse(healthUrl));
         }
       }

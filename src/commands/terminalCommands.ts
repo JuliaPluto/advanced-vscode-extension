@@ -11,12 +11,9 @@ import { createPlutoTerminal } from "../plutoTerminal.ts";
  */
 export function registerCreateTerminalCommand(
   context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
+  plutoManager: PlutoManager,
+  terminalOutputChannel: vscode.OutputChannel
 ): void {
-  const terminalOutputChannel =
-    vscode.window.createOutputChannel("Pluto Terminal");
-  context.subscriptions.push(terminalOutputChannel);
-
   const command = vscode.commands.registerCommand(
     "pluto-notebook.createTerminal",
     () => {
