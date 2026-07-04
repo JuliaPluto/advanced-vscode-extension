@@ -116,6 +116,8 @@ These tools are callable from the command line via `call`, and exposed to AI ass
 | `open_notebook`           | Open a notebook file                       |
 | `move_notebook`           | Move a notebook to a new path              |
 | `save_notebook`           | Save the running notebook to disk          |
+| `export_notebook_html`    | Export a static HTML snapshot to disk      |
+| `wait_for_notebook_idle`  | Block until no cell is running or queued   |
 | `list_notebooks`          | List all open notebooks                    |
 | `get_notebook_url`        | Get the Pluto web UI URL for a notebook    |
 | `list_cells`              | List cells with IDs and execution status   |

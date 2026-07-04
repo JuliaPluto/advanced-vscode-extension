@@ -85,9 +85,13 @@ export function createVsCodeCellFromPlutoCell(
     upstream_cells_map: {},
   };
   cellData.outputs = [formatCellOutput(results)];
+  // pluto_cell_id and code_folded come after the spread so values from the
+  // cell marker/input always win over stale keys inside file metadata
+  // (files written by older versions embedded pluto_cell_id as metadata)
   cellData.metadata = {
-    pluto_cell_id: plutoCellId,
     ...cellInput.metadata,
+    pluto_cell_id: plutoCellId,
+    code_folded: cellInput.code_folded ?? false,
   };
   return cellData;
 }
@@ -143,15 +147,28 @@ export function serializePlutoNotebook(
       code = `#VSCODE-MARKDOWN\nmd"""${cell.value}"""`;
     }
 
+    // VSCode-internal keys must not leak into Pluto cell metadata — they
+    // get serialized as `# ╠═╡` TOML annotations that Pluto's parser
+    // rejects (see issue #28). pluto_cell_id is already encoded by the
+    // cell marker; code_folded is a top-level field, not metadata.
+    const plutoMetadata = { ...(cell.metadata ?? {}) } as Record<
+      string,
+      unknown
+    >;
+    delete plutoMetadata.pluto_cell_id;
+    const codeFolded = plutoMetadata.code_folded === true;
+    delete plutoMetadata.code_folded;
+
     cellInputs[cellId] = {
       cell_id: cellId,
       code: code,
-      code_folded: false,
+      code_folded: codeFolded,
       metadata: {
+        // Pluto defaults — only non-default values get written to the file
         disabled: false,
-        show_logs: false,
+        show_logs: true,
         skip_as_script: false,
-        ...cell.metadata,
+        ...plutoMetadata,
       },
     };
 

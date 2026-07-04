@@ -25,7 +25,19 @@ export async function run(config: CliConfig): Promise<void> {
 
   // Start the MCP HTTP server first (so health endpoint is available during Pluto startup)
   const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort);
-  await mcpServer.start();
+  try {
+    await mcpServer.start();
+  } catch (err) {
+    console.error(
+      `[cli] Could not start the tool server on port ${config.mcpPort}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    console.error(
+      `[cli] Is another 'run' already active? Pass --mcp-port <port> to use a different port.`
+    );
+    process.exit(1);
+  }
 
   console.log(
     `[cli] MCP server listening at http://localhost:${config.mcpPort}/mcp`

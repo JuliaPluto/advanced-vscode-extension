@@ -2,11 +2,41 @@
  * Platform detection and platform-specific utilities
  */
 
+import * as os from "os";
+import * as path from "path";
+
 /**
  * Check if running on Windows
  */
 export function isWindows(): boolean {
   return process.platform === "win32";
+}
+
+/**
+ * Resolve the JULIA_DEPOT_PATH to pass to spawned Julia processes.
+ * Julia requires absolute depot entries — a literal "~" is treated as a
+ * relative directory named "~" (issue #34). Respects an existing
+ * absolute setting, expands "~"-prefixed entries, and falls back to
+ * the default depot in the user's home directory.
+ */
+export function resolveJuliaDepotPath(): string {
+  const separator = isWindows() ? ";" : ":";
+  const existing = process.env.JULIA_DEPOT_PATH;
+
+  if (existing?.trim()) {
+    const expanded = existing
+      .split(separator)
+      .map((entry) =>
+        entry.startsWith("~") ? path.join(os.homedir(), entry.slice(1)) : entry
+      )
+      .join(separator);
+    const first = expanded.split(separator)[0];
+    if (first && path.isAbsolute(first)) {
+      return expanded;
+    }
+  }
+
+  return path.join(os.homedir(), ".julia");
 }
 
 /**

@@ -4,7 +4,11 @@ import * as path from "path";
 import * as fs from "fs";
 import type { IPlutoServerManager } from "../plutoManagerTypes.ts";
 import { isPortAvailable, findAvailablePort } from "../portUtils.ts";
-import { getExecutableName, isWindows } from "../platformUtils.ts";
+import {
+  getExecutableName,
+  isWindows,
+  resolveJuliaDepotPath,
+} from "../platformUtils.ts";
 
 /**
  * Run a child process to completion without blocking the event loop
@@ -130,7 +134,7 @@ export class NodeServerManager implements IPlutoServerManager {
       // 5. Environment variables
       const env: Record<string, string> = {
         ...(process.env as Record<string, string>),
-        JULIA_DEPOT_PATH: path.join(os.homedir(), ".julia"),
+        JULIA_DEPOT_PATH: resolveJuliaDepotPath(),
         JULIA_LOAD_PATH: isWindows() ? ";" : ":",
       };
       if (this.workDir) {

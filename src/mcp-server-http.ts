@@ -5,12 +5,43 @@ import { writeFile } from "fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { PlutoManager } from "./plutoManager.ts";
+import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
 // @ts-expect-error - esbuild will load this as text
 import PlutoGuide from "./PLUTO_GUIDE.md";
 
 // Singleton instance
 let mcpServerInstance: PlutoMCPHttpServer | undefined;
+
+/**
+ * Default bound on how long a tool call may block on cell execution.
+ * Long computations keep running server-side; the call returns guidance
+ * to poll instead of hanging the MCP client forever (see issue #38).
+ */
+const EXECUTION_TIMEOUT_MS = 5 * 60_000;
+
+type TimeoutResult<T> = { timedOut: false; value: T } | { timedOut: true };
+
+async function withExecutionTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = EXECUTION_TIMEOUT_MS
+): Promise<TimeoutResult<T>> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<TimeoutResult<T>>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      promise.then((value): TimeoutResult<T> => ({ timedOut: false, value })),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timeoutHandle);
+    // The original promise keeps running after a timeout — don't let its
+    // eventual rejection become an unhandled rejection
+    void promise.catch(() => {});
+  }
+}
 
 /**
  * HTTP/SSE-based MCP Server for Pluto Notebooks
@@ -21,11 +52,18 @@ export class PlutoMCPHttpServer {
   private httpServer?: HttpServer;
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
-  private readonly port: number;
+  private port: number;
+  private readonly dynamicPort: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100) {
+  /**
+   * @param dynamicPort - when the configured port is busy, move to the next
+   * free one instead of failing (used by the extension so multiple VSCode
+   * windows can coexist; the CLI stays strict so `tools`/`call` can find it)
+   */
+  constructor(plutoManager: PlutoManager, port = 3100, dynamicPort = false) {
     this.plutoManager = plutoManager;
     this.port = port;
+    this.dynamicPort = dynamicPort;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -266,12 +304,30 @@ export class PlutoMCPHttpServer {
           throw new Error(`Cell ${cell_id} not found`);
         }
 
-        const result = await this.plutoManager.executeCell(
-          worker,
-          cell_id,
-          cellData.input.code
+        const outcome = await withExecutionTimeout(
+          this.plutoManager.executeCell(worker, cell_id, cellData.input.code)
         );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    cell_id: cell_id,
+                    timed_out: true,
+                    message: `Cell is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It continues to execute — use wait_for_notebook_idle or poll read_cell to get the result.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -312,8 +368,29 @@ export class PlutoMCPHttpServer {
           throw new Error(`Notebook ${path} is not open`);
         }
 
-        const result = await worker.waitSnippet(index, code);
+        const outcome = await withExecutionTimeout(
+          this.plutoManager.runSnippet(worker, index, code)
+        );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    timed_out: true,
+                    message: `Execution is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. The cell WAS created (at index ${index}) and continues to run — use list_cells to find its id, then wait_for_notebook_idle or read_cell to get the result. Do NOT retry create_cell.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -534,11 +611,29 @@ export class PlutoMCPHttpServer {
           throw new Error(`Notebook ${path} is not open`);
         }
 
-        const result = await this.plutoManager.executeCodeEphemeral(
-          worker,
-          code
+        const outcome = await withExecutionTimeout(
+          this.plutoManager.executeCodeEphemeral(worker, code)
         );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    timed_out: true,
+                    message: `Code is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle to wait for it. For long computations prefer create_cell so the result stays inspectable.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -758,6 +853,56 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Export Notebook HTML
+    server.tool(
+      "export_notebook_html",
+      "Export the notebook's current state as a self-contained static HTML file (like Pluto's 'Export to HTML' button) and write it to disk.",
+      {
+        path: z.string().describe("Path of the open notebook"),
+        output_path: z
+          .string()
+          .describe(
+            "File path for the HTML export (defaults to the notebook path with a .html extension)"
+          )
+          .optional(),
+      },
+      async ({ path, output_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const exportUrl = `${this.plutoManager.getServerUrl()}/notebookexport?id=${worker.notebook_id}`;
+        const response = await fetch(exportUrl, {
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Export failed: ${response.status} ${response.statusText}`
+          );
+        }
+        const html = await response.text();
+
+        const savePath =
+          output_path ?? path.replace(/(\.pluto)?\.jl$/, "") + ".html";
+        await writeFile(savePath, html, "utf-8");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook exported to ${savePath} (${html.length} bytes)`,
+            },
+          ],
+        };
+      }
+    );
+
     // Delete Cell
     server.tool(
       "delete_cell",
@@ -907,6 +1052,64 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Wait for notebook idle
+    server.tool(
+      "wait_for_notebook_idle",
+      "Block until the notebook has no running or queued cells (or the timeout passes). Use this once after a create_cell/execute_cell/execute_code timeout or after edit_cell kicks off a reactive cascade — instead of polling list_cells/read_cell in a loop.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        timeout_seconds: z
+          .number()
+          .describe("Maximum seconds to wait (default 120, max 600)")
+          .optional()
+          .default(120),
+      },
+      async ({ path, timeout_seconds }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const waitedFrom = Date.now();
+        const deadline =
+          waitedFrom + Math.min(Math.max(timeout_seconds, 1), 600) * 1000;
+        while (!worker.isIdle() && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        const busyCells = worker
+          .getSnippets()
+          .filter((s) => s.result.running || s.result.queued)
+          .map((s) => s.cell_id);
+        const idle = busyCells.length === 0;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  idle,
+                  waited_seconds: Math.round((Date.now() - waitedFrom) / 1000),
+                  still_busy_cells: busyCells,
+                  message: idle
+                    ? "Notebook is idle — results are ready to read."
+                    : "Timed out with cells still running — call wait_for_notebook_idle again or read partial state with list_cells.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    );
+
     // Get Notebook URL
     server.tool(
       "get_notebook_url",
@@ -951,10 +1154,20 @@ export class PlutoMCPHttpServer {
         const sessionId = transport.sessionId;
         this.transports.set(sessionId, transport);
 
+        // Keep idle SSE connections alive through proxies/OS sleep — a
+        // silently dropped stream loses the response of any in-flight
+        // long tool call (issue #38)
+        const keepalive = setInterval(() => {
+          if (!res.writableEnded) {
+            res.write(": keepalive\n\n");
+          }
+        }, 30_000);
+
         transport.onclose = () => {
           console.log(
             `[MCP HTTP] SSE transport closed for session ${sessionId}`
           );
+          clearInterval(keepalive);
           this.transports.delete(sessionId);
         };
 
@@ -1014,6 +1227,14 @@ export class PlutoMCPHttpServer {
   }
 
   public async start(): Promise<void> {
+    if (this.dynamicPort && !(await isPortAvailable(this.port))) {
+      const fallbackPort = await findAvailablePort(this.port + 1);
+      console.log(
+        `[MCP HTTP] Port ${this.port} is in use (another window?), using ${fallbackPort} instead`
+      );
+      this.port = fallbackPort;
+    }
+
     return await new Promise((resolve, reject) => {
       this.httpServer = this.app.listen(this.port, (error?: Error) => {
         if (error) {
@@ -1095,7 +1316,8 @@ export function initializeMCPServer(
     return;
   }
 
-  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port);
+  // Dynamic port: a second VSCode window must not fail on a busy port
+  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, true);
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
 

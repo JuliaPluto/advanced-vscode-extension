@@ -3,6 +3,8 @@ import { Host, serialize } from "@plutojl/rainbow";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { unlink } from "fs/promises";
+import { resolve as resolvePath } from "path";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Events emitted by PlutoManager
@@ -36,6 +38,7 @@ export class PlutoManager {
   private host?: Host; // Host from @plutojl/rainbow
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
   private readonly pendingWorkers: Map<string, Promise<Worker>> = new Map(); // in-flight worker creation, keyed by path
+  private readonly adoptedWorkers: Set<string> = new Set(); // paths of notebooks we attached to but don't own (e.g. open in the user's browser)
   private startPromise?: Promise<void>; // in-flight start(), shared by concurrent callers
   private stopping = false; // suppresses "stopped unexpectedly" handling during intentional stop
   private serverUrl: string;
@@ -117,8 +120,8 @@ export class PlutoManager {
     }
 
     // Close all workers
-    for (const worker of this.workers.values()) {
-      void worker.shutdown();
+    for (const [notebookPath, worker] of this.workers.entries()) {
+      void this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 
@@ -148,9 +151,13 @@ export class PlutoManager {
   }
 
   /**
-   * Check if Pluto server is running
+   * Check if a Pluto server is available for work. With a custom server
+   * URL there is no owned process — being connected is what counts.
    */
   public isRunning(): boolean {
+    if (this.usingCustomServerUrl) {
+      return this.isConnected();
+    }
     return this.serverManager.isRunning() && this.isConnected();
   }
 
@@ -162,11 +169,22 @@ export class PlutoManager {
   }
 
   /**
-   * Connect to an existing Pluto server without starting a new one
+   * Connect to an existing Pluto server without starting a new one.
+   * Fails fast with a clear error when the server is unreachable.
    */
   public async connect(): Promise<void> {
     if (this.isConnected()) {
       return;
+    }
+
+    try {
+      await fetch(this.serverUrl, { signal: AbortSignal.timeout(5000) });
+    } catch (error) {
+      throw new Error(
+        `Cannot reach Pluto server at ${this.serverUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
 
     this.host = new Host(this.serverUrl);
@@ -250,8 +268,8 @@ export class PlutoManager {
 
       // Close all workers with a timeout — don't let a hung worker block shutdown
       const workerShutdown = Promise.allSettled(
-        [...this.workers.values()].map((worker) =>
-          worker.shutdown().catch(() => {
+        [...this.workers.entries()].map(([notebookPath, worker]) =>
+          this.releaseWorker(notebookPath, worker).catch(() => {
             // Worker shutdown can fail if server is already gone — ignore
           })
         )
@@ -334,6 +352,50 @@ export class PlutoManager {
     return pending;
   }
 
+  /**
+   * Release a worker: shut down the notebook if we own it, otherwise just
+   * close our connection — adopted notebooks (open in the user's browser)
+   * must keep running.
+   */
+  private async releaseWorker(
+    notebookPath: string,
+    worker: Worker
+  ): Promise<void> {
+    if (this.adoptedWorkers.has(notebookPath)) {
+      this.adoptedWorkers.delete(notebookPath);
+      try {
+        worker.close();
+      } catch {
+        // Connection may already be gone
+      }
+      return;
+    }
+    await worker.shutdown();
+  }
+
+  /**
+   * Find a notebook already running on the server for this file path.
+   * Returns its notebook_id, or undefined when none matches or the
+   * listing fails.
+   */
+  private async findRunningNotebook(
+    host: Host,
+    notebookPath: string
+  ): Promise<string | undefined> {
+    try {
+      const running = (await host.workers()) as unknown as Array<{
+        notebook_id?: string;
+        path?: string;
+      }>;
+      const target = resolvePath(notebookPath);
+      return running.find(
+        (nb) => nb.notebook_id && nb.path && resolvePath(nb.path) === target
+      )?.notebook_id;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async createWorkerForPath(
     notebookPath: string,
     documentContent?: string
@@ -341,6 +403,43 @@ export class PlutoManager {
     const host = this.host;
     if (!host) {
       throw new Error("Cannot create worker: not connected to Pluto server");
+    }
+
+    // If the server already manages this file (e.g. the user's own browser
+    // tab has it open), adopt that notebook — uploading a copy and calling
+    // moveTo would fail with "File exists already" (issue #40)
+    if (this.isLocalServer()) {
+      const runningId = await this.findRunningNotebook(host, notebookPath);
+      if (runningId) {
+        const worker = host.worker(runningId);
+        try {
+          await worker.connect();
+
+          // A notebook opened but never granted execution (Pluto's safe
+          // preview, "waiting_for_permission") silently ignores run
+          // requests — grant permission like createWorker's init does.
+          // A notebook with a live session is left untouched.
+          if (
+            worker.notebook_state?.process_status === "waiting_for_permission"
+          ) {
+            await worker.restart();
+          }
+
+          if (this.stopping || this.host !== host) {
+            throw new Error(
+              "Pluto server was stopped while opening the notebook"
+            );
+          }
+        } catch (error) {
+          // Do NOT shut the notebook down — we don't own it (it may be
+          // open in the user's browser)
+          throw new Error(this.describeServerError(error));
+        }
+        this.workers.set(notebookPath, worker);
+        this.adoptedWorkers.add(notebookPath);
+        this.emit("notebookOpened", notebookPath);
+        return worker;
+      }
     }
 
     // Get notebook content - use provided content or read from file
@@ -354,7 +453,12 @@ export class PlutoManager {
       );
     }
 
-    const worker = await host.createWorker(notebookContent.trim());
+    let worker: Worker;
+    try {
+      worker = await host.createWorker(notebookContent.trim());
+    } catch (error) {
+      throw new Error(this.describeServerError(error));
+    }
     try {
       await worker.connect();
 
@@ -492,6 +596,22 @@ export class PlutoManager {
   }
 
   /**
+   * Turn opaque HTTP failures from the Pluto server into actionable errors.
+   */
+  private describeServerError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("403")) {
+      return (
+        `${message} — the Pluto server at ${this.serverUrl} refused the request (authentication). ` +
+        `Start it with secrets disabled, e.g. ` +
+        `Pluto.run(port=1234; require_secret_for_access=false, require_secret_for_open_links=false, launch_browser=false) ` +
+        `— only on a machine that is not exposed to the internet.`
+      );
+    }
+    return message;
+  }
+
+  /**
    * Whether the Pluto server is running on localhost (file paths are shared).
    */
   public isLocalServer(): boolean {
@@ -536,7 +656,7 @@ export class PlutoManager {
 
       // Emit notebook closed event
       this.emit("notebookClosed", notebookPath);
-      void worker.shutdown();
+      void this.releaseWorker(notebookPath, worker).catch(() => {});
     }
   }
 
@@ -555,15 +675,60 @@ export class PlutoManager {
   }
 
   /**
+   * Create a cell, run it, and resolve with its result — robust against
+   * rainbow's waitSnippet missing the terminal update of fast cells (its
+   * listener registers after addSnippet's round trip, by which time a
+   * trivial cell may already be done; with no further update traffic the
+   * promise then never settles). A state poll acts as the fallback.
+   */
+  public async runSnippet(
+    worker: Worker,
+    index: number,
+    code: string
+  ): Promise<CellResultData> {
+    const limitMs = 60 * 60_000;
+    const cellId = uuidv4();
+
+    const viaEvents: Promise<CellResultData> = worker
+      .waitSnippet(index, code, {}, cellId, limitMs)
+      // On timeout waitSnippet rejects with null — let the poll decide
+      .catch(() => new Promise<never>(() => {}));
+
+    let stopPolling = false;
+    const viaPolling = (async (): Promise<CellResultData> => {
+      const deadline = Date.now() + limitMs;
+      while (!stopPolling && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250));
+        const result = worker.getSnippet(cellId)?.result;
+        if (
+          result &&
+          !result.running &&
+          !result.queued &&
+          (result.output?.last_run_timestamp ?? 0) > 0
+        ) {
+          return result;
+        }
+      }
+      throw new Error("Timed out waiting for cell execution to finish");
+    })();
+
+    try {
+      return await Promise.race([viaEvents, viaPolling]);
+    } finally {
+      stopPolling = true;
+    }
+  }
+
+  /**
    * Execute Julia code in a notebook without creating a persistent cell
-   * This uses waitSnippet at index 0 and then immediately deletes the cell
+   * This uses runSnippet at index 0 and then immediately deletes the cell
    */
   public async executeCodeEphemeral(
     worker: Worker,
     code: string
   ): Promise<CellResultData> {
     // Execute code at index 0 (creates a temporary cell)
-    const result = await worker.waitSnippet(0, code);
+    const result = await this.runSnippet(worker, 0, code);
 
     // Delete the cell immediately after execution. Best-effort: the result
     // matters more than the cleanup, so a failed delete is not fatal.
@@ -591,8 +756,8 @@ export class PlutoManager {
    * Close all notebook connections
    */
   public async dispose(): Promise<void> {
-    for (const worker of this.workers.values()) {
-      await worker.shutdown();
+    for (const [notebookPath, worker] of this.workers.entries()) {
+      await this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 
