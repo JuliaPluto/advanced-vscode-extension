@@ -110,7 +110,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ## Dev TODO
 
-- **VSCode notebook view does not reflect structural changes from MCP tools**: When cells are moved, deleted, or added via the MCP server (or any external client), the Pluto Worker's internal state updates automatically, but the VSCode notebook UI does not yet sync these changes. The `_handleCellReorder` handler in the controller is stubbed out. This only affects the VSCode view — external clients (the `@plutojl/cli` tool server) and Pluto's own UI stay fully in sync.
+- **Structural sync from external clients is new**: cells added, deleted, or reordered via the MCP tools (or Pluto's browser UI) now sync into the VSCode notebook view (`_handleCellReorder`). If you see cells duplicate or vanish when mixing VSCode edits with external edits, please file an issue with the Pluto Controller output-channel log.
 
 ## Support
 

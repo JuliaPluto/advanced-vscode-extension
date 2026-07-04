@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { PlutoManager } from "./plutoManager.ts";
 import type { NotebookData, UpdateEvent } from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
+import { isMarkdownCell, extractMarkdownContent } from "./plutoSerializer.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
 import { type Worker } from "@plutojl/rainbow";
 
@@ -48,6 +49,11 @@ export class PlutoNotebookController {
   private rendererMessaging?: vscode.NotebookRendererMessaging;
   // Track worker subscriptions to prevent duplicates and allow cleanup
   private readonly workerSubscriptions: Map<string, () => void> = new Map();
+  // While > 0 for a notebook path, document changes come from us applying
+  // remote (Pluto-side) edits and must not be echoed back to Pluto
+  private readonly remoteEditDepth: Map<string, number> = new Map();
+  // Notebook paths with a cell-order sync already scheduled
+  private readonly pendingOrderSync: Set<string> = new Set();
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
@@ -434,88 +440,139 @@ export class PlutoNotebookController {
     }
   }
 
+  private isApplyingRemoteEdit(notebookPath: string): boolean {
+    return (this.remoteEditDepth.get(notebookPath) ?? 0) > 0;
+  }
+
   /**
-   * Handles cell reordering when Pluto's execution order changes.
+   * Schedule a cell-order sync for this notebook. Coalesces the multiple
+   * cell_order patches a single structural change produces.
+   */
+  private scheduleCellOrderSync(notebook: vscode.NotebookDocument): void {
+    const key = notebook.uri.fsPath;
+    if (this.pendingOrderSync.has(key)) {
+      return;
+    }
+    this.pendingOrderSync.add(key);
+    setTimeout(() => {
+      this.pendingOrderSync.delete(key);
+      void this._handleCellReorder(notebook).catch((error) => {
+        this.outputChannel.appendLine(
+          `[CellOrderSync] Failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
+    }, 100);
+  }
+
+  /**
+   * Make the VSCode notebook reflect Pluto's current cell set and order.
+   * Cells present in both keep their VSCode content and outputs; cells
+   * created outside VSCode (MCP tools, Pluto's browser UI) are
+   * materialized from Pluto state; cells deleted remotely disappear.
    */
   private async _handleCellReorder(
-    _notebook: vscode.NotebookDocument,
-    _plutoNotebook: NotebookData
+    notebook: vscode.NotebookDocument
   ): Promise<void> {
-    this.outputChannel.appendLine(`  Reorder happens here`);
-    void _notebook;
-    void _plutoNotebook;
-    // Replca them in a bulk? drawbacks ???
-    // A cell can be removed, added or reordered
+    const notebookPath = notebook.uri.fsPath;
+    const worker = await this.plutoManager.getWorker(notebookPath);
+    if (!worker) {
+      return;
+    }
+    const state = worker.getState();
+    const cellInputs = state?.cell_inputs ?? {};
+    const plutoOrder = (state?.cell_order ?? []).filter(
+      (id: string) => cellInputs[id]
+    );
 
-    // try {
-    //   // Build a map of current VS Code cell positions
-    //   const currentCells = notebook.getCells();
-    //   const currentOrder: CellId[] = [];
-    //   const cellMap = new Map<CellId, vscode.NotebookCell>();
+    const currentCells = notebook.getCells();
+    const currentOrder = currentCells.map(
+      (cell) => cell.metadata?.pluto_cell_id as string | undefined
+    );
 
-    //   for (const cell of currentCells) {
-    //     const cellId = cell.metadata?.pluto_cell_id as string;
-    //     if (cellId) {
-    //       currentOrder.push(cellId);
-    //       cellMap.set(cellId, cell);
-    //     }
-    //   }
+    // A cell without an id is a local add whose Pluto round trip hasn't
+    // assigned metadata yet — replacing cells now would destroy it. A
+    // later cell_order patch will re-trigger this sync.
+    if (currentOrder.some((id) => !id)) {
+      this.outputChannel.appendLine(
+        `[CellOrderSync] Deferred — local cell add in flight`
+      );
+      return;
+    }
 
-    //   // Check if reordering is needed
-    //   const needsReorder = plutoOrder.some(
-    //     (id, idx) => currentOrder[idx] !== id
-    //   );
-    //   if (!needsReorder) {
-    //     this.outputChannel.appendLine(
-    //       `[CellReorder] Cell order already matches Pluto order`
-    //     );
-    //     return;
-    //   }
+    const inSync =
+      currentOrder.length === plutoOrder.length &&
+      plutoOrder.every((id: string, i: number) => currentOrder[i] === id);
+    if (inSync) {
+      return;
+    }
 
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Reordering cells to match Pluto order`
-    //   );
-    //   this.outputChannel.appendLine(`  Current: ${currentOrder.join(", ")}`);
-    //   this.outputChannel.appendLine(`  Pluto:   ${plutoOrder.join(", ")}`);
+    const cellByPlutoId = new Map(
+      currentCells.map((cell) => [cell.metadata?.pluto_cell_id as string, cell])
+    );
 
-    //   // Build the edit to reorder cells
-    //   const edit = new vscode.WorkspaceEdit();
-    //   const cellsToMove: vscode.NotebookCellData[] = [];
+    const desired = plutoOrder.map((cellId: string) => {
+      const existing = cellByPlutoId.get(cellId);
+      if (existing) {
+        const data = new vscode.NotebookCellData(
+          existing.kind,
+          existing.document.getText(),
+          existing.document.languageId
+        );
+        data.metadata = existing.metadata;
+        data.outputs = [...existing.outputs];
+        return data;
+      }
 
-    //   // Collect cells in the new order
-    //   for (const cellId of plutoOrder) {
-    //     const cell = cellMap.get(cellId);
-    //     if (cell) {
-    //       const cellData = new vscode.NotebookCellData(
-    //         cell.kind,
-    //         cell.document.getText(),
-    //         cell.document.languageId
-    //       );
-    //       cellData.metadata = cell.metadata;
-    //       cellData.outputs = [...cell.outputs]; // Create mutable copy
-    //       cellsToMove.push(cellData);
-    //     }
-    //   }
+      // Cell created outside VSCode — materialize it from Pluto state
+      const input = cellInputs[cellId];
+      const code = input?.code ?? "";
+      const markdownContent = extractMarkdownContent(code);
+      const isMarkdown = isMarkdownCell(code) && isDefined(markdownContent);
+      const data = new vscode.NotebookCellData(
+        isMarkdown
+          ? vscode.NotebookCellKind.Markup
+          : vscode.NotebookCellKind.Code,
+        isMarkdown ? markdownContent : code,
+        isMarkdown ? "markdown" : "julia"
+      );
+      data.metadata = {
+        pluto_cell_id: cellId,
+        code_folded: input?.code_folded ?? false,
+      };
+      return data;
+    });
 
-    //   // Replace all cells with the reordered cells
-    //   edit.set(notebook.uri, [
-    //     vscode.NotebookEdit.replaceCells(
-    //       new vscode.NotebookRange(0, currentCells.length),
-    //       cellsToMove
-    //     ),
-    //   ]);
+    this.outputChannel.appendLine(
+      `[CellOrderSync] Applying remote structure: ${currentOrder.length} -> ${plutoOrder.length} cells`
+    );
 
-    //   await vscode.workspace.applyEdit(edit);
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Cells reordered successfully`
-    //   );
-    // } catch (error) {
-    //   const errorMessage =
-    //     error instanceof Error ? error.message : String(error);
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Failed to reorder cells: ${errorMessage}`
-    //   );
-    // }
+    this.remoteEditDepth.set(
+      notebookPath,
+      (this.remoteEditDepth.get(notebookPath) ?? 0) + 1
+    );
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(notebook.uri, [
+        vscode.NotebookEdit.replaceCells(
+          new vscode.NotebookRange(0, currentCells.length),
+          desired
+        ),
+      ]);
+      await vscode.workspace.applyEdit(edit);
+    } finally {
+      // Change events may be delivered after applyEdit resolves — release
+      // the suppression on the next tick
+      setTimeout(() => {
+        const depth = this.remoteEditDepth.get(notebookPath) ?? 1;
+        if (depth <= 1) {
+          this.remoteEditDepth.delete(notebookPath);
+        } else {
+          this.remoteEditDepth.set(notebookPath, depth - 1);
+        }
+      }, 0);
+    }
   }
 
   private updateAllCellsFromState = async (
@@ -644,15 +701,14 @@ export class PlutoNotebookController {
               );
               break;
             case "cell_order": {
-              if (patch.op === "replace") {
-                // A cell can be removed, added or reordered
-                void this._handleCellReorder(notebook, fullNotebookState);
-              } else {
-                this.outputChannel.appendLine(
-                  `[LogInternal] Cell dependencies updated: ${
-                    patch.op
-                  } on cell ${rest.join(".")}`
-                );
+              // Adds, removes, and reorders all mutate cell_order — sync
+              // the VSCode view to Pluto's structure (coalesced)
+              if (
+                patch.op === "replace" ||
+                patch.op === "add" ||
+                patch.op === "remove"
+              ) {
+                this.scheduleCellOrderSync(notebook);
               }
               break;
             }
@@ -828,6 +884,12 @@ export class PlutoNotebookController {
     const notebook = event.notebook;
 
     if (notebook.notebookType !== "pluto-notebook") {
+      return;
+    }
+
+    // Changes we applied ourselves from Pluto-side patches must not be
+    // echoed back to Pluto — that would duplicate or re-delete cells
+    if (this.isApplyingRemoteEdit(notebook.uri.fsPath)) {
       return;
     }
 
