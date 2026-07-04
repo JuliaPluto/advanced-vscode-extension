@@ -62,10 +62,10 @@ npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 npx @plutojl/cli call execute_code '{"code": "sqrt(2)"}'
 ```
 
-| Option              | Default | Description             |
-| ------------------- | ------- | ----------------------- |
-| `--mcp-port <port>` | `3100`  | Tool server (MCP) port  |
-| `--raw`             | —       | Output raw JSON response|
+| Option              | Default | Description              |
+| ------------------- | ------- | ------------------------ |
+| `--mcp-port <port>` | `3100`  | Tool server (MCP) port   |
+| `--raw`             | —       | Output raw JSON response |
 
 ### `install`
 
@@ -75,13 +75,13 @@ Add MCP configuration files so AI assistants can connect to the tool server.
 npx @plutojl/cli install [options]
 ```
 
-| Option              | Default       | Description                                          |
-| ------------------- | ------------- | ---------------------------------------------------- |
-| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`    |
-| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                  |
-| `--global`          | —             | Write to `~/.claude.json` instead of `./.mcp.json`   |
-| `--dry-run`         | —             | Print config without writing                         |
-| `--force`           | —             | Overwrite existing config                            |
+| Option              | Default       | Description                                        |
+| ------------------- | ------------- | -------------------------------------------------- |
+| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`  |
+| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                |
+| `--global`          | —             | Write to `~/.claude.json` instead of `./.mcp.json` |
+| `--dry-run`         | —             | Print config without writing                       |
+| `--force`           | —             | Overwrite existing config                          |
 
 ## Configuration
 
