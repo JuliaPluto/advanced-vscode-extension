@@ -148,9 +148,13 @@ export class PlutoManager {
   }
 
   /**
-   * Check if Pluto server is running
+   * Check if a Pluto server is available for work. With a custom server
+   * URL there is no owned process — being connected is what counts.
    */
   public isRunning(): boolean {
+    if (this.usingCustomServerUrl) {
+      return this.isConnected();
+    }
     return this.serverManager.isRunning() && this.isConnected();
   }
 
@@ -162,11 +166,22 @@ export class PlutoManager {
   }
 
   /**
-   * Connect to an existing Pluto server without starting a new one
+   * Connect to an existing Pluto server without starting a new one.
+   * Fails fast with a clear error when the server is unreachable.
    */
   public async connect(): Promise<void> {
     if (this.isConnected()) {
       return;
+    }
+
+    try {
+      await fetch(this.serverUrl, { signal: AbortSignal.timeout(5000) });
+    } catch (error) {
+      throw new Error(
+        `Cannot reach Pluto server at ${this.serverUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
 
     this.host = new Host(this.serverUrl);
@@ -354,7 +369,12 @@ export class PlutoManager {
       );
     }
 
-    const worker = await host.createWorker(notebookContent.trim());
+    let worker: Worker;
+    try {
+      worker = await host.createWorker(notebookContent.trim());
+    } catch (error) {
+      throw new Error(this.describeServerError(error));
+    }
     try {
       await worker.connect();
 
@@ -489,6 +509,22 @@ export class PlutoManager {
    */
   public async moveNotebook(worker: Worker, newPath: string): Promise<void> {
     await worker.moveTo(newPath);
+  }
+
+  /**
+   * Turn opaque HTTP failures from the Pluto server into actionable errors.
+   */
+  private describeServerError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("403")) {
+      return (
+        `${message} — the Pluto server at ${this.serverUrl} refused the request (authentication). ` +
+        `Start it with secrets disabled, e.g. ` +
+        `Pluto.run(port=1234; require_secret_for_access=false, require_secret_for_open_links=false, launch_browser=false) ` +
+        `— only on a machine that is not exposed to the internet.`
+      );
+    }
+    return message;
   }
 
   /**

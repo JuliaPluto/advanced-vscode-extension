@@ -66,6 +66,17 @@ function createFakeWorker(overrides: Partial<Worker> = {}): Worker {
 }
 
 describe("PlutoManager concurrency", () => {
+  // connect() probes the server URL; no real server exists in these tests
+  const realFetch = global.fetch;
+  beforeAll(() => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+    })) as unknown as typeof fetch;
+  });
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
   });
