@@ -14,6 +14,36 @@ import PlutoGuide from "./PLUTO_GUIDE.md";
 let mcpServerInstance: PlutoMCPHttpServer | undefined;
 
 /**
+ * Default bound on how long a tool call may block on cell execution.
+ * Long computations keep running server-side; the call returns guidance
+ * to poll instead of hanging the MCP client forever (see issue #38).
+ */
+const EXECUTION_TIMEOUT_MS = 5 * 60_000;
+
+type TimeoutResult<T> = { timedOut: false; value: T } | { timedOut: true };
+
+async function withExecutionTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = EXECUTION_TIMEOUT_MS
+): Promise<TimeoutResult<T>> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<TimeoutResult<T>>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      promise.then((value): TimeoutResult<T> => ({ timedOut: false, value })),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timeoutHandle);
+    // The original promise keeps running after a timeout — don't let its
+    // eventual rejection become an unhandled rejection
+    void promise.catch(() => {});
+  }
+}
+
+/**
  * HTTP/SSE-based MCP Server for Pluto Notebooks
  * This allows the extension and MCP clients to share the same PlutoManager instance
  */
@@ -274,12 +304,30 @@ export class PlutoMCPHttpServer {
           throw new Error(`Cell ${cell_id} not found`);
         }
 
-        const result = await this.plutoManager.executeCell(
-          worker,
-          cell_id,
-          cellData.input.code
+        const outcome = await withExecutionTimeout(
+          this.plutoManager.executeCell(worker, cell_id, cellData.input.code)
         );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    cell_id: cell_id,
+                    timed_out: true,
+                    message: `Cell is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It continues to execute — use wait_for_notebook_idle or poll read_cell to get the result.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -320,8 +368,29 @@ export class PlutoMCPHttpServer {
           throw new Error(`Notebook ${path} is not open`);
         }
 
-        const result = await worker.waitSnippet(index, code);
+        const outcome = await withExecutionTimeout(
+          worker.waitSnippet(index, code)
+        );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    timed_out: true,
+                    message: `Execution is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. The cell WAS created (at index ${index}) and continues to run — use list_cells to find its id, then wait_for_notebook_idle or read_cell to get the result. Do NOT retry create_cell.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -542,11 +611,29 @@ export class PlutoMCPHttpServer {
           throw new Error(`Notebook ${path} is not open`);
         }
 
-        const result = await this.plutoManager.executeCodeEphemeral(
-          worker,
-          code
+        const outcome = await withExecutionTimeout(
+          this.plutoManager.executeCodeEphemeral(worker, code)
         );
 
+        if (outcome.timedOut) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    timed_out: true,
+                    message: `Code is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle to wait for it. For long computations prefer create_cell so the result stays inspectable.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        const result = outcome.value;
         return {
           content: [
             {
@@ -915,6 +1002,64 @@ export class PlutoMCPHttpServer {
       }
     );
 
+    // Wait for notebook idle
+    server.tool(
+      "wait_for_notebook_idle",
+      "Block until the notebook has no running or queued cells (or the timeout passes). Use this once after a create_cell/execute_cell/execute_code timeout or after edit_cell kicks off a reactive cascade — instead of polling list_cells/read_cell in a loop.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        timeout_seconds: z
+          .number()
+          .describe("Maximum seconds to wait (default 120, max 600)")
+          .optional()
+          .default(120),
+      },
+      async ({ path, timeout_seconds }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const waitedFrom = Date.now();
+        const deadline =
+          waitedFrom + Math.min(Math.max(timeout_seconds, 1), 600) * 1000;
+        while (!worker.isIdle() && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        const busyCells = worker
+          .getSnippets()
+          .filter((s) => s.result.running || s.result.queued)
+          .map((s) => s.cell_id);
+        const idle = busyCells.length === 0;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  idle,
+                  waited_seconds: Math.round((Date.now() - waitedFrom) / 1000),
+                  still_busy_cells: busyCells,
+                  message: idle
+                    ? "Notebook is idle — results are ready to read."
+                    : "Timed out with cells still running — call wait_for_notebook_idle again or read partial state with list_cells.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+    );
+
     // Get Notebook URL
     server.tool(
       "get_notebook_url",
@@ -959,10 +1104,20 @@ export class PlutoMCPHttpServer {
         const sessionId = transport.sessionId;
         this.transports.set(sessionId, transport);
 
+        // Keep idle SSE connections alive through proxies/OS sleep — a
+        // silently dropped stream loses the response of any in-flight
+        // long tool call (issue #38)
+        const keepalive = setInterval(() => {
+          if (!res.writableEnded) {
+            res.write(": keepalive\n\n");
+          }
+        }, 30_000);
+
         transport.onclose = () => {
           console.log(
             `[MCP HTTP] SSE transport closed for session ${sessionId}`
           );
+          clearInterval(keepalive);
           this.transports.delete(sessionId);
         };
 
