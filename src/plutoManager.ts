@@ -191,13 +191,26 @@ export class PlutoManager {
   }
 
   /**
+   * Whether a start() is currently in flight.
+   */
+  public isStarting(): boolean {
+    return !!this.startPromise;
+  }
+
+  /**
    * Start Pluto server (or connect to custom server URL).
-   * Concurrent callers share one in-flight start.
+   * Concurrent callers share one in-flight start. State events fire when
+   * the start begins and when it settles (success or failure), so UI like
+   * the status bar can show a "starting" phase.
    */
   public async start(): Promise<void> {
-    this.startPromise ??= this.doStart().finally(() => {
-      this.startPromise = undefined;
-    });
+    if (!this.startPromise) {
+      this.startPromise = this.doStart().finally(() => {
+        this.startPromise = undefined;
+        this.emit("serverStateChanged");
+      });
+      this.emit("serverStateChanged");
+    }
     return this.startPromise;
   }
 
@@ -219,9 +232,6 @@ export class PlutoManager {
     await this.serverManager.start();
     await this.serverManager.waitForReady();
     await this.connect();
-
-    // Emit server state changed event
-    this.emit("serverStateChanged");
 
     // Recreate workers for notebooks that were open before server stopped
     await this.recreateWorkers();
