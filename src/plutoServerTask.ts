@@ -74,6 +74,27 @@ export class PlutoServerTaskManager {
           "[PlutoServerTask] Found existing task, reusing it instead of creating new one"
         );
         this.taskExecution = execution;
+
+        // Adopt the reused task's port — it may differ from our configured one
+        const taskPort = execution.task.definition.port as number | undefined;
+        if (taskPort && taskPort !== this.actualPort) {
+          this.actualPort = taskPort;
+          this.onPortChangedCallback?.(taskPort);
+        }
+
+        // Watch the adopted task for termination like a task we started
+        this.taskEndListener ??= vscode.tasks.onDidEndTaskProcess((e) => {
+          if (e.execution === this.taskExecution) {
+            this.taskExecution = undefined;
+            this.serverReadyPromise = undefined;
+            this.serverReadyResolve = undefined;
+            this.isStarting = false;
+            this.actualPort = this.port;
+            this.taskEndListener?.dispose();
+            this.taskEndListener = undefined;
+            this.onStopCallback?.();
+          }
+        });
         return;
       }
     }
@@ -222,7 +243,6 @@ export class PlutoServerTaskManager {
 
     // Poll until the server responds
     try {
-      await new Promise((r) => setTimeout(r, 15000));
       await this.pollServerReady();
       if (this.serverReadyResolve) {
         this.serverReadyResolve();
@@ -245,7 +265,9 @@ export class PlutoServerTaskManager {
    * Poll server URL until it responds
    */
   private async pollServerReady(): Promise<void> {
-    const maxAttempts = 60;
+    // Generous budget: the task process runs Pkg setup before Pluto.run,
+    // which can take minutes on first run
+    const maxAttempts = 300;
     const pollInterval = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
