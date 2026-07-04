@@ -269,14 +269,38 @@ export class PlutoServerTaskManager {
   }
 
   /**
-   * Stop Pluto server task
+   * Stop Pluto server task. Waits (bounded) for the task process to end so
+   * callers observe a consistent stopped state before continuing.
    */
   public async stop(): Promise<void> {
-    if (!this.taskExecution) {
+    const execution = this.taskExecution;
+    if (!execution) {
       return;
     }
 
-    this.taskExecution.terminate();
+    let endListener: vscode.Disposable | undefined;
+    const ended = new Promise<void>((resolve) => {
+      endListener = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === execution) {
+          resolve();
+        }
+      });
+    });
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      execution.terminate();
+      await Promise.race([
+        ended,
+        new Promise<void>((resolve) => {
+          timeoutHandle = setTimeout(resolve, 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeoutHandle);
+      endListener?.dispose();
+    }
+
     this.actualPort = this.port;
   }
 

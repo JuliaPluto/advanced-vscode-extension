@@ -35,6 +35,9 @@ export interface PlutoManagerLogger {
 export class PlutoManager {
   private host?: Host; // Host from @plutojl/rainbow
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
+  private readonly pendingWorkers: Map<string, Promise<Worker>> = new Map(); // in-flight worker creation, keyed by path
+  private startPromise?: Promise<void>; // in-flight start(), shared by concurrent callers
+  private stopping = false; // suppresses "stopped unexpectedly" handling during intentional stop
   private serverUrl: string;
   private usingCustomServerUrl = false;
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
@@ -103,8 +106,12 @@ export class PlutoManager {
    * Called when server task stops unexpectedly
    */
   private onServerStopped(): void {
+    if (this.stopping) {
+      // Intentional stop — stop() owns worker shutdown and event emission
+      return;
+    }
+
     // Store notebook paths for recreation after reconnect
-    this.notebooksToRecreate.clear();
     for (const notebookPath of this.workers.keys()) {
       this.notebooksToRecreate.add(notebookPath);
     }
@@ -166,9 +173,17 @@ export class PlutoManager {
   }
 
   /**
-   * Start Pluto server (or connect to custom server URL)
+   * Start Pluto server (or connect to custom server URL).
+   * Concurrent callers share one in-flight start.
    */
   public async start(): Promise<void> {
+    this.startPromise ??= this.doStart().finally(() => {
+      this.startPromise = undefined;
+    });
+    return this.startPromise;
+  }
+
+  private async doStart(): Promise<void> {
     // If using custom server URL, just connect without starting
     if (this.usingCustomServerUrl) {
       await this.connect();
@@ -178,6 +193,8 @@ export class PlutoManager {
 
     // Check if already running
     if (this.serverManager.isRunning()) {
+      await this.serverManager.waitForReady();
+      await this.connect();
       return;
     }
 
@@ -221,33 +238,48 @@ export class PlutoManager {
 
   /**
    * Stop Pluto server. Times out worker shutdown after 10s to avoid hanging.
+   * Open notebooks are remembered and recreated on the next start().
    */
   public async stop(): Promise<void> {
-    // Close all workers with a timeout — don't let a hung worker block shutdown
-    const workerShutdown = Promise.allSettled(
-      [...this.workers.values()].map((worker) =>
-        worker.shutdown().catch(() => {
-          // Worker shutdown can fail if server is already gone — ignore
-        })
-      )
-    );
+    this.stopping = true;
+    try {
+      // Remember open notebooks so the next start() can recreate them
+      for (const notebookPath of this.workers.keys()) {
+        this.notebooksToRecreate.add(notebookPath);
+      }
 
-    const timeoutMs = 10_000;
-    await Promise.race([
-      workerShutdown,
-      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-    ]);
-    this.workers.clear();
+      // Close all workers with a timeout — don't let a hung worker block shutdown
+      const workerShutdown = Promise.allSettled(
+        [...this.workers.values()].map((worker) =>
+          worker.shutdown().catch(() => {
+            // Worker shutdown can fail if server is already gone — ignore
+          })
+        )
+      );
 
-    // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
-    if (this.serverManager.isRunning()) {
-      await this.serverManager.stop();
+      const timeoutMs = 10_000;
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        workerShutdown,
+        new Promise<void>((resolve) => {
+          timeoutHandle = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+      clearTimeout(timeoutHandle);
+      this.workers.clear();
+
+      // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
+      if (this.serverManager.isRunning()) {
+        await this.serverManager.stop();
+      }
+
+      this.host = undefined;
+
+      // Emit server state changed event
+      this.emit("serverStateChanged");
+    } finally {
+      this.stopping = false;
     }
-
-    this.host = undefined;
-
-    // Emit server state changed event
-    this.emit("serverStateChanged");
   }
 
   /**
@@ -273,44 +305,79 @@ export class PlutoManager {
     }
 
     // Check if we already have a worker for this notebook
-    let worker = this.workers.get(notebookPath);
-
-    if (!worker && this.host) {
-      // Get notebook content - use provided content or read from file
-      let notebookContent: string;
-      try {
-        if (documentContent) {
-          notebookContent = documentContent;
-        } else {
-          notebookContent = await this.fileReader.readFile(notebookPath);
-        }
-
-        worker = await this.host.createWorker(notebookContent.trim());
+    const worker = this.workers.get(notebookPath);
+    if (worker) {
+      if (!worker.connected) {
         await worker.connect();
-
-        // Tell Pluto which file this notebook lives at so it can track saves.
-        // Only works when the server shares the same filesystem (localhost).
-        // We must delete the file first — moveTo throws if the path already exists.
-        if (this.isLocalServer()) {
-          await unlink(notebookPath);
-          await worker.moveTo(notebookPath);
-        }
-
-        this.workers.set(notebookPath, worker);
-
-        // Emit notebook opened event
-        this.emit("notebookOpened", notebookPath);
-      } catch (error) {
-        throw new Error(
-          `Cannot create worker: failed to read notebook file: ${error}`
-        );
       }
+      return worker;
     }
 
-    // Ensure worker is connected
-    if (worker && !worker.connected) {
-      await worker.connect();
+    if (!this.host) {
+      return undefined;
     }
+
+    // Share one in-flight creation per path so concurrent callers
+    // don't create duplicate workers for the same notebook
+    let pending = this.pendingWorkers.get(notebookPath);
+    if (!pending) {
+      pending = this.createWorkerForPath(notebookPath, documentContent);
+      this.pendingWorkers.set(notebookPath, pending);
+      void pending
+        .catch(() => {
+          // Rejection is delivered to getWorker callers awaiting `pending`
+        })
+        .finally(() => {
+          this.pendingWorkers.delete(notebookPath);
+        });
+    }
+    return pending;
+  }
+
+  private async createWorkerForPath(
+    notebookPath: string,
+    documentContent?: string
+  ): Promise<Worker> {
+    if (!this.host) {
+      throw new Error("Cannot create worker: not connected to Pluto server");
+    }
+
+    // Get notebook content - use provided content or read from file
+    let notebookContent: string;
+    try {
+      notebookContent =
+        documentContent ?? (await this.fileReader.readFile(notebookPath));
+    } catch (error) {
+      throw new Error(
+        `Cannot create worker: failed to read notebook file: ${error}`
+      );
+    }
+
+    const worker = await this.host.createWorker(notebookContent.trim());
+    try {
+      await worker.connect();
+
+      // Tell Pluto which file this notebook lives at so it can track saves.
+      // Only works when the server shares the same filesystem (localhost).
+      // We must delete the file first — moveTo throws if the path already exists.
+      if (this.isLocalServer()) {
+        await unlink(notebookPath);
+        await worker.moveTo(notebookPath);
+      }
+    } catch (error) {
+      // Don't leak the worker if connect/move failed
+      void worker.shutdown().catch(() => {});
+      throw new Error(
+        `Cannot create worker for ${notebookPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    this.workers.set(notebookPath, worker);
+
+    // Emit notebook opened event
+    this.emit("notebookOpened", notebookPath);
 
     return worker;
   }
@@ -490,8 +557,13 @@ export class PlutoManager {
     // Execute code at index 0 (creates a temporary cell)
     const result = await worker.waitSnippet(0, code);
 
-    // Delete the cell immediately after execution
-    await worker.deleteSnippets([result.cell_id]);
+    // Delete the cell immediately after execution. Best-effort: the result
+    // matters more than the cleanup, so a failed delete is not fatal.
+    try {
+      await worker.deleteSnippets([result.cell_id]);
+    } catch {
+      // Ephemeral cell stays behind — will be cleaned up with the worker
+    }
 
     return result;
   }
