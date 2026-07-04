@@ -1,0 +1,42 @@
+{
+  "branches": ["main"],
+  "tagFormat": "mcp-v${version}",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "packages/advanced-pluto-mcp/CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": true,
+        "pkgRoot": "packages/advanced-pluto-mcp"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "packages/advanced-pluto-mcp/CHANGELOG.md",
+            "label": "MCP CLI Changelog"
+          }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "packages/advanced-pluto-mcp/package.json",
+          "packages/advanced-pluto-mcp/CHANGELOG.md"
+        ],
+        "message": "chore(mcp-release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ]
+  ]
+}

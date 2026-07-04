@@ -1,8 +1,27 @@
 import { PlutoManager, PlutoManagerLogger } from "../plutoManager.js";
+import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
 import { spawn, ChildProcess, execSync } from "child_process";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink, mkdir, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+
+/** Stub server manager for tests that connect to an already-running Pluto */
+function createStubServerManager(port: number): IPlutoServerManager {
+  return {
+    start: async () => {},
+    stop: async () => {},
+    isRunning: () => false,
+    waitForReady: async () => {},
+    onStop: () => {},
+    onPortChanged: () => {},
+    getActualPort: () => port,
+    getServerUrl: () => `http://localhost:${port}`,
+  };
+}
+
+const nodeFileReader: IFileReader = {
+  readFile: (path: string) => readFile(path, "utf-8"),
+};
 
 describe("PlutoManager Integration Tests", () => {
   let plutoProcess: ChildProcess | null = null;
@@ -157,7 +176,13 @@ x = 42
 
     // Create PlutoManager instance
     console.log("[TEST] Creating PlutoManager instance...");
-    manager = new PlutoManager(TEST_PORT, mockLogger, SERVER_URL);
+    manager = new PlutoManager(
+      TEST_PORT,
+      mockLogger,
+      createStubServerManager(TEST_PORT),
+      nodeFileReader,
+      SERVER_URL
+    );
     console.log("[TEST] PlutoManager setup complete!");
   }, 150000);
 
@@ -387,7 +412,12 @@ x = 42
         showInfoMessage: async () => undefined,
         showErrorMessage: async () => undefined,
       };
-      const testManager = new PlutoManager(TEST_PORT, logger);
+      const testManager = new PlutoManager(
+        TEST_PORT,
+        logger,
+        createStubServerManager(TEST_PORT),
+        nodeFileReader
+      );
       expect(testManager.getServerUrl()).toBe(SERVER_URL);
     });
 
@@ -398,7 +428,13 @@ x = 42
         showErrorMessage: async () => undefined,
       };
       const customUrl = "http://custom-server:5678";
-      const testManager = new PlutoManager(TEST_PORT, logger, customUrl);
+      const testManager = new PlutoManager(
+        TEST_PORT,
+        logger,
+        createStubServerManager(TEST_PORT),
+        nodeFileReader,
+        customUrl
+      );
       expect(testManager.getServerUrl()).toBe(customUrl);
     });
   });

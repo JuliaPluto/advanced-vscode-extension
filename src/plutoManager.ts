@@ -1,8 +1,8 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
-import { Host } from "@plutojl/rainbow";
-import * as vscode from "vscode";
-import { PlutoServerTaskManager } from "./plutoServerTask.js";
+import { Host, serialize } from "@plutojl/rainbow";
+import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
+import { unlink } from "fs/promises";
 
 /**
  * Events emitted by PlutoManager
@@ -36,7 +36,6 @@ export class PlutoManager {
   private host?: Host; // Host from @plutojl/rainbow
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
   private serverUrl: string;
-  private readonly taskManager: PlutoServerTaskManager;
   private usingCustomServerUrl = false;
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
   private readonly eventEmitter: EventEmitter = new EventEmitter();
@@ -44,6 +43,8 @@ export class PlutoManager {
   constructor(
     private readonly port = 1234,
     private readonly logger: PlutoManagerLogger,
+    private readonly serverManager: IPlutoServerManager,
+    private readonly fileReader: IFileReader,
     serverUrl?: string
   ) {
     if (serverUrl) {
@@ -53,15 +54,13 @@ export class PlutoManager {
       this.serverUrl = `http://localhost:${this.port}`;
     }
 
-    this.taskManager = new PlutoServerTaskManager(this.port);
-
     // Register callback to reset state when server task stops
-    this.taskManager.onStop(() => {
+    this.serverManager.onStop(() => {
       this.onServerStopped();
     });
 
     // Register callback to update server URL when port changes
-    this.taskManager.onPortChanged((newPort: number) => {
+    this.serverManager.onPortChanged((newPort: number) => {
       this.serverUrl = `http://localhost:${newPort}`;
       // Update host with new URL
       if (this.host) {
@@ -123,7 +122,7 @@ export class PlutoManager {
     this.emit("serverStateChanged");
 
     // Show warning to user if server stopped unexpectedly
-    if (!this.taskManager.isRunning()) {
+    if (!this.serverManager.isRunning()) {
       this.logger
         .showErrorMessage(
           "Pluto server stopped unexpectedly. Click 'Restart' to start it again.",
@@ -145,7 +144,7 @@ export class PlutoManager {
    * Check if Pluto server is running
    */
   public isRunning(): boolean {
-    return this.taskManager.isRunning() && this.isConnected();
+    return this.serverManager.isRunning() && this.isConnected();
   }
 
   /**
@@ -178,12 +177,12 @@ export class PlutoManager {
     }
 
     // Check if already running
-    if (this.taskManager.isRunning()) {
+    if (this.serverManager.isRunning()) {
       return;
     }
 
-    await this.taskManager.start();
-    await this.taskManager.waitForReady();
+    await this.serverManager.start();
+    await this.serverManager.waitForReady();
     await this.connect();
 
     // Emit server state changed event
@@ -221,18 +220,28 @@ export class PlutoManager {
   }
 
   /**
-   * Stop Pluto server
+   * Stop Pluto server. Times out worker shutdown after 10s to avoid hanging.
    */
   public async stop(): Promise<void> {
-    // Close all workers
-    for (const worker of this.workers.values()) {
-      await worker.shutdown();
-    }
+    // Close all workers with a timeout — don't let a hung worker block shutdown
+    const workerShutdown = Promise.allSettled(
+      [...this.workers.values()].map((worker) =>
+        worker.shutdown().catch(() => {
+          // Worker shutdown can fail if server is already gone — ignore
+        })
+      )
+    );
+
+    const timeoutMs = 10_000;
+    await Promise.race([
+      workerShutdown,
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
     this.workers.clear();
 
-    // Stop task
-    if (this.taskManager.isRunning()) {
-      await this.taskManager.stop();
+    // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
+    if (this.serverManager.isRunning()) {
+      await this.serverManager.stop();
     }
 
     this.host = undefined;
@@ -271,16 +280,22 @@ export class PlutoManager {
       let notebookContent: string;
       try {
         if (documentContent) {
-          // Use provided VSCode document content
           notebookContent = documentContent;
         } else {
-          // Read from file system using VSCode API
-          const fileUri = vscode.Uri.file(notebookPath);
-          const fileContent = await vscode.workspace.fs.readFile(fileUri);
-          notebookContent = new TextDecoder().decode(fileContent);
+          notebookContent = await this.fileReader.readFile(notebookPath);
         }
 
         worker = await this.host.createWorker(notebookContent.trim());
+        await worker.connect();
+
+        // Tell Pluto which file this notebook lives at so it can track saves.
+        // Only works when the server shares the same filesystem (localhost).
+        // We must delete the file first — moveTo throws if the path already exists.
+        if (this.isLocalServer()) {
+          await unlink(notebookPath);
+          await worker.moveTo(notebookPath);
+        }
+
         this.workers.set(notebookPath, worker);
 
         // Emit notebook opened event
@@ -346,6 +361,80 @@ export class PlutoManager {
   }
 
   /**
+   * Move cells to a new position in the notebook
+   */
+  public async moveCells(
+    worker: Worker,
+    cellIds: string[],
+    index: number
+  ): Promise<void> {
+    await worker.moveSnippets(cellIds, index);
+  }
+
+  /**
+   * Set the code_folded state of a cell (show/hide code in Pluto UI)
+   */
+  public async foldCell(
+    worker: Worker,
+    cellId: string,
+    folded: boolean
+  ): Promise<void> {
+    if (!worker.client || !worker.notebook_state) {
+      throw new Error("Not connected to notebook");
+    }
+
+    const cellInput = worker.notebook_state.cell_inputs[cellId];
+    if (!cellInput) {
+      throw new Error(`Cell ${cellId} not found`);
+    }
+
+    if (cellInput.code_folded === folded) {
+      return; // Already in desired state
+    }
+
+    const updates = [
+      {
+        op: "replace" as const,
+        path: ["cell_inputs", cellId, "code_folded"],
+        value: folded,
+      },
+    ];
+
+    await worker.client.send(
+      "update_notebook",
+      { updates },
+      { notebook_id: worker.notebook_id },
+      false
+    );
+  }
+
+  /**
+   * Move a notebook to a new file path via Pluto (updates Pluto's tracked path,
+   * moves the file and .assets directory on the server side).
+   */
+  public async moveNotebook(worker: Worker, newPath: string): Promise<void> {
+    await worker.moveTo(newPath);
+  }
+
+  /**
+   * Whether the Pluto server is running on localhost (file paths are shared).
+   */
+  public isLocalServer(): boolean {
+    try {
+      const url = new URL(this.serverUrl);
+      const host = url.hostname;
+      return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host === "0.0.0.0"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Get the server URL
    */
   public getServerUrl(): string {
@@ -357,7 +446,7 @@ export class PlutoManager {
    * This may differ from the configured port if the configured port was unavailable
    */
   public getActualPort(): number {
-    return this.taskManager.getActualPort();
+    return this.serverManager.getActualPort();
   }
 
   /**
@@ -408,6 +497,17 @@ export class PlutoManager {
   }
 
   /**
+   * Get the serialized notebook content (.jl format) for saving to disk
+   */
+  public getNotebookContent(worker: Worker): string {
+    const state = worker.getState();
+    if (!state) {
+      throw new Error("Notebook state not available");
+    }
+    return serialize(state);
+  }
+
+  /**
    * Close all notebook connections
    */
   public async dispose(): Promise<void> {
@@ -417,8 +517,8 @@ export class PlutoManager {
     this.workers.clear();
 
     // Stop task (fire and forget - dispose is not async)
-    if (this.taskManager.isRunning()) {
-      await this.taskManager.stop().catch(() => {
+    if (this.serverManager.isRunning()) {
+      await this.serverManager.stop().catch(() => {
         // Ignore errors during dispose
       });
     }

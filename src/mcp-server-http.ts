@@ -1,6 +1,7 @@
 import express from "express";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
+import { writeFile } from "fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type { PlutoManager } from "./plutoManager.ts";
@@ -21,10 +22,12 @@ export class PlutoMCPHttpServer {
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
   private readonly port: number;
+  private readonly handleSignals: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100) {
+  constructor(plutoManager: PlutoManager, port = 3100, handleSignals = false) {
     this.plutoManager = plutoManager;
     this.port = port;
+    this.handleSignals = handleSignals;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -144,7 +147,13 @@ export class PlutoMCPHttpServer {
       "Stop the running Pluto server",
       {},
       async () => {
-        if (!this.plutoManager.isRunning()) {
+        // Use isConnected() instead of isRunning() — we may be connected
+        // to an externally-managed server (no owned process), and stop
+        // should still disconnect and clean up.
+        if (
+          !this.plutoManager.isConnected() &&
+          !this.plutoManager.isRunning()
+        ) {
           return {
             content: [
               {
@@ -156,11 +165,15 @@ export class PlutoMCPHttpServer {
         }
 
         await this.plutoManager.stop();
+
+        const stillRunning = this.plutoManager.isRunning();
         return {
           content: [
             {
               type: "text",
-              text: "Pluto server stopped",
+              text: stillRunning
+                ? "Warning: stop() returned but the server process may still be running. It should be force-killed shortly."
+                : "Pluto server stopped",
             },
           ],
         };
@@ -170,7 +183,7 @@ export class PlutoMCPHttpServer {
     // Open Notebook
     server.tool(
       "open_notebook",
-      "Open a Pluto notebook file and create a worker session",
+      "Open a Pluto notebook file and create a worker session. The .jl file must already exist on disk — Pluto will not create a new file from a nonexistent path. Create the file first if needed.",
       {
         path: z.string().describe("Path to the .jl notebook file"),
       },
@@ -187,11 +200,56 @@ export class PlutoMCPHttpServer {
           throw new Error("Failed to create worker for notebook");
         }
 
+        const isLocal = this.plutoManager.isLocalServer();
+        const syncNote = isLocal
+          ? "Pluto is tracking this file path and will save changes to it."
+          : "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file.";
+
         return {
           content: [
             {
               type: "text",
-              text: `Notebook opened: ${path}\nNotebook ID: ${worker.notebook_id}`,
+              text: `Notebook opened: ${path}\nNotebook ID: ${worker.notebook_id}\n${syncNote}`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Move Notebook
+    server.tool(
+      "move_notebook",
+      "Move a notebook to a new file path. Pluto will save to the new path, delete the old file, and move any associated .assets directory. Only works when the server is on localhost.",
+      {
+        path: z.string().describe("Current path of the open notebook"),
+        new_path: z
+          .string()
+          .describe("Absolute path for the new notebook location"),
+      },
+      async ({ path, new_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        if (!this.plutoManager.isLocalServer()) {
+          throw new Error(
+            "move_notebook only works when the Pluto server is on localhost (shared filesystem). Use save_notebook to write a copy instead."
+          );
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.moveNotebook(worker, new_path);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook moved from ${path} to ${new_path}. Pluto is now tracking the new path.`,
             },
           ],
         };
@@ -252,7 +310,7 @@ export class PlutoMCPHttpServer {
     // Create Cell
     server.tool(
       "create_cell",
-      "Create and execute a new cell in a notebook",
+      "Create and execute a new cell in a notebook. WARNING: This always executes the code. If the code is slow (e.g. package installs), the call may time out but the cell IS still created in Pluto. Use list_cells to check before retrying. For slow operations, prefer edit_cell with run=false then execute_cell separately.",
       {
         path: z.string().describe("Path to the notebook"),
         code: z.string().describe("Julia code for the new cell"),
@@ -295,7 +353,7 @@ export class PlutoMCPHttpServer {
     // Edit Cell
     server.tool(
       "edit_cell",
-      "Update the code of an existing cell",
+      "Update the code of an existing cell. Note: editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through the MCP API. Use save_notebook to persist changes to disk.",
       {
         path: z.string().describe("Path to the notebook"),
         cell_id: z.string().describe("UUID of the cell to edit"),
@@ -670,6 +728,225 @@ export class PlutoMCPHttpServer {
         }
       }
     );
+
+    // Save Notebook
+    server.tool(
+      "save_notebook",
+      "Save the running notebook to disk as a .pluto.jl file. Notebooks are NOT auto-saved — you must call this explicitly to persist changes made via create_cell, edit_cell, or delete_cell.",
+      {
+        path: z.string().describe("Path of the open notebook"),
+        output_path: z
+          .string()
+          .describe(
+            "Optional alternative file path to save to (defaults to the notebook's original path)"
+          )
+          .optional(),
+      },
+      async ({ path, output_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const content = this.plutoManager.getNotebookContent(worker);
+        const savePath = output_path ?? path;
+        await writeFile(savePath, content, "utf-8");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook saved to ${savePath} (${content.length} bytes)`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Delete Cell
+    server.tool(
+      "delete_cell",
+      "Permanently remove a cell from the notebook by its ID. Use list_cells to find cell IDs.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_id: z.string().describe("UUID of the cell to delete"),
+      },
+      async ({ path, cell_id }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.deleteCell(worker, cell_id);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cell ${cell_id} deleted`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Move Cells
+    server.tool(
+      "move_cells",
+      "Move one or more cells to a new position in the notebook. The order of cell_ids is preserved in the result. Use list_cells to find cell IDs and their current positions.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_ids: z
+          .array(z.string())
+          .describe("Cell UUIDs to move, in desired order"),
+        index: z
+          .number()
+          .describe(
+            "Target position in the current cell order (before removing the moved cells). E.g. 0 = beginning, 1 = after first cell."
+          ),
+      },
+      async ({ path, cell_ids, index }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.moveCells(worker, cell_ids, index);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Moved ${cell_ids.length} cell(s) to position ${index}`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Fold/Unfold Cell
+    server.tool(
+      "fold_cell",
+      "Show or hide a cell's code in the Pluto notebook. Folded cells hide their source code but still show output. Use list_cells to find cell IDs.",
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_id: z.string().describe("UUID of the cell to fold/unfold"),
+        folded: z
+          .boolean()
+          .describe(
+            "true to hide (fold) the cell code, false to show (unfold) it"
+          ),
+      },
+      async ({ path, cell_id, folded }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        await this.plutoManager.foldCell(worker, cell_id, folded);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cell ${cell_id} ${folded ? "folded (code hidden)" : "unfolded (code visible)"}`,
+            },
+          ],
+        };
+      }
+    );
+
+    // List Cells
+    server.tool(
+      "list_cells",
+      "List all cells in a notebook with their IDs, code preview, and execution status. Use this to find cell IDs for read_cell, edit_cell, execute_cell, delete_cell, move_cells, or fold_cell.",
+      {
+        path: z.string().describe("Path to the notebook"),
+      },
+      async ({ path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const snippets = worker.getSnippets();
+
+        const cells = snippets.map((snippet, index) => ({
+          cell_id: snippet.cell_id,
+          index,
+          code_preview: snippet.input.code.split("\n")[0].slice(0, 80),
+          code_folded: snippet.input.code_folded,
+          errored: snippet.result.errored,
+          running: snippet.result.running,
+          queued: snippet.result.queued,
+        }));
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ count: cells.length, cells }, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
+    // Get Notebook URL
+    server.tool(
+      "get_notebook_url",
+      "Get the browser URL to open the notebook in Pluto's web interface",
+      {
+        path: z.string().describe("Path to the notebook"),
+      },
+      async ({ path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+
+        const worker = await this.plutoManager.getWorker(path);
+
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+
+        const url = `${this.plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: url,
+            },
+          ],
+        };
+      }
+    );
   }
 
   private setupRoutes(): void {
@@ -747,6 +1024,9 @@ export class PlutoMCPHttpServer {
   }
 
   private setupErrorHandling(): void {
+    if (!this.handleSignals) {
+      return;
+    }
     process.on("SIGINT", async () => {
       console.log("[MCP HTTP] Shutting down server...");
       await this.stop();

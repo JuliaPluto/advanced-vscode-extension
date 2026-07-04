@@ -2,6 +2,54 @@
 
 This guide explains how to work with Pluto.jl notebooks, including cell structure, reactivity rules, PlutoUI components, and best practices.
 
+## Important: Server Startup Times
+
+Starting a Pluto server involves installing Julia packages and precompiling them. **The first run can take several minutes** (2-10 minutes depending on the system). If `start_pluto_server` or `open_notebook` appears to hang or times out:
+
+1. **Do not retry immediately** — the server is likely still starting up.
+2. **Wait 30-60 seconds**, then call `get_notebook_status` to check progress.
+3. **Subsequent runs are much faster** since packages are cached.
+
+If a tool call times out, that does NOT mean it failed — the server may still be starting in the background. Check `get_notebook_status` before retrying.
+
+## Working with Notebooks via MCP
+
+These rules are critical when interacting with Pluto notebooks through the MCP API:
+
+### File Ownership
+
+- **Never edit the `.pluto.jl` file on disk while the notebook is open** — Pluto owns that file. Changes made outside the MCP API will be ignored or overwritten.
+- All cell mutations (create, edit, delete) must go through the MCP tools.
+- To persist changes to disk, call `save_notebook` explicitly. **Notebooks are NOT auto-saved.**
+- **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — Pluto manages file writes and the issue may be on the server side.
+
+### Handling Timeouts
+
+- If `create_cell` times out, the cell was likely still created in Pluto. Use `list_cells` to check before retrying — creating the same cell twice causes "Multiple definitions" errors.
+- For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it. This avoids timeout-induced phantom cells.
+- Use `delete_cell` to remove any accidental duplicate cells.
+
+### Pluto Reactivity Rules
+
+- **Each variable can only be defined in one cell.** If you get a "Multiple definitions" error, use `list_cells` to find the duplicate, then `delete_cell` to remove it.
+- When you edit a cell, Pluto automatically re-runs all cells that depend on the changed variables.
+- **Just `using PackageName`** — Pluto's built-in package manager will automatically install and track the package. Only fall back to a manual `import Pkg; Pkg.activate(; temp=true); Pkg.add([...])` cell if the plain `using` approach fails.
+
+### Cell Visibility
+
+- **Fold cells that are markdown-only or plot-only** using `fold_cell` — this hides the source code in Pluto's UI while still showing the rendered output. It keeps the notebook clean for readers.
+- Use `list_cells` to check the current `code_folded` state of each cell.
+
+### Recommended Workflow
+
+1. `open_notebook` (file must exist on disk first)
+2. `list_cells` to see current state
+3. `create_cell` / `edit_cell` / `delete_cell` to make changes
+4. `fold_cell` to hide code for markdown/plot cells
+5. `read_cell` to inspect outputs
+6. `save_notebook` to persist to disk when done
+7. `get_notebook_url` to give the user a browser link
+
 ## Table of Contents
 
 - [Notebook Structure](#notebook-structure)
@@ -10,6 +58,7 @@ This guide explains how to work with Pluto.jl notebooks, including cell structur
 - [PlutoUI Components](#plutoui-components)
 - [Combining Markdown and PlutoUI](#combining-markdown-and-plutoui)
 - [Best Practices](#best-practices)
+- [Beautifying a Notebook](#beautifying-a-notebook)
 - [Common Patterns](#common-patterns)
 
 ---
@@ -123,13 +172,23 @@ This defines the display order of cells (not execution order).
 
 5. **Import/Package Management**
 
+   Pluto has a built-in package manager — just `using` the package you need:
+
+   ```julia
+   using Plots
+   ```
+
+   ```julia
+   using DataFrames
+   ```
+
+   Pluto will automatically install and track the package. Only fall back to the manual approach if the above fails:
+
    ```julia
    begin
        import Pkg
        Pkg.activate(; temp=true)
-       Pkg.add(["Plots", "DataFrames", "PlutoUI"])
-       using Plots
-       using PlutoUI
+       Pkg.add(["Plots", "DataFrames"])
    end
    ```
 
@@ -202,17 +261,15 @@ md"""
 
 ## PlutoUI Components
 
-PlutoUI provides interactive widgets using the `@bind` macro.
+PlutoUI provides interactive widgets using the `@bind` macro. **If the user asks for interactivity** (sliders, dropdowns, toggles, user input, etc.), suggest using PlutoUI — it is the standard way to add interactive controls to Pluto notebooks.
 
 ### Installation
 
 ```julia
-begin
-    import Pkg
-    Pkg.add("PlutoUI")
-    using PlutoUI
-end
+using PlutoUI
 ```
+
+Pluto's built-in package manager will install it automatically.
 
 ### @bind Macro
 
@@ -473,18 +530,17 @@ end
 
 ### 1. Package Management
 
-Always use a cell at the beginning for package management:
+Just `using` the packages you need — Pluto will install them automatically:
 
 ```julia
-begin
-    import Pkg
-    Pkg.activate(; temp=true)
-    Pkg.add(["Plots", "DataFrames", "PlutoUI"])
-    using Plots
-    using DataFrames
-    using PlutoUI
-end
+using Plots
 ```
+
+```julia
+using DataFrames
+```
+
+Each `using` should be in its own cell. Only use the manual `Pkg.activate(; temp=true)` + `Pkg.add(...)` approach as a fallback if automatic installation fails.
 
 ### 2. Organize with Markdown Headers
 
@@ -565,6 +621,132 @@ Sum: $(x + y)
 Product: $(x * y)
 """
 ```
+
+---
+
+## Beautifying a Notebook
+
+When a notebook is functionally complete, polish it for readability. Use `move_cells`, `fold_cell`, and markdown cells to turn working code into a presentable document.
+
+### Notebook Structure
+
+Aim for this top-to-bottom layout:
+
+1. **Title and introduction** — a markdown cell with the notebook title, author, and purpose
+2. **Table of Contents** — a markdown cell with `TableOfContents()` from PlutoUI
+3. **Key results and summary** — the main outputs, plots, or conclusions the reader cares about
+4. **Analysis sections** — the substantive work, organized under markdown headers
+5. **Boilerplate at the bottom** — helper functions, constants, and configuration cells
+6. **`Pkg` cells at the very end** — any manual `Pkg.activate` / `Pkg.add` cells should be the last cells in the notebook
+
+Use `move_cells` to reorder cells into this layout.
+
+### Table of Contents
+
+Add a `TableOfContents` cell near the top (requires PlutoUI):
+
+```julia
+TableOfContents()
+```
+
+This renders a sticky sidebar that links to all `#`, `##`, `###` headings in your markdown cells.
+
+### Folding Cells
+
+Use `fold_cell` to hide source code while keeping the rendered output visible:
+
+Folding hides the **source code**, not the output — the rendered result is always visible.
+
+- **Always fold**: markdown cells (`md"""`, `@mdx`), `@bind` widget cells, plot-only cells, `TableOfContents()` cells
+- **Usually fold**: helper function definitions, data loading, configuration
+- **Don't fold**: cells where the source code itself is meant to be read (tutorials, examples, key algorithms)
+
+### Section Headers
+
+Break the notebook into logical sections with markdown headers:
+
+```julia
+md"""
+# 1. Data Loading
+"""
+```
+
+```julia
+md"""
+# 2. Analysis
+"""
+```
+
+```julia
+md"""
+# 3. Results
+"""
+```
+
+Fold these header cells so only the rendered heading shows.
+
+### Fine-Tuning Text
+
+- Use **bold** for key terms and results: `**accuracy: 94.2%**`
+- Use inline code for variable names and function references: `` `my_function` ``
+- Add context to plots with a markdown cell above or below explaining what the reader should notice
+- Use admonitions for important notes:
+
+```julia
+md"""
+!!! tip "Performance"
+    This computation runs in O(n log n) time.
+"""
+```
+
+### HTML in Markdown
+
+If you need raw HTML in markdown cells (custom styling, embedded iframes, etc.), use `MarkdownLiteral`:
+
+```julia
+using MarkdownLiteral: @mdx
+```
+
+Then use `@mdx` instead of `md`:
+
+```julia
+@mdx """
+<div style="background: #f0f0f0; padding: 1em; border-radius: 8px;">
+  <h3>Custom styled block</h3>
+  <p>This supports full HTML.</p>
+</div>
+"""
+```
+
+**Note:** You cannot combine `:` imports with comma-separated `using` — each must be its own cell:
+
+```julia
+# ✅ CORRECT — separate cells
+using PlutoUI
+```
+
+```julia
+using MarkdownLiteral: @mdx
+```
+
+```julia
+# ❌ WRONG — syntax error
+using PlutoUI, MarkdownLiteral: @mdx
+```
+
+### Checklist
+
+After finishing the notebook content, run through these steps:
+
+1. Add a title cell at the very top
+2. Add `TableOfContents()` right after the title
+3. Move results/summary cells near the top, below the TOC
+4. Move boilerplate (imports, helpers, constants) to the bottom
+5. Move any `Pkg` cells to the very end
+6. Fold all markdown cells, plot cells, TOC, and boilerplate
+7. Ensure each section has a markdown header
+8. **Run `list_cells` and check for errors** — verify no cells are in an errored state. If something crashed, fix it before saving. A beautified notebook that doesn't run is worse than an ugly one that does.
+9. `save_notebook` to persist the final layout
 
 ---
 

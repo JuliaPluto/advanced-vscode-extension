@@ -1,0 +1,41 @@
+{
+  "name": "@plutojl/cli",
+  "version": "0.5.5",
+  "description": "Command-line tool for Pluto.jl notebooks — start a Pluto server and drive notebooks from your terminal; also serves MCP for AI assistants. Run with npx @plutojl/cli",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JuliaPluto/advanced-vscode-extension",
+    "directory": "packages/advanced-pluto-mcp"
+  },
+  "type": "module",
+  "bin": {
+    "plutojl-cli": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist/cli.cjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "build:production": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "check-types": "tsc --project tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "@plutojl/rainbow": "^0.6.19",
+    "express": "^5.1.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2"
+  }
+}
