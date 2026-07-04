@@ -7,7 +7,10 @@ import {
   registerAllCommands,
   initializePlutoServer,
 } from "./commands/index.ts";
-import { getSharedPlutoManager } from "./plutoManagerInstance.ts";
+import {
+  getSharedPlutoManager,
+  clearSharedPlutoManager,
+} from "./plutoManagerInstance.ts";
 import {
   initializeMCPServer,
   startMCPServer,
@@ -44,13 +47,25 @@ export async function activate(
     serverUrl || undefined
   );
   context.subscriptions.push(plutoManager);
+  context.subscriptions.push({ dispose: () => clearSharedPlutoManager() });
 
   // Initialize HTTP MCP Server using the shared PlutoManager (singleton)
   initializeMCPServer(plutoManager, mcpPort, controllerOutputChannel);
 
-  // Auto-start MCP server if configured
+  // Auto-start MCP server if configured. A failure (e.g. port in use by
+  // another VSCode window) must not prevent the extension from activating.
   if (autoStartMcp) {
-    await startMCPServer(controllerOutputChannel);
+    try {
+      await startMCPServer(controllerOutputChannel);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      controllerOutputChannel.appendLine(
+        `MCP server failed to start (continuing without it): ${message}`
+      );
+      vscode.window.showWarningMessage(
+        `Pluto: MCP server failed to start on port ${mcpPort} (${message}). Notebooks still work; MCP clients won't connect to this window.`
+      );
+    }
   }
 
   // Ensure MCP server is stopped and cleaned up when extension deactivates
@@ -60,9 +75,6 @@ export async function activate(
       cleanupMCPServer();
     },
   });
-
-  // Start Pluto server on activation
-  await initializePlutoServer(plutoManager, controllerOutputChannel);
 
   // Register the notebook serializer
   context.subscriptions.push(
@@ -96,12 +108,39 @@ export async function activate(
   // Handle notebook cell changes (add/delete cells)
   context.subscriptions.push(
     vscode.workspace.onDidChangeNotebookDocument(async (event) => {
-      await controller.handleVsCodeNotebookChange(event);
+      try {
+        await controller.handleVsCodeNotebookChange(event);
+      } catch (error) {
+        controllerOutputChannel.appendLine(
+          `Failed to handle notebook change: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    })
+  );
+
+  // Stop tracking notebooks when their document closes
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseNotebookDocument((notebook) => {
+      controller.handleNotebookClosed(notebook);
     })
   );
 
   // Register all commands
   registerAllCommands(context, plutoManager);
+
+  // Start Pluto server in the background — activation must not block on
+  // (potentially minutes of) first-run Julia setup
+  void initializePlutoServer(plutoManager, controllerOutputChannel).catch(
+    (error) => {
+      controllerOutputChannel.appendLine(
+        `Pluto server autostart failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  );
 
   // Create and register status bar
   const statusBar = new PlutoStatusBar(plutoManager);

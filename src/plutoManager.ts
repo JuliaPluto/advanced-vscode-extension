@@ -606,8 +606,11 @@ export class PlutoManager {
           // Wait a bit for cleanup
           await new Promise((resolve) => setTimeout(resolve, 100));
 
-          // Recreate worker
-          await this.getWorker(notebook.path);
+          // Recreate worker and let listeners (controller) resubscribe
+          const worker = await this.getWorker(notebook.path);
+          if (worker) {
+            this.emit("workerRecreated", notebook.path, worker);
+          }
 
           void this.logger.showInfoMessage(
             `Reconnected to notebook: ${notebook.path.split("/").pop()}`

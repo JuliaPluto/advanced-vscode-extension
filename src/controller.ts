@@ -64,13 +64,10 @@ export class PlutoNotebookController {
     const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
     if (worker) {
       try {
-        // Find all currently running executions and mark them as failed
-        for (const [cellId, execution] of this.activeExecutions.entries()) {
-          execution.end(false, Date.now());
-          this.activeExecutions.delete(cellId);
-        }
-
         await worker.interrupt();
+        // End this notebook's executions only after the interrupt landed —
+        // ending them earlier lets late patches resurrect them as successes
+        this.endExecutionsForNotebook(notebook);
         vscode.window.showInformationMessage("Notebook execution interrupted");
       } catch (error) {
         this.outputChannel.appendLine(`Error interrupting notebook: ${error}`);
@@ -78,6 +75,24 @@ export class PlutoNotebookController {
       }
     }
   };
+
+  /**
+   * End (as failed) all active executions belonging to one notebook.
+   * Executions of other notebooks are left untouched.
+   */
+  private endExecutionsForNotebook(notebook: vscode.NotebookDocument): void {
+    const cellsById = this.getCodeCellRecord(notebook);
+    for (const [cellId, execution] of this.activeExecutions.entries()) {
+      if (cellsById[cellId]) {
+        try {
+          execution.end(false, Date.now());
+        } catch {
+          // Execution may already be resolved
+        }
+        this.activeExecutions.delete(cellId);
+      }
+    }
+  }
 
   constructor(
     private readonly plutoManager: PlutoManager,
@@ -98,10 +113,30 @@ export class PlutoNotebookController {
     this.setupMessaging();
 
     // Listen for worker recreation after server restart
-    this.plutoManager.on("workerRecreated", (notebookPath, worker) => {
-      this.handleWorkerRecreated(notebookPath, worker);
-    });
+    this.plutoManager.on("workerRecreated", this.onWorkerRecreated);
+
+    // When the server goes away, no more patches will arrive — end all
+    // in-flight executions instead of letting them spin forever
+    this.plutoManager.on("serverStateChanged", this.onServerStateChanged);
   }
+
+  private onWorkerRecreated = (notebookPath: string, worker: Worker): void => {
+    this.handleWorkerRecreated(notebookPath, worker);
+  };
+
+  private onServerStateChanged = (): void => {
+    if (this.plutoManager.isConnected()) {
+      return;
+    }
+    for (const execution of this.activeExecutions.values()) {
+      try {
+        execution.end(false, Date.now());
+      } catch {
+        // Execution may already be resolved
+      }
+    }
+    this.activeExecutions.clear();
+  };
 
   /**
    * Setup communication bridge between controller and renderer
@@ -239,6 +274,9 @@ export class PlutoNotebookController {
     );
 
     if (notebook) {
+      // Executions tied to the dead worker will never receive their
+      // end patches — fail them before resubscribing
+      this.endExecutionsForNotebook(notebook);
       this.subscribeToWorker(notebookPath, notebook, worker);
     } else {
       this.outputChannel.appendLine(
@@ -250,10 +288,14 @@ export class PlutoNotebookController {
   private startExecution(
     cellId: CellId,
     notebook: vscode.NotebookDocument
-  ): { execution: vscode.NotebookCellExecution; cell: vscode.NotebookCell } {
+  ):
+    | { execution: vscode.NotebookCellExecution; cell: vscode.NotebookCell }
+    | undefined {
+    // Cells created outside VSCode (ephemeral terminal cells, MCP
+    // create_cell) have no notebook counterpart — callers skip them
     const cell = this.getCellByPlutoId(notebook, cellId);
     if (!cell) {
-      throw new Error("Can not determine notebook cell");
+      return undefined;
     }
     let execution = this.activeExecutions.get(cellId);
 
@@ -280,6 +322,20 @@ export class PlutoNotebookController {
     const cellId = path[1] as CellId;
 
     const currentCellState = fullNotebookState.cell_results[cellId];
+    if (!currentCellState) {
+      // Patch for a cell that no longer exists (remove op, or an
+      // ephemeral cell already deleted) — end any leftover execution
+      const execution = this.activeExecutions.get(cellId);
+      if (execution) {
+        try {
+          execution.end(false, Date.now());
+        } catch {
+          // Execution may already be resolved
+        }
+        this.activeExecutions.delete(cellId);
+      }
+      return;
+    }
 
     const body = currentCellState.output?.body;
     try {
@@ -326,16 +382,21 @@ export class PlutoNotebookController {
     }
     if (isStarting) {
       // Start execution
-      const { execution } = this.startExecution(cellId, notebook);
-      const formatted = formatCellOutput(currentCellState);
-      execution.replaceOutput([formatted]);
+      const started = this.startExecution(cellId, notebook);
+      if (started) {
+        const formatted = formatCellOutput(currentCellState);
+        started.execution.replaceOutput([formatted]);
+      }
     }
 
     // 2. Update Cell Output (only if an execution object exists)
     if (segment2 === "output") {
       // Handle final output/result update
-      const { execution, cell } = this.startExecution(cellId, notebook);
-      // execution.replaceOutput([formatCellOutput(currentCellState)]);
+      const started = this.startExecution(cellId, notebook);
+      if (!started) {
+        return;
+      }
+      const { execution, cell } = started;
 
       this.outputChannel.appendLine(
         `[OUTPUT] Cell ${cellId} for notebook ${notebook.uri} output updated.`
@@ -346,7 +407,7 @@ export class PlutoNotebookController {
       if (cell.outputs.length === 0) {
         execution.replaceOutput([formatCellOutput(currentCellState)]);
       }
-      execution.end(true, Date.now());
+      execution.end(!currentCellState.errored, Date.now());
       this.activeExecutions.delete(cellId);
       this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
     } else if (segment2 === "logs") {
@@ -467,7 +528,11 @@ export class PlutoNotebookController {
       fullNotebookState?.cell_results ?? {}
     )) {
       const start = Date.now();
-      const { execution } = this.startExecution(cell_id, notebook);
+      const started = this.startExecution(cell_id, notebook);
+      if (!started) {
+        continue;
+      }
+      const { execution } = started;
       try {
         await execution.replaceOutput([formatCellOutput(state)]);
       } catch (e) {
@@ -511,7 +576,15 @@ export class PlutoNotebookController {
           const [action, ...rest] = path;
           if (path.length === 0 && patches.length === 1) {
             // This is a state reset; handle it accordingly and break
-            this.updateAllCellsFromState(notebook, event);
+            void this.updateAllCellsFromState(notebook, event).catch(
+              (error) => {
+                this.outputChannel.appendLine(
+                  `Failed to reset cells from state: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`
+                );
+              }
+            );
             break;
           }
           switch (action) {
@@ -538,7 +611,17 @@ export class PlutoNotebookController {
               break;
             }
             case "cell_results":
-              this._handleCellPatch(notebook, patch, fullNotebookState);
+              // Isolate per-patch failures so one bad patch doesn't drop
+              // the remaining cells' updates from the same batch
+              try {
+                this._handleCellPatch(notebook, patch, fullNotebookState);
+              } catch (error) {
+                this.outputChannel.appendLine(
+                  `Failed to apply cell patch for ${patch.path.join(".")}: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`
+                );
+              }
               break;
             case "process_status":
               this.outputChannel.appendLine(
@@ -652,6 +735,17 @@ export class PlutoNotebookController {
 
         this.outputChannel.appendLine(`Cell added with ID: ${cellId}`);
 
+        // Recompute the index — the notebook may have changed during the
+        // round trip, and a stale index would tag the wrong cell
+        const currentIndex = notebook.getCells().indexOf(addedCell);
+        if (currentIndex === -1) {
+          this.outputChannel.appendLine(
+            `Cell removed while being added — deleting ${cellId} from Pluto`
+          );
+          await this.plutoManager.deleteCell(worker, cellId);
+          continue;
+        }
+
         // Update the cell's metadata with the Pluto cell ID
         const edit = new vscode.WorkspaceEdit();
         const cellMetadata = {
@@ -660,7 +754,7 @@ export class PlutoNotebookController {
         };
 
         edit.set(notebook.uri, [
-          vscode.NotebookEdit.updateCellMetadata(cellIndex, cellMetadata),
+          vscode.NotebookEdit.updateCellMetadata(currentIndex, cellMetadata),
         ]);
 
         await vscode.workspace.applyEdit(edit);
@@ -754,10 +848,48 @@ export class PlutoNotebookController {
     }
   }
 
-  public async dispose(): Promise<void> {
+  /**
+   * Stop tracking a closed notebook: drop its worker subscription and end
+   * its executions. The worker itself stays alive — MCP clients and
+   * Pluto's own UI may still be using the notebook.
+   */
+  public handleNotebookClosed(notebook: vscode.NotebookDocument): void {
+    if (notebook.notebookType !== "pluto-notebook") {
+      return;
+    }
+    const notebookPath = notebook.uri.fsPath;
+    const unsubscribe = this.workerSubscriptions.get(notebookPath);
+    if (unsubscribe) {
+      unsubscribe();
+      this.workerSubscriptions.delete(notebookPath);
+      this.outputChannel.appendLine(
+        `[SUBSCRIPTION] Unsubscribed from closed notebook ${notebookPath}`
+      );
+    }
+    this.endExecutionsForNotebook(notebook);
+  }
+
+  public dispose(): void {
+    this.plutoManager.off("workerRecreated", this.onWorkerRecreated);
+    this.plutoManager.off("serverStateChanged", this.onServerStateChanged);
+
+    for (const unsubscribe of this.workerSubscriptions.values()) {
+      unsubscribe();
+    }
+    this.workerSubscriptions.clear();
+
+    for (const execution of this.activeExecutions.values()) {
+      try {
+        execution.end(false, Date.now());
+      } catch {
+        // Execution may already be resolved
+      }
+    }
+    this.activeExecutions.clear();
+
     this.controller.dispose();
-    // NotebookRendererMessaging doesn't have a dispose method
-    await this.plutoManager.dispose();
+    // The shared PlutoManager is disposed by the extension's subscriptions,
+    // not here — the MCP server may outlive this controller.
   }
 
   private async _doExecution(
@@ -775,7 +907,14 @@ export class PlutoNotebookController {
     }
 
     // Ensure there is at least an initial execution object for this cell
-    const { execution } = this.startExecution(cellId, notebook);
+    const started = this.startExecution(cellId, notebook);
+    if (!started) {
+      vscode.window.showErrorMessage(
+        `Cell ${cellId} not found in notebook — cannot execute`
+      );
+      return;
+    }
+    const { execution } = started;
 
     try {
       // Get or create worker - this will start the server if needed
