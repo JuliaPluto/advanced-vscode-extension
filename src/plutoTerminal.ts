@@ -25,6 +25,9 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
   private inputBuffer = "";
   private cursorPosition = 0; // Position in the input buffer
   private isExecuting = false;
+  // Bumped on Ctrl+C and on each new execution; stale executions compare
+  // against it before touching shared terminal state
+  private executionGeneration = 0;
   private readonly context?: vscode.ExtensionContext;
 
   // Command history
@@ -271,8 +274,11 @@ using InteractiveUtils
       // Ctrl+C - interrupt
       if (this.isExecuting) {
         this.write("\r\n\x1b[31m^C\x1b[0m\r\n");
+        // Invalidate the in-flight execution so its completion doesn't
+        // clobber state or print a stray prompt (the Julia-side
+        // computation itself is not cancelled — interrupt is a TODO)
+        this.executionGeneration++;
         this.isExecuting = false;
-        // TODO: Add interrupt support
         this.writePrompt();
       } else {
         this.inputBuffer = "";
@@ -429,16 +435,25 @@ using InteractiveUtils
   /**
    * Wait for worker to become idle
    */
-  private async waitForIdle(worker: Worker): Promise<void> {
-    const maxWaitTime = 2 * 60000; // 60 seconds max
+  private async waitForIdle(
+    worker: Worker,
+    isStale?: () => boolean
+  ): Promise<void> {
+    const maxWaitTime = 2 * 60000;
     const checkInterval = 500; // Check every 500ms
     const startTime = Date.now();
 
     while (!worker.isIdle()) {
+      // The user cancelled (Ctrl+C) — stop waiting and stop writing
+      // progress dots into whatever they're doing now
+      if (isStale?.()) {
+        return;
+      }
+
       // Check if we've exceeded max wait time
       if (Date.now() - startTime > maxWaitTime) {
         throw new Error(
-          "Timeout waiting for notebook to become idle (60 seconds)"
+          "Timeout waiting for notebook to become idle (2 minutes)"
         );
       }
 
@@ -446,12 +461,14 @@ using InteractiveUtils
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
 
       // Show progress indicator every 2 seconds
-      if ((Date.now() - startTime) % 2000 < checkInterval) {
+      if ((Date.now() - startTime) % 2000 < checkInterval && !isStale?.()) {
         this.write("\x1b[33m.\x1b[0m");
       }
     }
 
-    this.write("\r\n");
+    if (!isStale?.()) {
+      this.write("\r\n");
+    }
   }
 
   /**
@@ -469,8 +486,11 @@ using InteractiveUtils
         return await this.handleSpecialCommand(code);
       }
 
+      // Example commands resolve to Julia code that runs like normal input
       code = this.handleExampleCommand(code);
-      return;
+      if (!code) {
+        return;
+      }
     }
 
     if (!this.notebookPath) {
@@ -481,6 +501,7 @@ using InteractiveUtils
     }
 
     this.isExecuting = true;
+    const generation = ++this.executionGeneration;
 
     try {
       // Get worker from PlutoManager (it handles creation/caching)
@@ -497,25 +518,39 @@ using InteractiveUtils
         );
 
         // Wait for notebook to become idle
-        await this.waitForIdle(worker);
+        await this.waitForIdle(
+          worker,
+          () => generation !== this.executionGeneration
+        );
+        if (generation !== this.executionGeneration) {
+          return;
+        }
       }
 
       // Execute code ephemerally using PlutoManager
       const result = await this.plutoManager.executeCodeEphemeral(worker, code);
 
-      // Render output
-      await this.renderOutput(result);
+      // Render output — unless the user cancelled with Ctrl+C meanwhile
+      if (generation === this.executionGeneration) {
+        await this.renderOutput(result);
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      this.write(`\x1b[31mError: ${errorMessage}\x1b[0m\r\n`);
       this.outputChannel.appendLine(
         `Terminal execution error: ${errorMessage}`
       );
+      if (generation === this.executionGeneration) {
+        this.write(`\x1b[31mError: ${errorMessage}\x1b[0m\r\n`);
+      }
     } finally {
-      this.isExecuting = false;
-      this.write("\r\n");
-      this.writePrompt();
+      // A Ctrl+C (or a newer execution) already reclaimed the terminal —
+      // a stale completion must not reset state or print another prompt
+      if (generation === this.executionGeneration) {
+        this.isExecuting = false;
+        this.write("\r\n");
+        this.writePrompt();
+      }
     }
   }
 

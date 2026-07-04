@@ -74,6 +74,27 @@ export class PlutoServerTaskManager {
           "[PlutoServerTask] Found existing task, reusing it instead of creating new one"
         );
         this.taskExecution = execution;
+
+        // Adopt the reused task's port — it may differ from our configured one
+        const taskPort = execution.task.definition.port as number | undefined;
+        if (taskPort && taskPort !== this.actualPort) {
+          this.actualPort = taskPort;
+          this.onPortChangedCallback?.(taskPort);
+        }
+
+        // Watch the adopted task for termination like a task we started
+        this.taskEndListener ??= vscode.tasks.onDidEndTaskProcess((e) => {
+          if (e.execution === this.taskExecution) {
+            this.taskExecution = undefined;
+            this.serverReadyPromise = undefined;
+            this.serverReadyResolve = undefined;
+            this.isStarting = false;
+            this.actualPort = this.port;
+            this.taskEndListener?.dispose();
+            this.taskEndListener = undefined;
+            this.onStopCallback?.();
+          }
+        });
         return;
       }
     }
@@ -222,7 +243,6 @@ export class PlutoServerTaskManager {
 
     // Poll until the server responds
     try {
-      await new Promise((r) => setTimeout(r, 15000));
       await this.pollServerReady();
       if (this.serverReadyResolve) {
         this.serverReadyResolve();
@@ -245,7 +265,9 @@ export class PlutoServerTaskManager {
    * Poll server URL until it responds
    */
   private async pollServerReady(): Promise<void> {
-    const maxAttempts = 60;
+    // Generous budget: the task process runs Pkg setup before Pluto.run,
+    // which can take minutes on first run
+    const maxAttempts = 300;
     const pollInterval = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -269,14 +291,50 @@ export class PlutoServerTaskManager {
   }
 
   /**
-   * Stop Pluto server task
+   * Stop Pluto server task. Waits (bounded) for the task process to end so
+   * callers observe a consistent stopped state before continuing.
    */
   public async stop(): Promise<void> {
-    if (!this.taskExecution) {
+    const execution = this.taskExecution;
+    if (!execution) {
       return;
     }
 
-    this.taskExecution.terminate();
+    let endListener: vscode.Disposable | undefined;
+    const ended = new Promise<void>((resolve) => {
+      endListener = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === execution) {
+          resolve();
+        }
+      });
+    });
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      execution.terminate();
+      await Promise.race([
+        ended,
+        new Promise<void>((resolve) => {
+          timeoutHandle = setTimeout(resolve, 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeoutHandle);
+      endListener?.dispose();
+    }
+
+    // If the task outlived the bounded wait, stop tracking it now — its
+    // eventual exit must not fire onStopCallback (and a spurious
+    // "stopped unexpectedly" prompt) after this intentional stop returns
+    if (this.taskExecution === execution) {
+      this.taskExecution = undefined;
+      this.serverReadyPromise = undefined;
+      this.serverReadyResolve = undefined;
+      this.isStarting = false;
+      this.taskEndListener?.dispose();
+      this.taskEndListener = undefined;
+    }
+
     this.actualPort = this.port;
   }
 

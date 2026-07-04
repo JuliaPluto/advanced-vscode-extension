@@ -58,6 +58,14 @@ export function resolveRunConfig(args: RawArgs): CliConfig {
   };
 }
 
+/** MCP port resolution shared by run/install/tools/call: CLI arg > env > .plutomcp.json > default */
+export function resolveMcpPort(args: RawArgs): number {
+  const file = loadConfigFile(process.cwd());
+  return (
+    args.mcpPort ?? envInt("PLUTO_MCP_PORT") ?? file.mcpPort ?? DEFAULTS.mcpPort
+  );
+}
+
 export function resolveInstallArgs(args: RawArgs): InstallArgs {
   return {
     target: args.target ?? "claude-code",

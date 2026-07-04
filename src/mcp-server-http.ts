@@ -22,16 +22,13 @@ export class PlutoMCPHttpServer {
   private readonly transports: Map<string, SSEServerTransport> = new Map();
   private readonly plutoManager: PlutoManager;
   private readonly port: number;
-  private readonly handleSignals: boolean;
 
-  constructor(plutoManager: PlutoManager, port = 3100, handleSignals = false) {
+  constructor(plutoManager: PlutoManager, port = 3100) {
     this.plutoManager = plutoManager;
     this.port = port;
-    this.handleSignals = handleSignals;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
-    this.setupErrorHandling();
   }
 
   private createMcpServer(): McpServer {
@@ -74,21 +71,15 @@ export class PlutoMCPHttpServer {
     // Start Pluto Server
     server.tool(
       "start_pluto_server",
-      "Start the Pluto server on a specified port",
-      {
-        port: z
-          .number()
-          .describe("Port number for the Pluto server")
-          .optional()
-          .default(1234),
-      },
-      async ({ port }) => {
+      "Start the Pluto server on the configured port (set via --pluto-port or extension settings)",
+      {},
+      async () => {
         if (this.plutoManager.isRunning()) {
           return {
             content: [
               {
                 type: "text",
-                text: "Pluto server is already running",
+                text: `Pluto server is already running at ${this.plutoManager.getServerUrl()}`,
               },
             ],
           };
@@ -99,7 +90,7 @@ export class PlutoMCPHttpServer {
           content: [
             {
               type: "text",
-              text: `Pluto server started on port ${port}`,
+              text: `Pluto server started at ${this.plutoManager.getServerUrl()}`,
             },
           ],
         };
@@ -109,21 +100,15 @@ export class PlutoMCPHttpServer {
     // Connect to Pluto Server
     server.tool(
       "connect_to_pluto_server",
-      "Connect to an existing Pluto server (assumes server is already running)",
-      {
-        port: z
-          .number()
-          .describe("Port number of the running Pluto server")
-          .optional()
-          .default(1234),
-      },
-      async ({ port }) => {
+      "Connect to an already-running Pluto server at the configured URL (set via --pluto-url or extension settings)",
+      {},
+      async () => {
         if (this.plutoManager.isConnected()) {
           return {
             content: [
               {
                 type: "text",
-                text: "Already connected to a Pluto server",
+                text: `Already connected to a Pluto server at ${this.plutoManager.getServerUrl()}`,
               },
             ],
           };
@@ -134,7 +119,7 @@ export class PlutoMCPHttpServer {
           content: [
             {
               type: "text",
-              text: `Connected to Pluto server at port ${port}`,
+              text: `Connected to Pluto server at ${this.plutoManager.getServerUrl()}`,
             },
           ],
         };
@@ -474,6 +459,9 @@ export class PlutoMCPHttpServer {
       {},
       async () => {
         const isConnected = this.plutoManager.isConnected();
+        const notebooks = isConnected
+          ? this.plutoManager.getOpenNotebooks()
+          : [];
 
         return {
           content: [
@@ -482,6 +470,8 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   server_running: isConnected,
+                  server_url: this.plutoManager.getServerUrl(),
+                  open_notebooks: notebooks.length,
                   message: isConnected
                     ? "Pluto server is running"
                     : "Pluto server is not running",
@@ -1023,17 +1013,6 @@ export class PlutoMCPHttpServer {
     });
   }
 
-  private setupErrorHandling(): void {
-    if (!this.handleSignals) {
-      return;
-    }
-    process.on("SIGINT", async () => {
-      console.log("[MCP HTTP] Shutting down server...");
-      await this.stop();
-      process.exit(0);
-    });
-  }
-
   public async start(): Promise<void> {
     return await new Promise((resolve, reject) => {
       this.httpServer = this.app.listen(this.port, (error?: Error) => {
@@ -1073,13 +1052,20 @@ export class PlutoMCPHttpServer {
       }
     }
 
-    // Close HTTP server
+    // Close HTTP server (resolve immediately if it never started)
     await new Promise<void>((resolve) => {
-      this.httpServer?.close(() => {
+      if (!this.httpServer) {
+        resolve();
+        return;
+      }
+      this.httpServer.close(() => {
         console.log("[MCP HTTP] HTTP server closed");
         resolve();
       });
+      // Idle keep-alive connections would otherwise hold close() open
+      this.httpServer.closeIdleConnections();
     });
+    this.httpServer = undefined;
   }
 
   public getPort(): number {
