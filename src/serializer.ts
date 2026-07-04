@@ -54,18 +54,14 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
     data: vscode.NotebookData
     // __token: vscode.CancellationToken
   ): Promise<Uint8Array> {
-    try {
-      const serialized = serializePlutoNotebook(
-        data.cells,
-        data.metadata?.pluto_notebook_id as string,
-        data.metadata?.pluto_version as string
-      );
+    // No fallback on failure: writing anything but the real Pluto format
+    // would corrupt the .pluto.jl file on disk. Let the save fail instead.
+    const serialized = serializePlutoNotebook(
+      data.cells,
+      data.metadata?.pluto_notebook_id as string,
+      data.metadata?.pluto_version as string
+    );
 
-      return new TextEncoder().encode(serialized);
-    } catch {
-      // Fallback: concatenate all cells
-      const contents = data.cells.map((cell) => cell.value).join("\n\n");
-      return new TextEncoder().encode(contents);
-    }
+    return new TextEncoder().encode(serialized);
   }
 }
