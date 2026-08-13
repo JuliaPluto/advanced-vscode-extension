@@ -167,9 +167,7 @@ class PlutoCellTreeItem
 /**
  * Tree data provider for Pluto notebooks
  */
-export class NotebooksTreeDataProvider
-  implements vscode.TreeDataProvider<NotebookTreeItemBase>
-{
+export class NotebooksTreeDataProvider implements vscode.TreeDataProvider<NotebookTreeItemBase> {
   private readonly _onDidChangeTreeData: vscode.EventEmitter<
     NotebookTreeItemBase | undefined | null | void
   > = new vscode.EventEmitter<NotebookTreeItemBase | undefined | null | void>();

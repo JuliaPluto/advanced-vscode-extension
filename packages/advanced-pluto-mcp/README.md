@@ -38,7 +38,7 @@ npx @plutojl/cli run [options]
 | `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                               |
 | `--pluto-port <port>`   | `1234`   | Pluto server port                                    |
 | `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one) |
-| `--julia-version <ver>` | `1.11.7` | Julia version via juliaup                            |
+| `--julia-version <ver>` | `1.12.6` | Julia version via juliaup                            |
 | `--no-pluto`            | —        | Start the tool server only, without starting Pluto   |
 
 ### `tools`
@@ -98,7 +98,7 @@ Example `.plutomcp.json`:
 {
   "mcpPort": 3100,
   "plutoPort": 1234,
-  "juliaVersion": "1.11.7"
+  "juliaVersion": "1.12.6"
 }
 ```
 

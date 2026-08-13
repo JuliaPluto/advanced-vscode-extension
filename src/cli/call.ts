@@ -221,8 +221,7 @@ export async function callTool(
   }
 
   const content = result?.content as
-    | Array<{ type: string; text?: string }>
-    | undefined;
+    Array<{ type: string; text?: string }> | undefined;
   if (content) {
     for (const item of content) {
       if (item.type === "text" && item.text) {

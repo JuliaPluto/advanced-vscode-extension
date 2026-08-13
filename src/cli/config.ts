@@ -23,5 +23,5 @@ export const VERSION: string = pkg.version;
 export const DEFAULTS = {
   mcpPort: 3100,
   plutoPort: 1234,
-  juliaVersion: "1.11.7",
+  juliaVersion: "1.12.6",
 } as const;

@@ -145,12 +145,12 @@ This integration testing approach provides:
 
 **Local Development:**
 
-- Julia 1.11+ must be installed and available in PATH
+- Julia 1.12+ must be installed and available in PATH
 - Pluto.jl package must be installed: `julia -e 'using Pkg; Pkg.add("Pluto")'`
 
 **CI/CD:**
 
-- GitHub Actions CI automatically installs Julia 1.11 and Pluto.jl
+- GitHub Actions CI automatically installs Julia 1.12 and Pluto.jl
 - The test job uses `julia-actions/setup-julia@v2` to set up Julia
 - Pluto.jl is installed before running tests
 

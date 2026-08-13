@@ -27,15 +27,15 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.19.1",
-    "@plutojl/rainbow": "^0.6.19",
-    "express": "^5.1.0",
-    "uuid": "^13.0.0",
-    "ws": "^8.18.3",
-    "zod": "^3.25.76"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@plutojl/rainbow": "^0.6.21",
+    "express": "^5.2.1",
+    "uuid": "^14.0.1",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "esbuild": "^0.25.9",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.2"
   }
 }

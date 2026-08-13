@@ -59,7 +59,7 @@
         "pluto-notebook.juliaVersion": {
           "type": "string",
           "default": "",
-          "description": "Fallback Julia version for juliaup when the Julia extension is unavailable (e.g. '1.11.7'). Normally the active Julia channel is sourced from the julialang.language-julia extension."
+          "description": "Fallback Julia version for juliaup when the Julia extension is unavailable (e.g. '1.12.6'). Normally the active Julia channel is sourced from the julialang.language-julia extension."
         }
       }
     },
@@ -255,40 +255,40 @@
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.1.0",
-    "@commitlint/config-conventional": "^20.0.0",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@types/express": "^5.0.3",
+    "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/mathjax": "^0.0.40",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.75.0",
     "@types/vscode-notebook-renderer": "^1.72.4",
-    "@typescript-eslint/eslint-plugin": "^8.42.0",
-    "@typescript-eslint/parser": "^8.42.0",
-    "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.6.2",
-    "esbuild": "^0.25.9",
-    "eslint": "^9.34.0",
-    "jest": "^30.2.0",
-    "jest-environment-jsdom": "^30.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
     "npm-run-all": "^4.1.5",
-    "prettier": "^3.6.2",
-    "semantic-release": "^24.2.9",
-    "semantic-release-vsce": "^6.0.12",
-    "ts-jest": "^29.4.4",
+    "prettier": "^3.9.6",
+    "semantic-release": "^25.0.9",
+    "semantic-release-vsce": "^6.1.7",
+    "ts-jest": "^29.4.12",
     "tslib": "^2.8.1",
     "typescript": "^5.9.2",
-    "typescript-eslint": "^8.46.0"
+    "typescript-eslint": "^8.67.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.19.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@plutojl/rainbow": "^0.6.21",
-    "uuid": "^13.0.0",
-    "ws": "^8.18.3",
-    "zod": "^3.25.76"
+    "uuid": "^14.0.1",
+    "ws": "^8.21.3",
+    "zod": "^4.4.3"
   }
 }

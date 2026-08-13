@@ -67,7 +67,7 @@ export async function activateJulia(): Promise<vscode.Extension<JuliaExtAPI>> {
 }
 
 /**
- * Returns the Julia executable command and any channel args (e.g. `+1.11.7`)
+ * Returns the Julia executable command and any channel args (e.g. `+1.12.6`)
  * from the active Julia extension configuration.
  *
  * Falls back to `julia.executablePath` workspace config, then to the plain
