@@ -654,10 +654,7 @@ export class PlutoNotebookController {
       `[CellOrderSync] Applying remote structure: ${currentOrder.length} -> ${plutoOrder.length} cells`
     );
 
-    this.remoteEditDepth.set(
-      notebookPath,
-      (this.remoteEditDepth.get(notebookPath) ?? 0) + 1
-    );
+    this.beginRemoteEdit(notebookPath);
     try {
       const edit = new vscode.WorkspaceEdit();
       edit.set(notebook.uri, [
@@ -668,16 +665,71 @@ export class PlutoNotebookController {
       ]);
       await vscode.workspace.applyEdit(edit);
     } finally {
-      // Change events may be delivered after applyEdit resolves — release
-      // the suppression on the next tick
-      setTimeout(() => {
-        const depth = this.remoteEditDepth.get(notebookPath) ?? 1;
-        if (depth <= 1) {
-          this.remoteEditDepth.delete(notebookPath);
-        } else {
-          this.remoteEditDepth.set(notebookPath, depth - 1);
-        }
-      }, 0);
+      this.endRemoteEditSoon(notebookPath);
+    }
+  }
+
+  private beginRemoteEdit(notebookPath: string): void {
+    this.remoteEditDepth.set(
+      notebookPath,
+      (this.remoteEditDepth.get(notebookPath) ?? 0) + 1
+    );
+  }
+
+  /**
+   * Releases remote-edit suppression on the next tick — change events may
+   * be delivered after applyEdit resolves.
+   */
+  private endRemoteEditSoon(notebookPath: string): void {
+    setTimeout(() => {
+      const depth = this.remoteEditDepth.get(notebookPath) ?? 1;
+      if (depth <= 1) {
+        this.remoteEditDepth.delete(notebookPath);
+      } else {
+        this.remoteEditDepth.set(notebookPath, depth - 1);
+      }
+    }, 0);
+  }
+
+  /**
+   * Applies a Pluto-side code edit (browser UI, MCP update_cell) to the
+   * matching VSCode cell's text. Our own executeCell pushes echo back as
+   * the same patch — the text-equality check drops those.
+   */
+  private async _applyRemoteCodeEdit(
+    notebook: vscode.NotebookDocument,
+    cellId: CellId,
+    rawCode: string
+  ): Promise<void> {
+    const cell = this.getCellByPlutoId(notebook, cellId);
+    if (!cell) {
+      return;
+    }
+    let newText = rawCode ?? "";
+    if (cell.kind === vscode.NotebookCellKind.Markup) {
+      const markdown = extractMarkdownContent(newText);
+      if (isDefined(markdown)) {
+        newText = markdown;
+      }
+    }
+    if (cell.document.getText() === newText) {
+      return;
+    }
+    const notebookPath = notebook.uri.fsPath;
+    this.beginRemoteEdit(notebookPath);
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(
+        cell.document.uri,
+        new vscode.Range(0, 0, cell.document.lineCount, 0),
+        newText
+      );
+      await vscode.workspace.applyEdit(edit);
+      this.outputChannel.appendLine(
+        `[CodeSync] Cell ${cellId} code updated from Pluto`
+      );
+    } finally {
+      this.endRemoteEditSoon(notebookPath);
     }
   }
 
@@ -776,16 +828,23 @@ export class PlutoNotebookController {
               );
               break;
             }
-            case "cell_input": {
+            case "cell_inputs": {
               if (rest[1] === "code" && patch.op === "replace") {
-                // TODO here we need to update the code for the cell
+                void this._applyRemoteCodeEdit(
+                  notebook,
+                  rest[0] as CellId,
+                  patch.value as string
+                ).catch((error) => {
+                  this.outputChannel.appendLine(
+                    `[CodeSync] Failed for ${rest[0]}: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`
+                  );
+                });
               }
-
-              this.outputChannel.appendLine(
-                `[UNHANDLED] cell_input ${patch.path.join(".")} action ${
-                  patch.op
-                }`
-              );
+              // Other cell_inputs fields (cell_id, code_folded, metadata)
+              // have no document representation to update; structural
+              // add/remove is handled via cell_order sync
               break;
             }
             case "cell_results":
