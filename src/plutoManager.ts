@@ -536,10 +536,10 @@ export class PlutoManager {
   public async addCell(
     worker: Worker,
     index: number,
-    code: string
+    code: string,
+    cellId?: string
   ): Promise<string> {
-    const cellId = await worker.addSnippet(index, code);
-    return cellId;
+    return await worker.addSnippet(index, code, {}, cellId);
   }
 
   /**

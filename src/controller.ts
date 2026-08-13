@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import type { PlutoManager } from "./plutoManager.ts";
-import type { NotebookData, UpdateEvent } from "@plutojl/rainbow";
+import type {
+  CellResultData,
+  NotebookData,
+  UpdateEvent,
+} from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
 import { isMarkdownCell, extractMarkdownContent } from "./plutoSerializer.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
@@ -54,6 +58,10 @@ export class PlutoNotebookController {
   private readonly remoteEditDepth: Map<string, number> = new Map();
   // Notebook paths with a cell-order sync already scheduled
   private readonly pendingOrderSync: Set<string> = new Set();
+  // Last rendered output timestamp per cell — lets late patches and bulk
+  // state reconciliation detect changed results without re-rendering
+  // duplicates (which would clobber the displayed execution duration)
+  private readonly lastRenderedStamp: Map<CellId, number> = new Map();
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
@@ -319,6 +327,88 @@ export class PlutoNotebookController {
     }
     return { execution, cell };
   }
+
+  private recordRenderedStamp(cellId: CellId, state: CellResultData): void {
+    const stamp = state.output?.last_run_timestamp;
+    if (stamp) {
+      this.lastRenderedStamp.set(cellId, stamp);
+    }
+  }
+
+  private finishExecution(
+    cellId: CellId,
+    execution: vscode.NotebookCellExecution,
+    state: CellResultData
+  ): void {
+    try {
+      execution.end(!state.errored, Date.now());
+    } catch {
+      // Execution may already be resolved
+    }
+    this.activeExecutions.delete(cellId);
+    this.recordRenderedStamp(cellId, state);
+    this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
+  }
+
+  /**
+   * Renders a finished cell result outside the patch-driven execution flow
+   * (bulk `cells_updated` events, late output patches). The synthetic
+   * execution's duration reflects Pluto's recorded runtime.
+   */
+  private materializeCellResult(
+    notebook: vscode.NotebookDocument,
+    cell: vscode.NotebookCell,
+    cellId: CellId,
+    state: CellResultData
+  ): void {
+    const now = Date.now();
+    const runtimeMs = (state.runtime ?? 0) / 1e6;
+    const execution = this.controller.createNotebookCellExecution(cell);
+    execution.start(now - runtimeMs);
+    execution.replaceOutput([formatCellOutput(state)]);
+    execution.end(!state.errored, now);
+    this.recordRenderedStamp(cellId, state);
+    this.sendMessageToRenderer(notebook, {
+      type: "setState",
+      state,
+      cell_id: cellId,
+    });
+    this.plutoManager.emitCellUpdated(notebook.uri.fsPath, cellId);
+  }
+
+  /**
+   * Reconciles all cell outputs against a full notebook state snapshot.
+   * Used for update events that carry no patches (e.g. `cells_updated`
+   * after a reactive re-run) — renders every settled cell whose result
+   * changed since it was last drawn.
+   */
+  private reconcileCellsFromState(
+    notebook: vscode.NotebookDocument,
+    state: NotebookData
+  ): void {
+    for (const [cellId, cellState] of Object.entries(
+      state.cell_results ?? {}
+    )) {
+      if (cellState.queued || cellState.running) {
+        continue;
+      }
+      if (this.activeExecutions.has(cellId)) {
+        continue;
+      }
+      const stamp = cellState.output?.last_run_timestamp;
+      if (!stamp || stamp === this.lastRenderedStamp.get(cellId)) {
+        continue;
+      }
+      const cell = this.getCellByPlutoId(notebook, cellId);
+      if (!cell) {
+        continue;
+      }
+      this.outputChannel.appendLine(
+        `[RECONCILE] Cell ${cellId} result changed (errored=${cellState.errored}) — rendering.`
+      );
+      this.materializeCellResult(notebook, cell, cellId, cellState);
+    }
+  }
   /**
    * Handles cell-specific patch updates (execution status, output, logs).
    */
@@ -385,40 +475,56 @@ export class PlutoNotebookController {
     const segment2 = path[2];
 
     // 1. Update Cell Execution Status (queued, running)
-    const isStarting = isDefined(patch.value) && segment2 === "running";
     if (segment2 === "running") {
       this.plutoManager.emitCellUpdated(notebook.uri.fsPath, cellId);
-    }
-    if (isStarting) {
-      // Start execution
-      const started = this.startExecution(cellId, notebook);
-      if (started) {
-        const formatted = formatCellOutput(currentCellState);
-        started.execution.replaceOutput([formatted]);
+      if (patch.value === true) {
+        const started = this.startExecution(cellId, notebook);
+        if (started) {
+          const formatted = formatCellOutput(currentCellState);
+          started.execution.replaceOutput([formatted]);
+        }
+      } else {
+        // Cell stopped running — if the final output patch already arrived
+        // in this batch (or none is coming), close out the execution here
+        const active = this.activeExecutions.get(cellId);
+        if (active && !currentCellState.queued && !currentCellState.running) {
+          this.finishExecution(cellId, active, currentCellState);
+        }
       }
     }
 
-    // 2. Update Cell Output (only if an execution object exists)
+    // 2. Update Cell Output
     if (segment2 === "output") {
-      // Handle final output/result update
-      const started = this.startExecution(cellId, notebook);
-      if (!started) {
+      const cell = this.getCellByPlutoId(notebook, cellId);
+      if (!cell) {
         return;
       }
-      const { execution, cell } = started;
+      const active = this.activeExecutions.get(cellId);
+      if (!active) {
+        // Output patch with no execution in flight (reactive re-run whose
+        // `running` patches were missed, bond update, MCP edit). Render only
+        // when the result actually changed — duplicate patches would
+        // otherwise clobber the recorded duration with a ~0s execution.
+        const stamp = currentCellState.output?.last_run_timestamp;
+        if (!stamp || stamp === this.lastRenderedStamp.get(cellId)) {
+          return;
+        }
+        this.outputChannel.appendLine(
+          `[OUTPUT LATE] Cell ${cellId} result changed outside an execution — rendering.`
+        );
+        this.materializeCellResult(notebook, cell, cellId, currentCellState);
+        return;
+      }
 
       this.outputChannel.appendLine(
         `[OUTPUT] Cell ${cellId} for notebook ${notebook.uri} output updated.`
       );
-      // TODO HERE WE NEED TO CHECK IF VSCODE NOTEBOOK HAS THE OUTPUT CELL OR NOT
-      // IF NOT, WE NEED TO ADD IT (BECAUSE IT MAY HAVE BEEN CLEARED)
-      // OTHERWISE, IT WILL NOT SHOW UP
-      if (cell.outputs.length === 0) {
-        execution.replaceOutput([formatCellOutput(currentCellState)]);
+      active.replaceOutput([formatCellOutput(currentCellState)]);
+      // While the cell is still queued/running this is streaming display
+      // output — keep the execution open until the run completes
+      if (!currentCellState.queued && !currentCellState.running) {
+        this.finishExecution(cellId, active, currentCellState);
       }
-      execution.end(!currentCellState.errored, Date.now());
-      this.activeExecutions.delete(cellId);
-      this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
     } else if (segment2 === "logs") {
       // Handle streaming logs (logs are added, path.length === 4, or array is cleared)
       if (patch.op === "add" && path.length === 4) {
@@ -602,7 +708,9 @@ export class PlutoNotebookController {
       if (!state.queued || !state.running) {
         // This results to many "cannot resolve twice" messages
         try {
-          execution.end(!state.errored, start + (state.runtime ?? 0) / 1000);
+          execution.end(!state.errored, start + (state.runtime ?? 0) / 1e6);
+          this.activeExecutions.delete(cell_id);
+          this.recordRenderedStamp(cell_id, state);
         } catch (x) {
           console.error(x);
         }
@@ -625,9 +733,19 @@ export class PlutoNotebookController {
         const fullNotebookState = event.notebook;
 
         if (!patches || !fullNotebookState) {
-          this.outputChannel.appendLine(
-            `[UNHANDLED]: Received non-patch update or missing state: ${event.type}`
-          );
+          if (fullNotebookState) {
+            // Patch-less events (cells_updated after a reactive re-run,
+            // cell_local_update, …) still carry the full notebook state —
+            // reconcile outputs against it instead of dropping the update
+            this.outputChannel.appendLine(
+              `[RECONCILE] Non-patch update (${event.type}) — reconciling from full state`
+            );
+            this.reconcileCellsFromState(notebook, fullNotebookState);
+          } else {
+            this.outputChannel.appendLine(
+              `[UNHANDLED]: Received non-patch update with missing state: ${event.type}`
+            );
+          }
           return;
         }
 
@@ -783,14 +901,33 @@ export class PlutoNotebookController {
     }
     for (const addedCell of addedCells) {
       try {
+        // Cells arriving with an id Pluto already knows are echoes of
+        // Pluto-side state (document revert after Pluto autosaved the file,
+        // or our own replaceCells) — re-adding them would duplicate cells
+        const presetId = addedCell.metadata?.pluto_cell_id as
+          | string
+          | undefined;
+        if (presetId && worker.getState()?.cell_inputs?.[presetId]) {
+          this.outputChannel.appendLine(
+            `[VSCodeAdd] Cell ${presetId} already exists in Pluto — skipping echo`
+          );
+          continue;
+        }
+
         // Prepare code - wrap markdown cells properly
         const code = prepareCellCodeForWorker(addedCell);
         const cellIndex = notebook.getCells().indexOf(addedCell);
 
         this.outputChannel.appendLine(`Adding new cell at index ${cellIndex}`);
 
-        // Add cell to worker and get the assigned cell ID
-        const cellId = await this.plutoManager.addCell(worker, cellIndex, code);
+        // Add cell to worker, preserving an existing identity if the cell
+        // carries one (e.g. pasted or restored from a file)
+        const cellId = await this.plutoManager.addCell(
+          worker,
+          cellIndex,
+          code,
+          presetId
+        );
 
         this.outputChannel.appendLine(`Cell added with ID: ${cellId}`);
 
@@ -802,6 +939,11 @@ export class PlutoNotebookController {
             `Cell removed while being added — deleting ${cellId} from Pluto`
           );
           await this.plutoManager.deleteCell(worker, cellId);
+          continue;
+        }
+
+        // Identity already stamped (cell carried its id into the add)
+        if (addedCell.metadata?.pluto_cell_id === cellId) {
           continue;
         }
 
@@ -851,6 +993,20 @@ export class PlutoNotebookController {
         if (!cellId) {
           this.outputChannel.appendLine(
             "Skipping removal of cell without pluto_cell_id"
+          );
+          continue;
+        }
+
+        // Replace-style diffs (document revert, our own replaceCells) report
+        // a cell as removed while its identity survives in another cell —
+        // deleting it from Pluto would destroy a live cell
+        if (
+          notebook
+            .getCells()
+            .some((c) => c.metadata?.pluto_cell_id === cellId)
+        ) {
+          this.outputChannel.appendLine(
+            `[VSCodeRemove] Cell ${cellId} still present in document — skipping delete`
           );
           continue;
         }
