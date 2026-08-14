@@ -101,22 +101,9 @@ Check the logs. If dry-run succeeds, uncheck "Dry run" and run again for real re
 
 ## Alternative: Release Without Pushing Commits
 
-If you don't want to manage rulesets bypass, use the no-commit configuration:
-
-### Quick Switch to No-Commit Mode
-
-```bash
-# Rename current config
-mv .releaserc.json .releaserc.with-commit.json
-
-# Use no-commit config
-mv .releaserc.no-commit.json .releaserc.json
-
-# Commit the change
-git add .releaserc.json .releaserc.with-commit.json
-git commit -m "chore: use semantic-release without version commits"
-git push
-```
+If you don't want to manage rulesets bypass, switch to no-commit mode:
+remove the `@semantic-release/git` plugin block from `.releaserc.json` and
+commit that change.
 
 This mode:
 
@@ -130,13 +117,8 @@ You manage versions manually in this mode.
 
 ### Switch Back to With-Commit Mode
 
-```bash
-mv .releaserc.json .releaserc.no-commit.json
-mv .releaserc.with-commit.json .releaserc.json
-git add .releaserc.json .releaserc.with-commit.json
-git commit -m "chore: restore semantic-release with version commits"
-git push
-```
+Restore the `@semantic-release/git` plugin block in `.releaserc.json`
+(see git history) and commit the change.
 
 ---
 

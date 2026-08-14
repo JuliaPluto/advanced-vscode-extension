@@ -1,6 +1,6 @@
 # Release Workflow
 
-This project uses semantic-release in **with-commit mode** to handle releases: the active `.releaserc.json` includes `@semantic-release/git`, so version bumps and CHANGELOG updates are committed back to `main` automatically. (`.releaserc.with-commit.json` is a historical copy of the same mode; the no-commit description this document previously carried no longer matches the configuration.)
+This project uses semantic-release in **with-commit mode** to handle releases: `.releaserc.json` includes `@semantic-release/git`, so version bumps and CHANGELOG updates are committed back to `main` automatically.
 
 ## How It Works
 
@@ -106,25 +106,12 @@ This will:
 - Show what files would be included
 - Not create any release or tag
 
-## Switching to With-Commit Mode
+## Switching to No-Commit Mode
 
-If you later want semantic-release to automatically update versions:
-
-```bash
-# Switch configs
-mv .releaserc.json .releaserc.no-commit.json
-mv .releaserc.with-commit.json .releaserc.json
-
-# Update workflow
-# Edit .github/workflows/release.yml:
-# - Add GH_PAT token configuration
-# - Add git committer environment variables
-
-# Commit
-git add .releaserc.json .releaserc.with-commit.json .github/workflows/release.yml
-git commit -m "chore: switch to semantic-release with commits"
-git push
-```
+To release without pushing version commits back to `main` (e.g. while the
+`GH_PAT` ruleset bypass is unavailable), remove the `@semantic-release/git`
+plugin block from `.releaserc.json` and commit that change. Versions in
+`package.json` and `CHANGELOG.md` must then be maintained manually.
 
 See `docs/RULESETS_QUICK_FIX.md` for setting up PAT bypass with GitHub Rulesets.
 
@@ -145,11 +132,10 @@ Before each release:
 
 ## Files Involved
 
-- `.releaserc.json` - Current config (no-commit mode)
-- `.releaserc.with-commit.json` - Alternative config (with commits)
+- `.releaserc.json` - Current config (with-commit mode)
 - `.github/workflows/release.yml` - Release workflow
-- `package.json` - Version number (manual updates)
-- `CHANGELOG.md` - Release notes (manual updates)
+- `package.json` - Version number (updated by semantic-release)
+- `CHANGELOG.md` - Release notes (updated by semantic-release)
 
 ## Troubleshooting
 
