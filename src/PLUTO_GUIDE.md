@@ -23,10 +23,12 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 - To persist changes to disk, call `save_notebook` explicitly. **Notebooks are NOT auto-saved.**
 - **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — Pluto manages file writes and the issue may be on the server side.
 
-### Handling Timeouts
+### Long computations and waiting
 
-- If `create_cell` times out, the cell was likely still created in Pluto. Use `list_cells` to check before retrying — creating the same cell twice causes "Multiple definitions" errors.
-- For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it. This avoids timeout-induced phantom cells.
+- `create_cell`, `execute_cell`, and `execute_code` block until the cell finishes, but return after **5 minutes** with a `timed_out: true` message if it hasn't. The computation KEEPS RUNNING server-side — the response tells you how to pick up the result.
+- After a timeout (or after `edit_cell` kicks off a reactive cascade), call **`wait_for_notebook_idle`** once instead of polling `list_cells`/`read_cell` in a loop. It blocks until no cell is running or queued, then you read results.
+- If `create_cell` times out, the cell WAS created. Use `list_cells` to find it — do NOT retry `create_cell`; creating the same definition twice causes "Multiple definitions" errors.
+- For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it, then (3) `wait_for_notebook_idle`.
 - Use `delete_cell` to remove any accidental duplicate cells.
 
 ### Pluto Reactivity Rules
@@ -42,13 +44,14 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 
 ### Recommended Workflow
 
-1. `open_notebook` (file must exist on disk first)
+1. `open_notebook` (file must exist on disk first). If the notebook is already open elsewhere (e.g. the user's browser tab), you attach to that same session — you see the same state the user sees.
 2. `list_cells` to see current state
 3. `create_cell` / `edit_cell` / `delete_cell` to make changes
-4. `fold_cell` to hide code for markdown/plot cells
-5. `read_cell` to inspect outputs
+4. `wait_for_notebook_idle` after mutations that trigger computation, then `read_cell` to inspect outputs — never poll in a loop
+5. `fold_cell` to hide code for markdown/plot cells
 6. `save_notebook` to persist to disk when done
-7. `get_notebook_url` to give the user a browser link
+7. `export_notebook_html` for a self-contained static HTML snapshot
+8. `get_notebook_url` to give the user a browser link
 
 ## Table of Contents
 

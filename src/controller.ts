@@ -1,7 +1,15 @@
 import * as vscode from "vscode";
 import type { PlutoManager } from "./plutoManager.ts";
-import type { NotebookData, UpdateEvent } from "@plutojl/rainbow";
+import type {
+  CellResultData,
+  NotebookData,
+  UpdateEvent,
+} from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
+import {
+  extractMarkdownContent,
+  createVsCodeCellFromPlutoCell,
+} from "./plutoSerializer.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
 import { type Worker } from "@plutojl/rainbow";
 
@@ -48,6 +56,14 @@ export class PlutoNotebookController {
   private rendererMessaging?: vscode.NotebookRendererMessaging;
   // Track worker subscriptions to prevent duplicates and allow cleanup
   private readonly workerSubscriptions: Map<string, () => void> = new Map();
+  // While > 0 for a notebook path, document changes come from us applying
+  // remote (Pluto-side) edits and must not be echoed back to Pluto
+  private readonly remoteEditDepth: Map<string, number> = new Map();
+  // Notebook paths with a cell-order sync already scheduled
+  private readonly pendingOrderSync: Set<string> = new Set();
+  // last_run_timestamp of the most recently rendered result per cell;
+  // a result is re-rendered only when its stamp differs
+  private readonly lastRenderedStamp: Map<CellId, number> = new Map();
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
@@ -258,6 +274,14 @@ export class PlutoNotebookController {
     this.outputChannel.appendLine(
       `[SUBSCRIPTION] Subscribed to updates for ${notebookPath}`
     );
+
+    // The worker does not replay state to new subscribers — render any
+    // results it already holds (e.g. a notebook reopened while its worker
+    // stayed alive)
+    const state = worker.getState();
+    if (state) {
+      this.reconcileCellsFromState(notebook, state);
+    }
   }
 
   /**
@@ -312,6 +336,95 @@ export class PlutoNotebookController {
       execution.start(Date.now());
     }
     return { execution, cell };
+  }
+
+  private recordRenderedStamp(cellId: CellId, state: CellResultData): void {
+    const stamp = state.output?.last_run_timestamp;
+    if (stamp) {
+      this.lastRenderedStamp.set(cellId, stamp);
+    }
+  }
+
+  private finishExecution(
+    cellId: CellId,
+    execution: vscode.NotebookCellExecution,
+    state: CellResultData
+  ): void {
+    // Render before ending: the stamp recorded below marks this result
+    // as drawn, so the output must actually be on screen by then
+    try {
+      execution.replaceOutput([formatCellOutput(state)]);
+    } catch {
+      // Execution may already be resolved
+    }
+    try {
+      execution.end(!state.errored, Date.now());
+    } catch {
+      // Execution may already be resolved
+    }
+    this.activeExecutions.delete(cellId);
+    this.recordRenderedStamp(cellId, state);
+    this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
+  }
+
+  /**
+   * Renders a finished cell result outside the patch-driven execution flow
+   * (bulk `cells_updated` events, late output patches). The synthetic
+   * execution's duration reflects Pluto's recorded runtime.
+   */
+  private materializeCellResult(
+    notebook: vscode.NotebookDocument,
+    cell: vscode.NotebookCell,
+    cellId: CellId,
+    state: CellResultData
+  ): void {
+    const now = Date.now();
+    const runtimeMs = (state.runtime ?? 0) / 1e6;
+    const execution = this.controller.createNotebookCellExecution(cell);
+    execution.start(now - runtimeMs);
+    execution.replaceOutput([formatCellOutput(state)]);
+    execution.end(!state.errored, now);
+    this.recordRenderedStamp(cellId, state);
+    this.sendMessageToRenderer(notebook, {
+      type: "setState",
+      state,
+      cell_id: cellId,
+    });
+    this.plutoManager.emitCellUpdated(notebook.uri.fsPath, cellId);
+  }
+
+  /**
+   * Reconciles all cell outputs against a full notebook state snapshot.
+   * Used for update events that carry no patches (e.g. `cells_updated`
+   * after a reactive re-run) — renders every settled cell whose result
+   * changed since it was last drawn.
+   */
+  private reconcileCellsFromState(
+    notebook: vscode.NotebookDocument,
+    state: NotebookData
+  ): void {
+    for (const [cellId, cellState] of Object.entries(
+      state.cell_results ?? {}
+    )) {
+      if (cellState.queued || cellState.running) {
+        continue;
+      }
+      if (this.activeExecutions.has(cellId)) {
+        continue;
+      }
+      const stamp = cellState.output?.last_run_timestamp;
+      if (!stamp || stamp === this.lastRenderedStamp.get(cellId)) {
+        continue;
+      }
+      const cell = this.getCellByPlutoId(notebook, cellId);
+      if (!cell) {
+        continue;
+      }
+      this.outputChannel.appendLine(
+        `[RECONCILE] Cell ${cellId} result changed (errored=${cellState.errored}) — rendering.`
+      );
+      this.materializeCellResult(notebook, cell, cellId, cellState);
+    }
   }
   /**
    * Handles cell-specific patch updates (execution status, output, logs).
@@ -379,40 +492,54 @@ export class PlutoNotebookController {
     const segment2 = path[2];
 
     // 1. Update Cell Execution Status (queued, running)
-    const isStarting = isDefined(patch.value) && segment2 === "running";
     if (segment2 === "running") {
       this.plutoManager.emitCellUpdated(notebook.uri.fsPath, cellId);
-    }
-    if (isStarting) {
-      // Start execution
-      const started = this.startExecution(cellId, notebook);
-      if (started) {
-        const formatted = formatCellOutput(currentCellState);
-        started.execution.replaceOutput([formatted]);
+      if (patch.value === true) {
+        const started = this.startExecution(cellId, notebook);
+        if (started) {
+          const formatted = formatCellOutput(currentCellState);
+          started.execution.replaceOutput([formatted]);
+        }
+      } else {
+        // Cell stopped running — if the final output patch already arrived
+        // in this batch (or none is coming), close out the execution here
+        const active = this.activeExecutions.get(cellId);
+        if (active && !currentCellState.queued && !currentCellState.running) {
+          this.finishExecution(cellId, active, currentCellState);
+        }
       }
     }
 
-    // 2. Update Cell Output (only if an execution object exists)
+    // 2. Update Cell Output
     if (segment2 === "output") {
-      // Handle final output/result update
-      const started = this.startExecution(cellId, notebook);
-      if (!started) {
+      const cell = this.getCellByPlutoId(notebook, cellId);
+      if (!cell) {
         return;
       }
-      const { execution, cell } = started;
+      const active = this.activeExecutions.get(cellId);
+      if (!active) {
+        // No execution in flight: render only results not yet drawn
+        const stamp = currentCellState.output?.last_run_timestamp;
+        if (!stamp || stamp === this.lastRenderedStamp.get(cellId)) {
+          return;
+        }
+        this.outputChannel.appendLine(
+          `[OUTPUT LATE] Cell ${cellId} result changed outside an execution — rendering.`
+        );
+        this.materializeCellResult(notebook, cell, cellId, currentCellState);
+        return;
+      }
 
       this.outputChannel.appendLine(
         `[OUTPUT] Cell ${cellId} for notebook ${notebook.uri} output updated.`
       );
-      // TODO HERE WE NEED TO CHECK IF VSCODE NOTEBOOK HAS THE OUTPUT CELL OR NOT
-      // IF NOT, WE NEED TO ADD IT (BECAUSE IT MAY HAVE BEEN CLEARED)
-      // OTHERWISE, IT WILL NOT SHOW UP
-      if (cell.outputs.length === 0) {
-        execution.replaceOutput([formatCellOutput(currentCellState)]);
+      // While the cell is still queued/running this is streaming display
+      // output — keep the execution open until the run completes
+      if (!currentCellState.queued && !currentCellState.running) {
+        this.finishExecution(cellId, active, currentCellState);
+      } else {
+        active.replaceOutput([formatCellOutput(currentCellState)]);
       }
-      execution.end(!currentCellState.errored, Date.now());
-      this.activeExecutions.delete(cellId);
-      this.outputChannel.appendLine(`[EXEC END] Cell ${cellId} finished.`);
     } else if (segment2 === "logs") {
       // Handle streaming logs (logs are added, path.length === 4, or array is cleared)
       if (patch.op === "add" && path.length === 4) {
@@ -434,88 +561,217 @@ export class PlutoNotebookController {
     }
   }
 
+  private isApplyingRemoteEdit(notebookPath: string): boolean {
+    return (this.remoteEditDepth.get(notebookPath) ?? 0) > 0;
+  }
+
   /**
-   * Handles cell reordering when Pluto's execution order changes.
+   * Schedule a cell-order sync for this notebook. Coalesces the multiple
+   * cell_order patches a single structural change produces. A deferred
+   * sync (id-less cell or execution in flight) is retried with backoff so
+   * remote structural changes are never silently dropped.
+   */
+  private scheduleCellOrderSync(
+    notebook: vscode.NotebookDocument,
+    attempt = 0
+  ): void {
+    const key = notebook.uri.fsPath;
+    if (this.pendingOrderSync.has(key)) {
+      return;
+    }
+    this.pendingOrderSync.add(key);
+    const delay = Math.min(100 * 2 ** attempt, 5000);
+    setTimeout(() => {
+      this.pendingOrderSync.delete(key);
+      void this._handleCellReorder(notebook)
+        .then((result) => {
+          if (result === "deferred" && attempt < 60) {
+            this.scheduleCellOrderSync(notebook, attempt + 1);
+          }
+        })
+        .catch((error) => {
+          this.outputChannel.appendLine(
+            `[CellOrderSync] Failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
+    }, delay);
+  }
+
+  /**
+   * Make the VSCode notebook reflect Pluto's current cell set and order.
+   * Cells present in both keep their VSCode content and outputs; cells
+   * created outside VSCode (MCP tools, Pluto's browser UI) are
+   * materialized from Pluto state; cells deleted remotely disappear.
    */
   private async _handleCellReorder(
-    _notebook: vscode.NotebookDocument,
-    _plutoNotebook: NotebookData
+    notebook: vscode.NotebookDocument
+  ): Promise<"applied" | "deferred" | "noop"> {
+    const notebookPath = notebook.uri.fsPath;
+    const worker = await this.plutoManager.getWorker(notebookPath);
+    if (!worker) {
+      return "noop";
+    }
+    const state = worker.getState();
+    const cellInputs = state?.cell_inputs ?? {};
+    const plutoOrder = (state?.cell_order ?? []).filter(
+      (id: string) => cellInputs[id]
+    );
+
+    const currentCells = notebook.getCells();
+    const currentOrder = currentCells.map(
+      (cell) => cell.metadata?.pluto_cell_id as string | undefined
+    );
+
+    // A cell without an id is a local add whose Pluto round trip hasn't
+    // assigned metadata yet — replacing cells now would destroy it
+    if (currentOrder.some((id) => !id)) {
+      this.outputChannel.appendLine(
+        `[CellOrderSync] Deferred — local cell add in flight`
+      );
+      return "deferred";
+    }
+
+    const inSync =
+      currentOrder.length === plutoOrder.length &&
+      plutoOrder.every((id: string, i: number) => currentOrder[i] === id);
+    if (inSync) {
+      return "noop";
+    }
+
+    // replaceCells would orphan in-flight executions bound to the old cell
+    // objects — wait until this notebook's cells have settled
+    const hasActiveExecution = currentOrder.some(
+      (id) => id && this.activeExecutions.has(id)
+    );
+    if (hasActiveExecution) {
+      this.outputChannel.appendLine(
+        `[CellOrderSync] Deferred — execution in flight`
+      );
+      return "deferred";
+    }
+
+    const cellByPlutoId = new Map(
+      currentCells.map((cell) => [cell.metadata?.pluto_cell_id as string, cell])
+    );
+
+    const notebookState = state as NotebookData;
+    const desired: vscode.NotebookCellData[] = [];
+    for (const cellId of plutoOrder) {
+      const existing = cellByPlutoId.get(cellId);
+      if (existing) {
+        const data = new vscode.NotebookCellData(
+          existing.kind,
+          existing.document.getText(),
+          existing.document.languageId
+        );
+        data.metadata = existing.metadata;
+        data.outputs = [...existing.outputs];
+        desired.push(data);
+        continue;
+      }
+
+      // Cell created outside VSCode — materialize it from Pluto state
+      try {
+        const data = createVsCodeCellFromPlutoCell(notebookState, cellId);
+        if (data) {
+          desired.push(data);
+          this.recordRenderedStamp(
+            cellId,
+            notebookState.cell_results?.[cellId] ?? ({} as CellResultData)
+          );
+        }
+      } catch (error) {
+        this.outputChannel.appendLine(
+          `[CellOrderSync] Skipping unmaterializable cell ${cellId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
+    this.outputChannel.appendLine(
+      `[CellOrderSync] Applying remote structure: ${currentOrder.length} -> ${plutoOrder.length} cells`
+    );
+
+    this.beginRemoteEdit(notebookPath);
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(notebook.uri, [
+        vscode.NotebookEdit.replaceCells(
+          new vscode.NotebookRange(0, currentCells.length),
+          desired
+        ),
+      ]);
+      await vscode.workspace.applyEdit(edit);
+    } finally {
+      this.endRemoteEditSoon(notebookPath);
+    }
+    return "applied";
+  }
+
+  private beginRemoteEdit(notebookPath: string): void {
+    this.remoteEditDepth.set(
+      notebookPath,
+      (this.remoteEditDepth.get(notebookPath) ?? 0) + 1
+    );
+  }
+
+  /**
+   * Releases remote-edit suppression on the next tick — change events may
+   * be delivered after applyEdit resolves.
+   */
+  private endRemoteEditSoon(notebookPath: string): void {
+    setTimeout(() => {
+      const depth = this.remoteEditDepth.get(notebookPath) ?? 1;
+      if (depth <= 1) {
+        this.remoteEditDepth.delete(notebookPath);
+      } else {
+        this.remoteEditDepth.set(notebookPath, depth - 1);
+      }
+    }, 0);
+  }
+
+  /**
+   * Applies a Pluto-side code edit to the matching VSCode cell's text.
+   * A patch matching the cell's current text is an echo and is dropped.
+   */
+  private async _applyRemoteCodeEdit(
+    notebook: vscode.NotebookDocument,
+    cellId: CellId,
+    rawCode: string
   ): Promise<void> {
-    this.outputChannel.appendLine(`  Reorder happens here`);
-    void _notebook;
-    void _plutoNotebook;
-    // Replca them in a bulk? drawbacks ???
-    // A cell can be removed, added or reordered
-
-    // try {
-    //   // Build a map of current VS Code cell positions
-    //   const currentCells = notebook.getCells();
-    //   const currentOrder: CellId[] = [];
-    //   const cellMap = new Map<CellId, vscode.NotebookCell>();
-
-    //   for (const cell of currentCells) {
-    //     const cellId = cell.metadata?.pluto_cell_id as string;
-    //     if (cellId) {
-    //       currentOrder.push(cellId);
-    //       cellMap.set(cellId, cell);
-    //     }
-    //   }
-
-    //   // Check if reordering is needed
-    //   const needsReorder = plutoOrder.some(
-    //     (id, idx) => currentOrder[idx] !== id
-    //   );
-    //   if (!needsReorder) {
-    //     this.outputChannel.appendLine(
-    //       `[CellReorder] Cell order already matches Pluto order`
-    //     );
-    //     return;
-    //   }
-
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Reordering cells to match Pluto order`
-    //   );
-    //   this.outputChannel.appendLine(`  Current: ${currentOrder.join(", ")}`);
-    //   this.outputChannel.appendLine(`  Pluto:   ${plutoOrder.join(", ")}`);
-
-    //   // Build the edit to reorder cells
-    //   const edit = new vscode.WorkspaceEdit();
-    //   const cellsToMove: vscode.NotebookCellData[] = [];
-
-    //   // Collect cells in the new order
-    //   for (const cellId of plutoOrder) {
-    //     const cell = cellMap.get(cellId);
-    //     if (cell) {
-    //       const cellData = new vscode.NotebookCellData(
-    //         cell.kind,
-    //         cell.document.getText(),
-    //         cell.document.languageId
-    //       );
-    //       cellData.metadata = cell.metadata;
-    //       cellData.outputs = [...cell.outputs]; // Create mutable copy
-    //       cellsToMove.push(cellData);
-    //     }
-    //   }
-
-    //   // Replace all cells with the reordered cells
-    //   edit.set(notebook.uri, [
-    //     vscode.NotebookEdit.replaceCells(
-    //       new vscode.NotebookRange(0, currentCells.length),
-    //       cellsToMove
-    //     ),
-    //   ]);
-
-    //   await vscode.workspace.applyEdit(edit);
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Cells reordered successfully`
-    //   );
-    // } catch (error) {
-    //   const errorMessage =
-    //     error instanceof Error ? error.message : String(error);
-    //   this.outputChannel.appendLine(
-    //     `[CellReorder] Failed to reorder cells: ${errorMessage}`
-    //   );
-    // }
+    const cell = this.getCellByPlutoId(notebook, cellId);
+    if (!cell) {
+      return;
+    }
+    let newText = rawCode ?? "";
+    if (cell.kind === vscode.NotebookCellKind.Markup) {
+      const markdown = extractMarkdownContent(newText);
+      if (isDefined(markdown)) {
+        newText = markdown;
+      }
+    }
+    if (cell.document.getText() === newText) {
+      return;
+    }
+    const notebookPath = notebook.uri.fsPath;
+    this.beginRemoteEdit(notebookPath);
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(
+        cell.document.uri,
+        new vscode.Range(0, 0, cell.document.lineCount, 0),
+        newText
+      );
+      await vscode.workspace.applyEdit(edit);
+      this.outputChannel.appendLine(
+        `[CodeSync] Cell ${cellId} code updated from Pluto`
+      );
+    } finally {
+      this.endRemoteEditSoon(notebookPath);
+    }
   }
 
   private updateAllCellsFromState = async (
@@ -542,10 +798,11 @@ export class PlutoNotebookController {
         console.error(e);
         //
       }
-      if (!state.queued || !state.running) {
-        // This results to many "cannot resolve twice" messages
+      if (!state.queued && !state.running) {
         try {
-          execution.end(!state.errored, start + (state.runtime ?? 0) / 1000);
+          execution.end(!state.errored, start + (state.runtime ?? 0) / 1e6);
+          this.activeExecutions.delete(cell_id);
+          this.recordRenderedStamp(cell_id, state);
         } catch (x) {
           console.error(x);
         }
@@ -568,9 +825,19 @@ export class PlutoNotebookController {
         const fullNotebookState = event.notebook;
 
         if (!patches || !fullNotebookState) {
-          this.outputChannel.appendLine(
-            `[UNHANDLED]: Received non-patch update or missing state: ${event.type}`
-          );
+          if (fullNotebookState) {
+            // Patch-less events (cells_updated after a reactive re-run,
+            // cell_local_update, …) still carry the full notebook state —
+            // reconcile outputs against it instead of dropping the update
+            this.outputChannel.appendLine(
+              `[RECONCILE] Non-patch update (${event.type}) — reconciling from full state`
+            );
+            this.reconcileCellsFromState(notebook, fullNotebookState);
+          } else {
+            this.outputChannel.appendLine(
+              `[UNHANDLED]: Received non-patch update with missing state: ${event.type}`
+            );
+          }
           return;
         }
 
@@ -601,16 +868,23 @@ export class PlutoNotebookController {
               );
               break;
             }
-            case "cell_input": {
+            case "cell_inputs": {
               if (rest[1] === "code" && patch.op === "replace") {
-                // TODO here we need to update the code for the cell
+                void this._applyRemoteCodeEdit(
+                  notebook,
+                  rest[0] as CellId,
+                  patch.value as string
+                ).catch((error) => {
+                  this.outputChannel.appendLine(
+                    `[CodeSync] Failed for ${rest[0]}: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`
+                  );
+                });
               }
-
-              this.outputChannel.appendLine(
-                `[UNHANDLED] cell_input ${patch.path.join(".")} action ${
-                  patch.op
-                }`
-              );
+              // Other cell_inputs fields (cell_id, code_folded, metadata)
+              // have no document representation to update; structural
+              // add/remove is handled via cell_order sync
               break;
             }
             case "cell_results":
@@ -644,15 +918,14 @@ export class PlutoNotebookController {
               );
               break;
             case "cell_order": {
-              if (patch.op === "replace") {
-                // A cell can be removed, added or reordered
-                void this._handleCellReorder(notebook, fullNotebookState);
-              } else {
-                this.outputChannel.appendLine(
-                  `[LogInternal] Cell dependencies updated: ${
-                    patch.op
-                  } on cell ${rest.join(".")}`
-                );
+              // Adds, removes, and reorders all mutate cell_order — sync
+              // the VSCode view to Pluto's structure (coalesced)
+              if (
+                patch.op === "replace" ||
+                patch.op === "add" ||
+                patch.op === "remove"
+              ) {
+                this.scheduleCellOrderSync(notebook);
               }
               break;
             }
@@ -727,14 +1000,42 @@ export class PlutoNotebookController {
     }
     for (const addedCell of addedCells) {
       try {
+        let presetId = addedCell.metadata?.pluto_cell_id as string | undefined;
+        if (presetId && worker.getState()?.cell_inputs?.[presetId]) {
+          const docCellsWithId = notebook
+            .getCells()
+            .filter((c) => c.metadata?.pluto_cell_id === presetId);
+          if (docCellsWithId.length > 1) {
+            // Paste keeps the source cell's metadata — this is a copy that
+            // must become an independent Pluto cell, not an alias
+            this.outputChannel.appendLine(
+              `[VSCodeAdd] Cell ${presetId} is a pasted duplicate — assigning a new identity`
+            );
+            presetId = undefined;
+          } else {
+            // The id maps to exactly this cell: an echo of Pluto-side state
+            // (document revert after Pluto autosaved, or our replaceCells)
+            this.outputChannel.appendLine(
+              `[VSCodeAdd] Cell ${presetId} already exists in Pluto — skipping echo`
+            );
+            continue;
+          }
+        }
+
         // Prepare code - wrap markdown cells properly
         const code = prepareCellCodeForWorker(addedCell);
         const cellIndex = notebook.getCells().indexOf(addedCell);
 
         this.outputChannel.appendLine(`Adding new cell at index ${cellIndex}`);
 
-        // Add cell to worker and get the assigned cell ID
-        const cellId = await this.plutoManager.addCell(worker, cellIndex, code);
+        // Add cell to worker, preserving an existing identity if the cell
+        // carries one (e.g. restored from a file)
+        const cellId = await this.plutoManager.addCell(
+          worker,
+          cellIndex,
+          code,
+          presetId
+        );
 
         this.outputChannel.appendLine(`Cell added with ID: ${cellId}`);
 
@@ -746,6 +1047,11 @@ export class PlutoNotebookController {
             `Cell removed while being added — deleting ${cellId} from Pluto`
           );
           await this.plutoManager.deleteCell(worker, cellId);
+          continue;
+        }
+
+        // Identity already stamped (cell carried its id into the add)
+        if (addedCell.metadata?.pluto_cell_id === cellId) {
           continue;
         }
 
@@ -765,6 +1071,9 @@ export class PlutoNotebookController {
         this.outputChannel.appendLine(
           `Updated cell metadata with pluto_cell_id: ${cellId}`
         );
+
+        // A structural sync deferred on this id-less cell can proceed now
+        this.scheduleCellOrderSync(notebook);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -795,6 +1104,17 @@ export class PlutoNotebookController {
         if (!cellId) {
           this.outputChannel.appendLine(
             "Skipping removal of cell without pluto_cell_id"
+          );
+          continue;
+        }
+
+        // A cell whose identity survives elsewhere in the document was
+        // replaced, not removed
+        if (
+          notebook.getCells().some((c) => c.metadata?.pluto_cell_id === cellId)
+        ) {
+          this.outputChannel.appendLine(
+            `[VSCodeRemove] Cell ${cellId} still present in document — skipping delete`
           );
           continue;
         }
@@ -831,6 +1151,12 @@ export class PlutoNotebookController {
       return;
     }
 
+    // Changes we applied ourselves from Pluto-side patches must not be
+    // echoed back to Pluto — that would duplicate or re-delete cells
+    if (this.isApplyingRemoteEdit(notebook.uri.fsPath)) {
+      return;
+    }
+
     if (!this.plutoManager.isRunning()) {
       this.outputChannel.appendLine(
         "Server not running - skipping cell change handling"
@@ -844,10 +1170,56 @@ export class PlutoNotebookController {
     // The worker will handle these through its update events
     // }
 
-    // Process content changes (cell additions/deletions)
-    for (const change of event.contentChanges) {
-      await this.handleVscodeAddedCells(notebook, change.addedCells);
-      await this.handleVscodeRemovedCells(notebook, change.removedCells);
+    // A drag-reorder surfaces as the same pluto_cell_id in both the
+    // removed and added lists — route those to moveCells; only genuine
+    // additions and deletions go to the add/remove handlers
+    const allAdded = event.contentChanges.flatMap((c) => [...c.addedCells]);
+    const allRemoved = event.contentChanges.flatMap((c) => [...c.removedCells]);
+    const removedIds = new Set(
+      allRemoved
+        .map((c) => c.metadata?.pluto_cell_id as string | undefined)
+        .filter((id): id is string => !!id)
+    );
+    const movedCells = allAdded.filter((c) => {
+      const id = c.metadata?.pluto_cell_id as string | undefined;
+      return !!id && removedIds.has(id);
+    });
+    const movedIds = new Set(
+      movedCells.map((c) => c.metadata?.pluto_cell_id as string)
+    );
+
+    for (const moved of movedCells) {
+      const cellId = moved.metadata?.pluto_cell_id as string;
+      const index = notebook.getCells().indexOf(moved);
+      if (index === -1) {
+        continue;
+      }
+      try {
+        const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+        if (worker) {
+          this.outputChannel.appendLine(
+            `[VSCodeMove] Cell ${cellId} moved to index ${index}`
+          );
+          await this.plutoManager.moveCells(worker, [cellId], index);
+        }
+      } catch (error) {
+        this.outputChannel.appendLine(
+          `[VSCodeMove] Failed for ${cellId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
+    const isMoved = (c: vscode.NotebookCell) =>
+      movedIds.has(c.metadata?.pluto_cell_id as string);
+    const addedCells = allAdded.filter((c) => !isMoved(c));
+    const removedCells = allRemoved.filter((c) => !isMoved(c));
+    if (addedCells.length > 0) {
+      await this.handleVscodeAddedCells(notebook, addedCells);
+    }
+    if (removedCells.length > 0) {
+      await this.handleVscodeRemovedCells(notebook, removedCells);
     }
   }
 
@@ -870,11 +1242,20 @@ export class PlutoNotebookController {
       );
     }
     this.endExecutionsForNotebook(notebook);
+    // Reopening restores a document with empty outputs, so the next
+    // subscription must be allowed to re-render unchanged results
+    for (const cell of notebook.getCells()) {
+      const cellId = cell.metadata?.pluto_cell_id as string | undefined;
+      if (cellId) {
+        this.lastRenderedStamp.delete(cellId);
+      }
+    }
   }
 
   public dispose(): void {
     this.plutoManager.off("workerRecreated", this.onWorkerRecreated);
     this.plutoManager.off("serverStateChanged", this.onServerStateChanged);
+    this.lastRenderedStamp.clear();
 
     for (const unsubscribe of this.workerSubscriptions.values()) {
       unsubscribe();

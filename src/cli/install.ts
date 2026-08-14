@@ -56,10 +56,10 @@ function installClaudeCode(
     return;
   }
 
-  // The tool server speaks the SSE transport (GET /mcp + POST /messages),
-  // not streamable HTTP — the config type must match
+  // The tool server speaks streamable HTTP (with a legacy SSE fallback
+  // on the same endpoint for older clients)
   mcpServers["pluto-notebook"] = {
-    type: "sse",
+    type: "http",
     url: `http://localhost:${mcpPort}/mcp`,
   };
 
@@ -85,7 +85,7 @@ function installCopilot(
 
   servers["pluto-notebook"] = {
     url: `http://localhost:${mcpPort}/mcp`,
-    type: "sse",
+    type: "http",
   };
 
   existing.servers = servers;

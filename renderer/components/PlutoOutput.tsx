@@ -81,6 +81,9 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
           break;
         }
         case "bond":
+          // Acknowledgement of a set_bond round trip — nothing to update;
+          // the resulting recomputation arrives as setState messages
+          break;
         default:
           console.log("[RENDERER] Unknown message type:", message.type);
       }
@@ -128,32 +131,38 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
       </details>
     </div>`;
   }
-  return html` ${localState.running && progress
-    ? html`<div>
-        <label for=${`progress_${localState.cell_id}`}> ${progress}% </label
-        ><progress
-          style="width: 240px;"
-          id=${`progress_${localState.cell_id}`}
-          max="100"
-          value=${progress}
-        ></progress>
-      </div>`
-    : null}
+  return html` ${
+    localState.running && progress
+      ? html`<div>
+          <label for=${`progress_${localState.cell_id}`}> ${progress}% </label
+          ><progress
+            style="width: 240px;"
+            id=${`progress_${localState.cell_id}`}
+            max="100"
+            value=${progress}
+          ></progress>
+        </div>`
+      : null
+  }
   ${OUTPUT}
-  ${terminal?.length
-    ? html`<details>
+  ${
+    terminal?.length
+      ? html`<details>
           <summary>stdout</summary>
           <${ANSITextOutput}
             body="${terminal.map(cutMime).join("\n")}"
           ></${ANSITextOutput}>
         </details>`
-    : null}
-  ${logs?.length
-    ? html`<details open>
+      : null
+  }
+  ${
+    logs?.length
+      ? html`<details open>
           <summary>Logs</summary>
             <${ANSITextOutput} 
                body="${logs.map(cutMime).join("\n")}"
              ></${ANSITextOutput}>
         </details>`
-    : null}`;
+      : null
+  }`;
 }

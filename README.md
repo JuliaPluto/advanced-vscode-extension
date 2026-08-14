@@ -13,7 +13,7 @@ so please don't raise issues about this in the official Pluto.jl channels or rep
 - **Notebook Interface**: Edit and run Pluto notebooks directly in VS Code
 - **Integrated Pluto Server**: Automatically manages Pluto server lifecycle
 - **Interactive Terminal**: Execute Julia code in an integrated terminal with rich output rendering
-- **MCP Server**: HTTP-based MCP server for AI assistants like Claude Desktop and GitHub Copilot
+- **MCP Server**: HTTP-based MCP server for AI assistants like Claude Code and GitHub Copilot
 - **Shared State**: Extension and MCP clients share the same Pluto server connection
 - **Real-time Execution**: Execute Julia code and see results immediately
 - **Cell Management**: Create, edit, and execute notebook cells
@@ -24,7 +24,7 @@ so please don't raise issues about this in the official Pluto.jl channels or rep
 
 - **juliaup**: The Julia version manager must be installed and available in your PATH
   - Install from: https://github.com/JuliaLang/juliaup#installation
-  - The extension will automatically install Julia 1.11.7 and Pluto.jl when needed
+  - The extension will automatically install Julia 1.12.6 and Pluto.jl when needed
 
 ## Quick Start
 
@@ -39,7 +39,7 @@ This extension contributes the following settings:
 - `pluto-notebook.port`: Port number for the Pluto server (default: 1234)
 - `pluto-notebook.mcpPort`: Port number for the MCP HTTP server (default: 3100)
 - `pluto-notebook.autoStartMcpServer`: Automatically start the MCP HTTP server when the extension activates (default: true)
-- `pluto-notebook.juliaVersion`: Julia version to use with juliaup (default: "1.11.7"). The extension will automatically install this version via juliaup if not already available. You can use specific versions like "1.10.0" or special channels like "release", "lts", etc.
+- `pluto-notebook.juliaVersion`: Julia version to use with juliaup (default: "1.12.6"). The extension will automatically install this version via juliaup if not already available. You can use specific versions like "1.10.0" or special channels like "release", "lts", etc.
 
 ## Available Commands
 
@@ -69,9 +69,9 @@ This extension contributes the following settings:
 
 The extension includes an MCP server that allows AI assistants to interact with your Pluto notebooks.
 
-### Claude Desktop
+### Claude Code
 
-Run the command `Pluto: Create MCP Config (Claude or Copilot)`, select "Claude Desktop", and restart Claude Desktop.
+Run the command `Pluto: Create MCP Config (Claude or Copilot)`, select "Claude Code", and the workspace `.mcp.json` is written for you.
 
 ### GitHub Copilot
 
@@ -110,7 +110,9 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ## Dev TODO
 
-- **VSCode notebook view does not reflect structural changes from MCP tools**: When cells are moved, deleted, or added via the MCP server (or any external client), the Pluto Worker's internal state updates automatically, but the VSCode notebook UI does not yet sync these changes. The `_handleCellReorder` handler in the controller is stubbed out. This only affects the VSCode view — external clients (the `@plutojl/cli` tool server) and Pluto's own UI stay fully in sync.
+- **Structural sync from external clients is new**: cells added, deleted, or reordered via the MCP tools (or Pluto's browser UI) now sync into the VSCode notebook view (`_handleCellReorder`). If you see cells duplicate or vanish when mixing VSCode edits with external edits, please file an issue with the Pluto Controller output-channel log.
+- **PlutoUI bonds are half-wired**: moving a slider in the VSCode renderer reaches Pluto (`set_bond` → controller → `worker.setBond`) and recomputation streams back, but bond _state_ distribution is stubbed (`get_notebook` returns an empty notebook in `renderer/renderer.tsx`), so widgets don't restore positions and JS-interop widgets (`request_js_link_response`) don't work. Needs controller→renderer state plumbing plus manual UI verification.
+- Upstream `@plutojl/rainbow` issues we work around: see `docs/UPSTREAM_RAINBOW_NOTES.md`.
 
 ## Support
 

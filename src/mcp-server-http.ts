@@ -4,6 +4,9 @@ import type { Server as HttpServer } from "http";
 import { writeFile } from "fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { randomUUID } from "crypto";
 import type { PlutoManager } from "./plutoManager.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
@@ -51,6 +54,16 @@ export class PlutoMCPHttpServer {
   private readonly app: Express;
   private httpServer?: HttpServer;
   private readonly transports: Map<string, SSEServerTransport> = new Map();
+  private readonly streamableTransports: Map<
+    string,
+    StreamableHTTPServerTransport
+  > = new Map();
+  // Streamable sessions are only removed via an explicit DELETE — clients
+  // that crash or drop the connection leave theirs behind, so sessions
+  // idle past this TTL are swept
+  private readonly streamableLastActivity: Map<string, number> = new Map();
+  private static readonly SESSION_IDLE_TTL_MS = 2 * 60 * 60 * 1000;
+  private sessionSweeper?: ReturnType<typeof setInterval>;
   private readonly plutoManager: PlutoManager;
   private port: number;
   private readonly dynamicPort: boolean;
@@ -1143,8 +1156,123 @@ export class PlutoMCPHttpServer {
   }
 
   private setupRoutes(): void {
-    // SSE endpoint for establishing the stream
-    this.app.get("/mcp", async (_req: Request, res: Response) => {
+    // Streamable HTTP (modern MCP transport): POST /mcp carries requests;
+    // GET/DELETE with an mcp-session-id header manage the session stream.
+    // The legacy SSE transport stays on plain GET /mcp + POST /messages.
+    this.app.post("/mcp", async (req: Request, res: Response) => {
+      try {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        let transport = sessionId
+          ? this.streamableTransports.get(sessionId)
+          : undefined;
+
+        if (!transport) {
+          if (sessionId) {
+            // Spec-mandated 404 so clients re-initialize after an expired
+            // or restarted session instead of treating it as a bad request
+            res.status(404).json({
+              jsonrpc: "2.0",
+              error: {
+                code: -32001,
+                message: "Session not found",
+              },
+              id: null,
+            });
+            return;
+          }
+          if (!isInitializeRequest(req.body)) {
+            res.status(400).json({
+              jsonrpc: "2.0",
+              error: {
+                code: -32000,
+                message:
+                  "Bad Request: no valid session. Send an initialize request first.",
+              },
+              id: null,
+            });
+            return;
+          }
+
+          const newTransport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (id) => {
+              console.log(`[MCP HTTP] Streamable session initialized: ${id}`);
+              this.streamableTransports.set(id, newTransport);
+            },
+          });
+          newTransport.onclose = () => {
+            if (newTransport.sessionId) {
+              console.log(
+                `[MCP HTTP] Streamable session closed: ${newTransport.sessionId}`
+              );
+              this.streamableTransports.delete(newTransport.sessionId);
+              this.streamableLastActivity.delete(newTransport.sessionId);
+            }
+          };
+
+          const server = this.createMcpServer();
+          await server.connect(newTransport);
+          transport = newTransport;
+        }
+
+        await transport.handleRequest(req, res, req.body);
+        if (transport.sessionId) {
+          this.streamableLastActivity.set(transport.sessionId, Date.now());
+        }
+      } catch (error) {
+        console.error("[MCP HTTP] Error handling streamable request:", error);
+        if (!res.headersSent) {
+          res.status(500).send("Error handling request");
+        }
+      }
+    });
+
+    const handleStreamableSessionRequest = async (
+      req: Request,
+      res: Response
+    ): Promise<boolean> => {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+      if (!sessionId) {
+        return false;
+      }
+      const transport = this.streamableTransports.get(sessionId);
+      if (!transport) {
+        res.status(404).send("Session not found");
+        return true;
+      }
+      this.streamableLastActivity.set(sessionId, Date.now());
+      await transport.handleRequest(req, res);
+      return true;
+    };
+
+    this.app.delete("/mcp", async (req: Request, res: Response) => {
+      try {
+        if (!(await handleStreamableSessionRequest(req, res))) {
+          res.status(400).send("Missing mcp-session-id header");
+        }
+      } catch (error) {
+        console.error("[MCP HTTP] Error handling session delete:", error);
+        if (!res.headersSent) {
+          res.status(500).send("Error handling request");
+        }
+      }
+    });
+
+    // SSE endpoint for establishing the stream (legacy transport), or the
+    // streamable event stream when an mcp-session-id header is present
+    this.app.get("/mcp", async (req: Request, res: Response) => {
+      try {
+        if (await handleStreamableSessionRequest(req, res)) {
+          return;
+        }
+      } catch (error) {
+        console.error("[MCP HTTP] Error handling streamable stream:", error);
+        if (!res.headersSent) {
+          res.status(500).send("Error handling request");
+        }
+        return;
+      }
+
       console.log(
         "[MCP HTTP] Received GET request to /mcp (establishing SSE stream)"
       );
@@ -1221,7 +1349,11 @@ export class PlutoMCPHttpServer {
       res.json({
         status: "ok",
         plutoServerRunning: this.plutoManager.isConnected(),
-        activeSessions: this.transports.size,
+        activeSessions: this.transports.size + this.streamableTransports.size,
+        transports: {
+          sse: this.transports.size,
+          streamableHttp: this.streamableTransports.size,
+        },
       });
     });
   }
@@ -1250,14 +1382,42 @@ export class PlutoMCPHttpServer {
           console.log(
             `[MCP HTTP] Health check: http://localhost:${this.port}/health`
           );
+          this.sessionSweeper = setInterval(
+            () => this.sweepIdleSessions(),
+            10 * 60 * 1000
+          );
+          this.sessionSweeper.unref?.();
           resolve();
         }
       });
     });
   }
 
+  private sweepIdleSessions(): void {
+    const cutoff = Date.now() - PlutoMCPHttpServer.SESSION_IDLE_TTL_MS;
+    for (const [sessionId, transport] of this.streamableTransports.entries()) {
+      const lastActivity = this.streamableLastActivity.get(sessionId) ?? 0;
+      if (lastActivity < cutoff) {
+        console.log(`[MCP HTTP] Sweeping idle streamable session ${sessionId}`);
+        void transport.close().catch((error) => {
+          console.error(
+            `[MCP HTTP] Error closing idle session ${sessionId}:`,
+            error
+          );
+          this.streamableTransports.delete(sessionId);
+          this.streamableLastActivity.delete(sessionId);
+        });
+      }
+    }
+  }
+
   public async stop(): Promise<void> {
     console.log("[MCP HTTP] Stopping MCP server...");
+
+    if (this.sessionSweeper) {
+      clearInterval(this.sessionSweeper);
+      this.sessionSweeper = undefined;
+    }
 
     // Close all active transports
     for (const [sessionId, transport] of this.transports.entries()) {
@@ -1268,6 +1428,17 @@ export class PlutoMCPHttpServer {
       } catch (error) {
         console.error(
           `[MCP HTTP] Error closing transport for session ${sessionId}:`,
+          error
+        );
+      }
+    }
+    for (const [sessionId, transport] of this.streamableTransports.entries()) {
+      try {
+        await transport.close();
+        this.streamableTransports.delete(sessionId);
+      } catch (error) {
+        console.error(
+          `[MCP HTTP] Error closing streamable session ${sessionId}:`,
           error
         );
       }
