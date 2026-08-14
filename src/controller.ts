@@ -6,7 +6,10 @@ import type {
   UpdateEvent,
 } from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
-import { isMarkdownCell, extractMarkdownContent } from "./plutoSerializer.ts";
+import {
+  extractMarkdownContent,
+  createVsCodeCellFromPlutoCell,
+} from "./plutoSerializer.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
 import { type Worker } from "@plutojl/rainbow";
 
@@ -58,9 +61,8 @@ export class PlutoNotebookController {
   private readonly remoteEditDepth: Map<string, number> = new Map();
   // Notebook paths with a cell-order sync already scheduled
   private readonly pendingOrderSync: Set<string> = new Set();
-  // Last rendered output timestamp per cell — lets late patches and bulk
-  // state reconciliation detect changed results without re-rendering
-  // duplicates (which would clobber the displayed execution duration)
+  // last_run_timestamp of the most recently rendered result per cell;
+  // a result is re-rendered only when its stamp differs
   private readonly lastRenderedStamp: Map<CellId, number> = new Map();
 
   private executeHandler = (
@@ -272,6 +274,14 @@ export class PlutoNotebookController {
     this.outputChannel.appendLine(
       `[SUBSCRIPTION] Subscribed to updates for ${notebookPath}`
     );
+
+    // The worker does not replay state to new subscribers — render any
+    // results it already holds (e.g. a notebook reopened while its worker
+    // stayed alive)
+    const state = worker.getState();
+    if (state) {
+      this.reconcileCellsFromState(notebook, state);
+    }
   }
 
   /**
@@ -340,6 +350,13 @@ export class PlutoNotebookController {
     execution: vscode.NotebookCellExecution,
     state: CellResultData
   ): void {
+    // Render before ending: the stamp recorded below marks this result
+    // as drawn, so the output must actually be on screen by then
+    try {
+      execution.replaceOutput([formatCellOutput(state)]);
+    } catch {
+      // Execution may already be resolved
+    }
     try {
       execution.end(!state.errored, Date.now());
     } catch {
@@ -501,10 +518,7 @@ export class PlutoNotebookController {
       }
       const active = this.activeExecutions.get(cellId);
       if (!active) {
-        // Output patch with no execution in flight (reactive re-run whose
-        // `running` patches were missed, bond update, MCP edit). Render only
-        // when the result actually changed — duplicate patches would
-        // otherwise clobber the recorded duration with a ~0s execution.
+        // No execution in flight: render only results not yet drawn
         const stamp = currentCellState.output?.last_run_timestamp;
         if (!stamp || stamp === this.lastRenderedStamp.get(cellId)) {
           return;
@@ -519,11 +533,12 @@ export class PlutoNotebookController {
       this.outputChannel.appendLine(
         `[OUTPUT] Cell ${cellId} for notebook ${notebook.uri} output updated.`
       );
-      active.replaceOutput([formatCellOutput(currentCellState)]);
       // While the cell is still queued/running this is streaming display
       // output — keep the execution open until the run completes
       if (!currentCellState.queued && !currentCellState.running) {
         this.finishExecution(cellId, active, currentCellState);
+      } else {
+        active.replaceOutput([formatCellOutput(currentCellState)]);
       }
     } else if (segment2 === "logs") {
       // Handle streaming logs (logs are added, path.length === 4, or array is cleared)
@@ -552,24 +567,36 @@ export class PlutoNotebookController {
 
   /**
    * Schedule a cell-order sync for this notebook. Coalesces the multiple
-   * cell_order patches a single structural change produces.
+   * cell_order patches a single structural change produces. A deferred
+   * sync (id-less cell or execution in flight) is retried with backoff so
+   * remote structural changes are never silently dropped.
    */
-  private scheduleCellOrderSync(notebook: vscode.NotebookDocument): void {
+  private scheduleCellOrderSync(
+    notebook: vscode.NotebookDocument,
+    attempt = 0
+  ): void {
     const key = notebook.uri.fsPath;
     if (this.pendingOrderSync.has(key)) {
       return;
     }
     this.pendingOrderSync.add(key);
+    const delay = Math.min(100 * 2 ** attempt, 5000);
     setTimeout(() => {
       this.pendingOrderSync.delete(key);
-      void this._handleCellReorder(notebook).catch((error) => {
-        this.outputChannel.appendLine(
-          `[CellOrderSync] Failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      });
-    }, 100);
+      void this._handleCellReorder(notebook)
+        .then((result) => {
+          if (result === "deferred" && attempt < 60) {
+            this.scheduleCellOrderSync(notebook, attempt + 1);
+          }
+        })
+        .catch((error) => {
+          this.outputChannel.appendLine(
+            `[CellOrderSync] Failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
+    }, delay);
   }
 
   /**
@@ -580,11 +607,11 @@ export class PlutoNotebookController {
    */
   private async _handleCellReorder(
     notebook: vscode.NotebookDocument
-  ): Promise<void> {
+  ): Promise<"applied" | "deferred" | "noop"> {
     const notebookPath = notebook.uri.fsPath;
     const worker = await this.plutoManager.getWorker(notebookPath);
     if (!worker) {
-      return;
+      return "noop";
     }
     const state = worker.getState();
     const cellInputs = state?.cell_inputs ?? {};
@@ -598,27 +625,40 @@ export class PlutoNotebookController {
     );
 
     // A cell without an id is a local add whose Pluto round trip hasn't
-    // assigned metadata yet — replacing cells now would destroy it. A
-    // later cell_order patch will re-trigger this sync.
+    // assigned metadata yet — replacing cells now would destroy it
     if (currentOrder.some((id) => !id)) {
       this.outputChannel.appendLine(
         `[CellOrderSync] Deferred — local cell add in flight`
       );
-      return;
+      return "deferred";
     }
 
     const inSync =
       currentOrder.length === plutoOrder.length &&
       plutoOrder.every((id: string, i: number) => currentOrder[i] === id);
     if (inSync) {
-      return;
+      return "noop";
+    }
+
+    // replaceCells would orphan in-flight executions bound to the old cell
+    // objects — wait until this notebook's cells have settled
+    const hasActiveExecution = currentOrder.some(
+      (id) => id && this.activeExecutions.has(id)
+    );
+    if (hasActiveExecution) {
+      this.outputChannel.appendLine(
+        `[CellOrderSync] Deferred — execution in flight`
+      );
+      return "deferred";
     }
 
     const cellByPlutoId = new Map(
       currentCells.map((cell) => [cell.metadata?.pluto_cell_id as string, cell])
     );
 
-    const desired = plutoOrder.map((cellId: string) => {
+    const notebookState = state as NotebookData;
+    const desired: vscode.NotebookCellData[] = [];
+    for (const cellId of plutoOrder) {
       const existing = cellByPlutoId.get(cellId);
       if (existing) {
         const data = new vscode.NotebookCellData(
@@ -628,27 +668,28 @@ export class PlutoNotebookController {
         );
         data.metadata = existing.metadata;
         data.outputs = [...existing.outputs];
-        return data;
+        desired.push(data);
+        continue;
       }
 
       // Cell created outside VSCode — materialize it from Pluto state
-      const input = cellInputs[cellId];
-      const code = input?.code ?? "";
-      const markdownContent = extractMarkdownContent(code);
-      const isMarkdown = isMarkdownCell(code) && isDefined(markdownContent);
-      const data = new vscode.NotebookCellData(
-        isMarkdown
-          ? vscode.NotebookCellKind.Markup
-          : vscode.NotebookCellKind.Code,
-        isMarkdown ? markdownContent : code,
-        isMarkdown ? "markdown" : "julia"
-      );
-      data.metadata = {
-        pluto_cell_id: cellId,
-        code_folded: input?.code_folded ?? false,
-      };
-      return data;
-    });
+      try {
+        const data = createVsCodeCellFromPlutoCell(notebookState, cellId);
+        if (data) {
+          desired.push(data);
+          this.recordRenderedStamp(
+            cellId,
+            notebookState.cell_results?.[cellId] ?? ({} as CellResultData)
+          );
+        }
+      } catch (error) {
+        this.outputChannel.appendLine(
+          `[CellOrderSync] Skipping unmaterializable cell ${cellId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
 
     this.outputChannel.appendLine(
       `[CellOrderSync] Applying remote structure: ${currentOrder.length} -> ${plutoOrder.length} cells`
@@ -667,6 +708,7 @@ export class PlutoNotebookController {
     } finally {
       this.endRemoteEditSoon(notebookPath);
     }
+    return "applied";
   }
 
   private beginRemoteEdit(notebookPath: string): void {
@@ -692,9 +734,8 @@ export class PlutoNotebookController {
   }
 
   /**
-   * Applies a Pluto-side code edit (browser UI, MCP update_cell) to the
-   * matching VSCode cell's text. Our own executeCell pushes echo back as
-   * the same patch — the text-equality check drops those.
+   * Applies a Pluto-side code edit to the matching VSCode cell's text.
+   * A patch matching the cell's current text is an echo and is dropped.
    */
   private async _applyRemoteCodeEdit(
     notebook: vscode.NotebookDocument,
@@ -757,8 +798,7 @@ export class PlutoNotebookController {
         console.error(e);
         //
       }
-      if (!state.queued || !state.running) {
-        // This results to many "cannot resolve twice" messages
+      if (!state.queued && !state.running) {
         try {
           execution.end(!state.errored, start + (state.runtime ?? 0) / 1e6);
           this.activeExecutions.delete(cell_id);
@@ -960,16 +1000,26 @@ export class PlutoNotebookController {
     }
     for (const addedCell of addedCells) {
       try {
-        // Cells arriving with an id Pluto already knows are echoes of
-        // Pluto-side state (document revert after Pluto autosaved the file,
-        // or our own replaceCells) — re-adding them would duplicate cells
-        const presetId = addedCell.metadata?.pluto_cell_id as
-          string | undefined;
+        let presetId = addedCell.metadata?.pluto_cell_id as string | undefined;
         if (presetId && worker.getState()?.cell_inputs?.[presetId]) {
-          this.outputChannel.appendLine(
-            `[VSCodeAdd] Cell ${presetId} already exists in Pluto — skipping echo`
-          );
-          continue;
+          const docCellsWithId = notebook
+            .getCells()
+            .filter((c) => c.metadata?.pluto_cell_id === presetId);
+          if (docCellsWithId.length > 1) {
+            // Paste keeps the source cell's metadata — this is a copy that
+            // must become an independent Pluto cell, not an alias
+            this.outputChannel.appendLine(
+              `[VSCodeAdd] Cell ${presetId} is a pasted duplicate — assigning a new identity`
+            );
+            presetId = undefined;
+          } else {
+            // The id maps to exactly this cell: an echo of Pluto-side state
+            // (document revert after Pluto autosaved, or our replaceCells)
+            this.outputChannel.appendLine(
+              `[VSCodeAdd] Cell ${presetId} already exists in Pluto — skipping echo`
+            );
+            continue;
+          }
         }
 
         // Prepare code - wrap markdown cells properly
@@ -979,7 +1029,7 @@ export class PlutoNotebookController {
         this.outputChannel.appendLine(`Adding new cell at index ${cellIndex}`);
 
         // Add cell to worker, preserving an existing identity if the cell
-        // carries one (e.g. pasted or restored from a file)
+        // carries one (e.g. restored from a file)
         const cellId = await this.plutoManager.addCell(
           worker,
           cellIndex,
@@ -1021,6 +1071,9 @@ export class PlutoNotebookController {
         this.outputChannel.appendLine(
           `Updated cell metadata with pluto_cell_id: ${cellId}`
         );
+
+        // A structural sync deferred on this id-less cell can proceed now
+        this.scheduleCellOrderSync(notebook);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -1055,9 +1108,8 @@ export class PlutoNotebookController {
           continue;
         }
 
-        // Replace-style diffs (document revert, our own replaceCells) report
-        // a cell as removed while its identity survives in another cell —
-        // deleting it from Pluto would destroy a live cell
+        // A cell whose identity survives elsewhere in the document was
+        // replaced, not removed
         if (
           notebook.getCells().some((c) => c.metadata?.pluto_cell_id === cellId)
         ) {
@@ -1118,10 +1170,56 @@ export class PlutoNotebookController {
     // The worker will handle these through its update events
     // }
 
-    // Process content changes (cell additions/deletions)
-    for (const change of event.contentChanges) {
-      await this.handleVscodeAddedCells(notebook, change.addedCells);
-      await this.handleVscodeRemovedCells(notebook, change.removedCells);
+    // A drag-reorder surfaces as the same pluto_cell_id in both the
+    // removed and added lists — route those to moveCells; only genuine
+    // additions and deletions go to the add/remove handlers
+    const allAdded = event.contentChanges.flatMap((c) => [...c.addedCells]);
+    const allRemoved = event.contentChanges.flatMap((c) => [...c.removedCells]);
+    const removedIds = new Set(
+      allRemoved
+        .map((c) => c.metadata?.pluto_cell_id as string | undefined)
+        .filter((id): id is string => !!id)
+    );
+    const movedCells = allAdded.filter((c) => {
+      const id = c.metadata?.pluto_cell_id as string | undefined;
+      return !!id && removedIds.has(id);
+    });
+    const movedIds = new Set(
+      movedCells.map((c) => c.metadata?.pluto_cell_id as string)
+    );
+
+    for (const moved of movedCells) {
+      const cellId = moved.metadata?.pluto_cell_id as string;
+      const index = notebook.getCells().indexOf(moved);
+      if (index === -1) {
+        continue;
+      }
+      try {
+        const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+        if (worker) {
+          this.outputChannel.appendLine(
+            `[VSCodeMove] Cell ${cellId} moved to index ${index}`
+          );
+          await this.plutoManager.moveCells(worker, [cellId], index);
+        }
+      } catch (error) {
+        this.outputChannel.appendLine(
+          `[VSCodeMove] Failed for ${cellId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
+    const isMoved = (c: vscode.NotebookCell) =>
+      movedIds.has(c.metadata?.pluto_cell_id as string);
+    const addedCells = allAdded.filter((c) => !isMoved(c));
+    const removedCells = allRemoved.filter((c) => !isMoved(c));
+    if (addedCells.length > 0) {
+      await this.handleVscodeAddedCells(notebook, addedCells);
+    }
+    if (removedCells.length > 0) {
+      await this.handleVscodeRemovedCells(notebook, removedCells);
     }
   }
 
@@ -1144,11 +1242,20 @@ export class PlutoNotebookController {
       );
     }
     this.endExecutionsForNotebook(notebook);
+    // Reopening restores a document with empty outputs, so the next
+    // subscription must be allowed to re-render unchanged results
+    for (const cell of notebook.getCells()) {
+      const cellId = cell.metadata?.pluto_cell_id as string | undefined;
+      if (cellId) {
+        this.lastRenderedStamp.delete(cellId);
+      }
+    }
   }
 
   public dispose(): void {
     this.plutoManager.off("workerRecreated", this.onWorkerRecreated);
     this.plutoManager.off("serverStateChanged", this.onServerStateChanged);
+    this.lastRenderedStamp.clear();
 
     for (const unsubscribe of this.workerSubscriptions.values()) {
       unsubscribe();
