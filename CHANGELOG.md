@@ -1,3 +1,29 @@
+## [0.3.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.7...v0.3.0) (2026-08-15)
+
+### Features
+
+- **mcp:** streamable HTTP (modern MCP transport) served natively alongside legacy SSE; `install` and the extension config commands write `type: "http"`; `/health` reports per-transport session counts
+- **notebook:** cell-order sync — cells added, deleted, or reordered via MCP tools or Pluto's browser UI now appear in the VSCode notebook view
+- **notebook:** Pluto-side code edits (browser UI, MCP `update_cell`) sync into VSCode cell text
+- **terminal:** Ctrl+C interrupts the running Julia computation (`worker.interrupt()`), not just the prompt
+- **mcp:** `PLUTO_GUIDE.md` rewritten around `wait_for_notebook_idle`, session adoption, and HTML export; new `pluto-cli` skill for Claude Code sessions
+- **cli:** `@plutojl/cli` 0.6.0 with the same transport and server improvements (npm publish is manual)
+
+### Bug Fixes
+
+- executions end when the cell settles (`running: false`), not on the first output patch — no more premature "success" while nbpkg installs, stale errors clear after a fixing re-run, and displayed durations are no longer reset to 0s by duplicate patches
+- Pluto's autosave of an open notebook no longer duplicates cells through document-revert echoes; pasted cells get their own identity instead of aliasing the original; drag-reorders propagate to Pluto instead of snapping back
+- reopening a notebook whose worker stayed alive renders existing outputs instead of staying blank
+- unknown streamable MCP sessions return spec-mandated 404 so restarted clients re-initialize; idle sessions are swept after 2h
+- terminal Ctrl+C while queued no longer interrupts the whole notebook
+- the Integration Test CI job compiled with `noEmit` and had been passing while executing zero tests; it now runs the suite
+- reactive dependency tracking: bulk `cells_updated` events (no patches) reconcile all changed cell outputs and refresh the notebook tree
+
+### Maintenance
+
+- all dependencies at latest (MCP SDK 1.30, zod 4, uuid 14, ws 8.21.3, esbuild 0.28, vsce 3.9); npm audit 45 → 11
+- Julia pinned at 1.12.6 (juliaup default, CI, docs)
+
 ## [0.2.7](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.6...v0.2.7) (2025-11-16)
 
 ### Bug Fixes
