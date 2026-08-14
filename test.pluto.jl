@@ -4,33 +4,47 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    #! format: off
-    return quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-    #! format: on
-end
-
 # ╔═╡ 024e9237-bd37-4b0f-8f0b-541539d3d3f5
 using PlutoUI
 
-# ╔═╡ ab728b68-2a54-4e99-baed-0456f5df4d1b
-@bind x Slider(1:200)
-
 # ╔═╡ 1fa401f5-8a22-4cb6-a4df-d52506e8155a
+for i in 1:10 
+	sleep(0.2)
+	@info "A log reports" i=i
+end
 
-1+x
+# ╔═╡ ab728b68-2a54-4e99-baed-0456f5df4d1b
+# ╠═╡ disabled = true
+#=╠═╡
+@bind x Slider(1:200)
+  ╠═╡ =#
 
 # ╔═╡ d8f7f570-b4c9-4a0a-8b0f-3ad844626cff
 1+2
 
 # ╔═╡ f37f8661-eef4-4454-a9fc-657b6edfa836
 7+4
+
+# ╔═╡ 76c4fd26-fc7d-4c8d-b59f-6e2e435baed1
+9+4
+
+# ╔═╡ 0d0572fe-8eaf-48e7-8569-a145f3fd0e93
+99
+
+# ╔═╡ a12956bc-b34a-48bf-aefa-844835544a8f
+1234
+
+# ╔═╡ b2f35bc0-eeb1-4e0a-bdc9-f0fdb61e1672
+x = 4
+
+# ╔═╡ dc90a5d2-e77d-4b94-a54b-a91722775f42
+z, y, u = 1,2,3
+
+# ╔═╡ 0094d2f2-9893-451d-b28e-2d24adbedc70
+u*y*z
+
+# ╔═╡ f5d36126-c1dc-4421-a032-bd27edc5a5c0
+
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -276,5 +290,12 @@ version = "1.64.0+1"
 # ╠═ab728b68-2a54-4e99-baed-0456f5df4d1b
 # ╠═d8f7f570-b4c9-4a0a-8b0f-3ad844626cff
 # ╠═f37f8661-eef4-4454-a9fc-657b6edfa836
+# ╠═76c4fd26-fc7d-4c8d-b59f-6e2e435baed1
+# ╠═0d0572fe-8eaf-48e7-8569-a145f3fd0e93
+# ╠═a12956bc-b34a-48bf-aefa-844835544a8f
+# ╠═b2f35bc0-eeb1-4e0a-bdc9-f0fdb61e1672
+# ╠═dc90a5d2-e77d-4b94-a54b-a91722775f42
+# ╠═0094d2f2-9893-451d-b28e-2d24adbedc70
+# ╠═f5d36126-c1dc-4421-a032-bd27edc5a5c0
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

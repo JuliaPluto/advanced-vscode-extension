@@ -964,8 +964,7 @@ export class PlutoNotebookController {
         // Pluto-side state (document revert after Pluto autosaved the file,
         // or our own replaceCells) — re-adding them would duplicate cells
         const presetId = addedCell.metadata?.pluto_cell_id as
-          | string
-          | undefined;
+          string | undefined;
         if (presetId && worker.getState()?.cell_inputs?.[presetId]) {
           this.outputChannel.appendLine(
             `[VSCodeAdd] Cell ${presetId} already exists in Pluto — skipping echo`
@@ -1060,9 +1059,7 @@ export class PlutoNotebookController {
         // a cell as removed while its identity survives in another cell —
         // deleting it from Pluto would destroy a live cell
         if (
-          notebook
-            .getCells()
-            .some((c) => c.metadata?.pluto_cell_id === cellId)
+          notebook.getCells().some((c) => c.metadata?.pluto_cell_id === cellId)
         ) {
           this.outputChannel.appendLine(
             `[VSCodeRemove] Cell ${cellId} still present in document — skipping delete`
