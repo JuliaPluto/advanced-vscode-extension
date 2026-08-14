@@ -1,3 +1,19 @@
+# [0.3.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.7...v0.3.0) (2026-08-14)
+
+
+### Bug Fixes
+
+* address open issues — TOML metadata, custom URLs, port clashes, hangs, notebook adoption ([#42](https://github.com/JuliaPluto/advanced-vscode-extension/issues/42)) ([f856e03](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f856e0336d06ab8cc3bc441c3500dff1b7c306d7)), closes [#28](https://github.com/JuliaPluto/advanced-vscode-extension/issues/28) [#32](https://github.com/JuliaPluto/advanced-vscode-extension/issues/32) [#41](https://github.com/JuliaPluto/advanced-vscode-extension/issues/41) [#35](https://github.com/JuliaPluto/advanced-vscode-extension/issues/35) [#38](https://github.com/JuliaPluto/advanced-vscode-extension/issues/38) [#40](https://github.com/JuliaPluto/advanced-vscode-extension/issues/40) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39) [#34](https://github.com/JuliaPluto/advanced-vscode-extension/issues/34) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39) [#38](https://github.com/JuliaPluto/advanced-vscode-extension/issues/38) [#40](https://github.com/JuliaPluto/advanced-vscode-extension/issues/40)
+* component hardening pass — commands, tree view, status bar, serializer, CI ([#43](https://github.com/JuliaPluto/advanced-vscode-extension/issues/43)) ([9235840](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9235840293f00130dfbaaa9a15b29bf74af88816)), closes [#42](https://github.com/JuliaPluto/advanced-vscode-extension/issues/42)
+* harden concurrency across PlutoManager, @plutojl/cli, and the extension ([#41](https://github.com/JuliaPluto/advanced-vscode-extension/issues/41)) ([abd13be](https://github.com/JuliaPluto/advanced-vscode-extension/commit/abd13bea09372aa3f5055c52a6a19f116e7ed6af))
+
+
+### Features
+
+* add @plutojl/cli command-line tool for Pluto notebooks ([#37](https://github.com/JuliaPluto/advanced-vscode-extension/issues/37)) ([d4db006](https://github.com/JuliaPluto/advanced-vscode-extension/commit/d4db006253cf514e6bf579853dcdea37c99bdf91))
+* depend on auth extension ([fe10ccb](https://github.com/JuliaPluto/advanced-vscode-extension/commit/fe10ccb1674c96b03d8de149c4175aadbfd2cbcd))
+* night-shift roadmap — streamable HTTP, cell sync, terminal interrupt, review fixes ([6fa9b9b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/6fa9b9b2782e0d3b5cc802a3c4181cbbb586e1eb))
+
 ## [0.3.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.7...v0.3.0) (2026-08-15)
 
 ### Features
