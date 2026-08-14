@@ -58,6 +58,12 @@ export class PlutoMCPHttpServer {
     string,
     StreamableHTTPServerTransport
   > = new Map();
+  // Streamable sessions are only removed via an explicit DELETE — clients
+  // that crash or drop the connection leave theirs behind, so sessions
+  // idle past this TTL are swept
+  private readonly streamableLastActivity: Map<string, number> = new Map();
+  private static readonly SESSION_IDLE_TTL_MS = 2 * 60 * 60 * 1000;
+  private sessionSweeper?: ReturnType<typeof setInterval>;
   private readonly plutoManager: PlutoManager;
   private port: number;
   private readonly dynamicPort: boolean;
@@ -1161,7 +1167,20 @@ export class PlutoMCPHttpServer {
           : undefined;
 
         if (!transport) {
-          if (sessionId || !isInitializeRequest(req.body)) {
+          if (sessionId) {
+            // Spec-mandated 404 so clients re-initialize after an expired
+            // or restarted session instead of treating it as a bad request
+            res.status(404).json({
+              jsonrpc: "2.0",
+              error: {
+                code: -32001,
+                message: "Session not found",
+              },
+              id: null,
+            });
+            return;
+          }
+          if (!isInitializeRequest(req.body)) {
             res.status(400).json({
               jsonrpc: "2.0",
               error: {
@@ -1187,6 +1206,7 @@ export class PlutoMCPHttpServer {
                 `[MCP HTTP] Streamable session closed: ${newTransport.sessionId}`
               );
               this.streamableTransports.delete(newTransport.sessionId);
+              this.streamableLastActivity.delete(newTransport.sessionId);
             }
           };
 
@@ -1196,6 +1216,9 @@ export class PlutoMCPHttpServer {
         }
 
         await transport.handleRequest(req, res, req.body);
+        if (transport.sessionId) {
+          this.streamableLastActivity.set(transport.sessionId, Date.now());
+        }
       } catch (error) {
         console.error("[MCP HTTP] Error handling streamable request:", error);
         if (!res.headersSent) {
@@ -1217,6 +1240,7 @@ export class PlutoMCPHttpServer {
         res.status(404).send("Session not found");
         return true;
       }
+      this.streamableLastActivity.set(sessionId, Date.now());
       await transport.handleRequest(req, res);
       return true;
     };
@@ -1358,14 +1382,42 @@ export class PlutoMCPHttpServer {
           console.log(
             `[MCP HTTP] Health check: http://localhost:${this.port}/health`
           );
+          this.sessionSweeper = setInterval(
+            () => this.sweepIdleSessions(),
+            10 * 60 * 1000
+          );
+          this.sessionSweeper.unref?.();
           resolve();
         }
       });
     });
   }
 
+  private sweepIdleSessions(): void {
+    const cutoff = Date.now() - PlutoMCPHttpServer.SESSION_IDLE_TTL_MS;
+    for (const [sessionId, transport] of this.streamableTransports.entries()) {
+      const lastActivity = this.streamableLastActivity.get(sessionId) ?? 0;
+      if (lastActivity < cutoff) {
+        console.log(`[MCP HTTP] Sweeping idle streamable session ${sessionId}`);
+        void transport.close().catch((error) => {
+          console.error(
+            `[MCP HTTP] Error closing idle session ${sessionId}:`,
+            error
+          );
+          this.streamableTransports.delete(sessionId);
+          this.streamableLastActivity.delete(sessionId);
+        });
+      }
+    }
+  }
+
   public async stop(): Promise<void> {
     console.log("[MCP HTTP] Stopping MCP server...");
+
+    if (this.sessionSweeper) {
+      clearInterval(this.sessionSweeper);
+      this.sessionSweeper = undefined;
+    }
 
     // Close all active transports
     for (const [sessionId, transport] of this.transports.entries()) {
