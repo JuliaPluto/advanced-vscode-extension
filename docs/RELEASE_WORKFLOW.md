@@ -1,6 +1,6 @@
 # Release Workflow
 
-This project uses semantic-release in **no-commit mode** to handle releases.
+This project uses semantic-release in **with-commit mode** to handle releases: the active `.releaserc.json` includes `@semantic-release/git`, so version bumps and CHANGELOG updates are committed back to `main` automatically. (`.releaserc.with-commit.json` is a historical copy of the same mode; the no-commit description this document previously carried no longer matches the configuration.)
 
 ## How It Works
 
@@ -11,20 +11,19 @@ When commits are pushed to `main`, the release workflow:
 3. ✅ Packages the extension as a VSIX file
 4. ✅ Creates a GitHub release with the VSIX attached
 5. ✅ Tags the release
-6. ❌ **Does NOT** push version changes back to the repository
+6. ✅ Commits the `package.json` + `CHANGELOG.md` bump back to `main` (`chore(release): x.y.z [skip ci]`)
 
-## Why No-Commit Mode?
+## Requirements
 
-We use no-commit mode because:
+With-commit mode pushes to the protected `main` branch, so it needs:
 
-- GitHub Rulesets protect the main branch
-- No need to configure PAT bypass for pushing commits
-- Simpler workflow with fewer permissions required
-- Version bumps are manual and intentional
+- A **`GH_PAT` secret with ruleset bypass** for `main` (see `docs/RULESETS_QUICK_FIX.md`). PATs expire — when every release run fails at git operations with `could not read Username for 'https://github.com'`, the PAT has expired and must be regenerated.
+- **`VSCE_PAT`** for the Marketplace publish (Azure DevOps PATs expire after at most one year).
+- The MCP CLI release (`mcp-release.yml`) additionally needs **`NPM_TOKEN`** for `npm publish` of `@plutojl/cli`, and an `mcp-v*` baseline tag — without a previous tag semantic-release computes 1.0.0 for its first release.
 
 ## Managing Versions
 
-Since semantic-release doesn't update `package.json` automatically, you need to update versions manually.
+Versions are bumped by semantic-release from conventional commit messages; manual edits of `package.json` are only needed to override the computed version.
 
 ### Before Making a Release
 
