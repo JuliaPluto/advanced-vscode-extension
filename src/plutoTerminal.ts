@@ -25,6 +25,9 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
   private inputBuffer = "";
   private cursorPosition = 0; // Position in the input buffer
   private isExecuting = false;
+  // True only while our snippet is actually running in Pluto (not while
+  // queued behind other cells in waitForIdle)
+  private isRunningInPluto = false;
   // Bumped on Ctrl+C and on each new execution; stale executions compare
   // against it before touching shared terminal state
   private executionGeneration = 0;
@@ -275,11 +278,17 @@ using InteractiveUtils
       if (this.isExecuting) {
         this.write("\r\n\x1b[31m^C\x1b[0m\r\n");
         // Invalidate the in-flight execution so its completion doesn't
-        // clobber state or print a stray prompt, and ask Pluto to
-        // interrupt the Julia-side computation
+        // clobber state or print a stray prompt
         this.executionGeneration++;
         this.isExecuting = false;
-        this.interruptExecution();
+        // Pluto only offers a notebook-wide interrupt, which would kill
+        // unrelated editor executions — send it only when our snippet is
+        // actually running; a snippet still queued behind other cells is
+        // cancelled by the generation bump alone
+        if (this.isRunningInPluto) {
+          this.interruptExecution();
+        }
+        this.isRunningInPluto = false;
         this.writePrompt();
       } else {
         this.inputBuffer = "";
@@ -550,7 +559,9 @@ using InteractiveUtils
       }
 
       // Execute code ephemerally using PlutoManager
+      this.isRunningInPluto = true;
       const result = await this.plutoManager.executeCodeEphemeral(worker, code);
+      this.isRunningInPluto = false;
 
       // Render output — unless the user cancelled with Ctrl+C meanwhile
       if (generation === this.executionGeneration) {
@@ -570,6 +581,7 @@ using InteractiveUtils
       // a stale completion must not reset state or print another prompt
       if (generation === this.executionGeneration) {
         this.isExecuting = false;
+        this.isRunningInPluto = false;
         this.write("\r\n");
         this.writePrompt();
       }
