@@ -34,6 +34,8 @@ function runProcess(
 export class NodeServerManager implements IPlutoServerManager {
   private juliaProcess?: ChildProcess;
   private actualPort: number;
+  /** Port the manager last heard about; every change is reported, including back to the default. */
+  private lastReportedPort: number;
   private starting = false;
   private onStopCallback?: () => void;
   private onPortChangedCallback?: (port: number) => void;
@@ -45,6 +47,7 @@ export class NodeServerManager implements IPlutoServerManager {
     private readonly options: { update?: boolean } = {}
   ) {
     this.actualPort = port;
+    this.lastReportedPort = port;
   }
 
   /** "default" (or "system") means: no juliaup channel pin, use whatever `julia` is. */
@@ -62,6 +65,19 @@ export class NodeServerManager implements IPlutoServerManager {
 
   onPortChanged(callback: (port: number) => void): void {
     this.onPortChangedCallback = callback;
+  }
+
+  /**
+   * Record the port the server actually uses and tell the manager when it
+   * differs from what it last heard — a return to the default port after
+   * a run on an alternative one is a change too.
+   */
+  private setActualPort(port: number): void {
+    this.actualPort = port;
+    if (port !== this.lastReportedPort) {
+      this.lastReportedPort = port;
+      this.onPortChangedCallback?.(port);
+    }
   }
 
   getActualPort(): number {
@@ -89,13 +105,10 @@ export class NodeServerManager implements IPlutoServerManager {
         console.log(
           `[pluto] Port ${this.port} is in use, finding alternative...`
         );
-        this.actualPort = await findAvailablePort(this.port);
+        this.setActualPort(await findAvailablePort(this.port));
         console.log(`[pluto] Using port ${this.actualPort}`);
-        if (this.actualPort !== this.port && this.onPortChangedCallback) {
-          this.onPortChangedCallback(this.actualPort);
-        }
       } else {
-        this.actualPort = this.port;
+        this.setActualPort(this.port);
       }
 
       // 2. Check Julia is available
@@ -203,7 +216,7 @@ export class NodeServerManager implements IPlutoServerManager {
         console.log(`[pluto] Julia process exited with code ${code}`);
         this.juliaProcess = undefined;
         this.starting = false;
-        this.actualPort = this.port;
+        this.setActualPort(this.port);
         this.onStopCallback?.();
       });
 
@@ -252,7 +265,7 @@ export class NodeServerManager implements IPlutoServerManager {
       }
     });
     this.juliaProcess = undefined;
-    this.actualPort = this.port;
+    this.setActualPort(this.port);
   }
 
   private async tryJuliaHubAuth(
