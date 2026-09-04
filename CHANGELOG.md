@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.0...v0.5.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **mcp:** read_cell_output honours the requested file extension; stop Julia first on shutdown ([#49](https://github.com/JuliaPluto/advanced-vscode-extension/issues/49)) ([c37bc47](https://github.com/JuliaPluto/advanced-vscode-extension/commit/c37bc478b65550f7f402b5825576899a71ec4723))
+
 # [0.5.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.4.0...v0.5.0) (2026-09-04)
 
 ### Features
