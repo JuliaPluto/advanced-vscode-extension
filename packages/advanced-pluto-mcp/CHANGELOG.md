@@ -1,3 +1,15 @@
+# [0.9.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-09-04)
+
+
+### Bug Fixes
+
+* **server:** report the Pluto port to the manager when it returns to the default ([ca8dd48](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ca8dd488e7b2ef3ca76b3ffe3ac556a0cd1b0143))
+
+
+### Features
+
+* **notebook:** show Pluto's hidden cells with their code collapsed ([47b4c42](https://github.com/JuliaPluto/advanced-vscode-extension/commit/47b4c42916defc42a6704f3a1f3ee639b51742d3))
+
 # [0.8.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.7.1...mcp-v0.8.0) (2026-09-04)
 
 ### Bug Fixes

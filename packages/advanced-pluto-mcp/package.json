@@ -1,6 +1,6 @@
 {
   "name": "@plutojl/cli",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Command-line tool for Pluto.jl notebooks — start a Pluto server and drive notebooks from your terminal; also serves MCP for AI assistants. Run with npx @plutojl/cli",
   "license": "MIT",
   "repository": {
