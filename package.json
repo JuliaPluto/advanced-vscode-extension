@@ -59,7 +59,7 @@
         "pluto-notebook.foldHiddenCells": {
           "type": "boolean",
           "default": true,
-          "description": "Show cells that Pluto marks as hidden (╟─ in the file) with their code collapsed, as Pluto does. Collapsing or expanding a cell's input in VS Code updates the notebook's fold state in Pluto."
+          "description": "Show cells that Pluto marks as hidden (╟─ in the file) with their code collapsed, as Pluto does. Folds made in Pluto or by fold_cell collapse the cell in the editor; collapsing a cell by hand in VS Code does not change the file."
         },
         "pluto-notebook.juliaVersion": {
           "type": "string",

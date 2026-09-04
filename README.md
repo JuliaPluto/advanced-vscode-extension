@@ -39,7 +39,7 @@ This extension contributes the following settings:
 - `pluto-notebook.port`: Port number for the Pluto server (default: 1234)
 - `pluto-notebook.mcpPort`: Port number for the MCP HTTP server (default: 3100)
 - `pluto-notebook.autoStartMcpServer`: Automatically start the MCP HTTP server when the extension activates (default: true)
-- `pluto-notebook.foldHiddenCells`: Show cells that Pluto marks as hidden (`╟─` in the file) with their code collapsed, as Pluto does (default: `true`). Collapsing or expanding a cell's input in VS Code updates the fold state in Pluto and in the saved file.
+- `pluto-notebook.foldHiddenCells`: Show cells that Pluto marks as hidden (`╟─` in the file) with their code collapsed, as Pluto does (default: `true`). Folds made in Pluto or by `fold_cell` collapse the cell in the editor; collapsing a cell by hand in VS Code does not change the file.
 - `pluto-notebook.juliaVersion`: Fallback Julia version for juliaup when the Julia extension is unavailable. Normally the active Julia channel (e.g. `julia.executablePath` in workspace settings, or the juliaup default) comes from the Julia extension.
 
 ## Available Commands

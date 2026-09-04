@@ -24,19 +24,9 @@ export interface ParsedNotebook {
 const fakeRegexTest = new RegExp(
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-7][0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 );
-export interface SerializerOptions {
-  /** Map Pluto's folded state to VS Code's collapsed-input state, both ways. */
-  foldHiddenCells: boolean;
-}
-
-export const DEFAULT_SERIALIZER_OPTIONS: SerializerOptions = {
-  foldHiddenCells: true,
-};
-
 export function createVsCodeCellFromPlutoCell(
   notebookData: NotebookData,
-  plutoCellId: string,
-  options: SerializerOptions = DEFAULT_SERIALIZER_OPTIONS
+  plutoCellId: string
 ): vscode.NotebookCellData | null {
   // Validate UUID format and check cell exists
   const cellInput = notebookData.cell_inputs[plutoCellId];
@@ -98,24 +88,17 @@ export function createVsCodeCellFromPlutoCell(
   // pluto_cell_id and code_folded come after the spread so values from the
   // cell marker/input always win over stale keys inside file metadata
   // (files written by older versions embedded pluto_cell_id as metadata)
-  const codeFolded = cellInput.code_folded ?? false;
   cellData.metadata = {
     ...cellInput.metadata,
     pluto_cell_id: plutoCellId,
-    code_folded: codeFolded,
-    // VS Code collapses a cell's input when this key is set, so Pluto's
-    // folded cells look the same in both editors
-    ...(options.foldHiddenCells && codeFolded ? { inputCollapsed: true } : {}),
+    code_folded: cellInput.code_folded ?? false,
   };
   return cellData;
 }
 /**
  * Parse a Pluto notebook file and extract cells
  */
-export function parsePlutoNotebook(
-  content: string,
-  options: SerializerOptions = DEFAULT_SERIALIZER_OPTIONS
-): ParsedNotebook {
+export function parsePlutoNotebook(content: string): ParsedNotebook {
   const notebookData = parse(content);
   const cells: vscode.NotebookCellData[] = [];
   if (isNotDefined(notebookData)) {
@@ -128,7 +111,7 @@ export function parsePlutoNotebook(
   const cell_order =
     notebookData.cell_order ?? Object.keys(notebookData.cell_inputs);
   for (const cellId of cell_order) {
-    const cell = createVsCodeCellFromPlutoCell(notebookData, cellId, options);
+    const cell = createVsCodeCellFromPlutoCell(notebookData, cellId);
     if (isNotDefined(cell)) {
       continue;
     }
@@ -149,8 +132,7 @@ export function parsePlutoNotebook(
 export function serializePlutoNotebook(
   cells: vscode.NotebookCellData[],
   notebookId?: string,
-  plutoVersion?: string,
-  options: SerializerOptions = DEFAULT_SERIALIZER_OPTIONS
+  plutoVersion?: string
 ): string {
   const cellInputs: Record<string, PlutoCellData> = {};
   const cellOrder: string[] = [];
@@ -174,13 +156,9 @@ export function serializePlutoNotebook(
       unknown
     >;
     delete plutoMetadata.pluto_cell_id;
-    // The editor's collapsed state is the user's latest word on folding
-    const collapsed = plutoMetadata.inputCollapsed;
-    const codeFolded =
-      options.foldHiddenCells && typeof collapsed === "boolean"
-        ? collapsed
-        : plutoMetadata.code_folded === true;
+    const codeFolded = plutoMetadata.code_folded === true;
     delete plutoMetadata.code_folded;
+    // Editor-internal keys, never part of a Pluto cell
     delete plutoMetadata.inputCollapsed;
     delete plutoMetadata.outputCollapsed;
 

@@ -7,7 +7,7 @@ import type {
   NotebookData,
   UpdateEvent,
 } from "@plutojl/rainbow";
-import { formatCellOutput, serializerOptions } from "./serializer.ts";
+import { formatCellOutput, foldHiddenCellsEnabled } from "./serializer.ts";
 import {
   extractMarkdownContent,
   createVsCodeCellFromPlutoCell,
@@ -74,6 +74,8 @@ export class PlutoNotebookController {
   private readonly selectedNotebooks: Set<string> = new Set();
   private readonly selectionAttempts: Map<string, Promise<void>> = new Map();
   private readonly listeners: vscode.Disposable[] = [];
+  /** Notebooks whose folded cells have been collapsed in an editor once. */
+  private readonly foldsApplied: Set<string> = new Set();
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
@@ -165,6 +167,7 @@ export class PlutoNotebookController {
         for (const editor of editors) {
           if (editor.notebook.notebookType === this.notebookType) {
             void this.ensureSelected(editor.notebook);
+            void this.applyFoldsOnce(editor.notebook);
           }
         }
       })
@@ -851,38 +854,64 @@ export class PlutoNotebookController {
    * A patch matching the cell's current text is an echo and is dropped.
    */
   /**
-   * Set a cell's fold-related metadata in the document. code_folded is
-   * what the serializer writes; inputCollapsed is what VS Code displays.
+   * Collapse or expand cells' input in the editors showing a notebook.
+   * VS Code keeps this state inside the editor and exposes it only
+   * through its collapse/expand commands, which take cell index ranges.
    */
-  private async setCellFoldMetadata(
+  private async setInputCollapsed(
     notebook: vscode.NotebookDocument,
-    cell: vscode.NotebookCell,
-    folded: boolean,
-    collapse: boolean
+    cells: vscode.NotebookCell[],
+    collapsed: boolean
   ): Promise<void> {
-    const current = cell.metadata ?? {};
-    const next: Record<string, unknown> = { ...current, code_folded: folded };
-    if (collapse) {
-      next.inputCollapsed = folded;
-    } else {
-      delete next.inputCollapsed;
-    }
-    if (
-      current.code_folded === next.code_folded &&
-      current.inputCollapsed === next.inputCollapsed
-    ) {
+    if (cells.length === 0) {
       return;
     }
-    const notebookPath = notebook.uri.fsPath;
-    this.beginRemoteEdit(notebookPath);
+    const shown = vscode.window.visibleNotebookEditors.some(
+      (e) => e.notebook === notebook
+    );
+    if (!shown) {
+      return;
+    }
+    await vscode.commands.executeCommand(
+      collapsed
+        ? "notebook.cell.collapseCellInput"
+        : "notebook.cell.expandCellInput",
+      {
+        ranges: cells.map((c) => ({ start: c.index, end: c.index + 1 })),
+        document: notebook.uri,
+      }
+    );
+  }
+
+  private foldedCells(
+    notebook: vscode.NotebookDocument
+  ): vscode.NotebookCell[] {
+    return notebook.getCells().filter((c) => c.metadata?.code_folded === true);
+  }
+
+  /** Collapse the folded cells the first time a notebook is shown. */
+  private async applyFoldsOnce(
+    notebook: vscode.NotebookDocument
+  ): Promise<void> {
+    const key = notebook.uri.toString();
+    if (!foldHiddenCellsEnabled() || this.foldsApplied.has(key)) {
+      return;
+    }
+    const shown = vscode.window.visibleNotebookEditors.some(
+      (e) => e.notebook === notebook
+    );
+    if (!shown) {
+      return;
+    }
+    this.foldsApplied.add(key);
     try {
-      const edit = new vscode.WorkspaceEdit();
-      edit.set(notebook.uri, [
-        vscode.NotebookEdit.updateCellMetadata(cell.index, next),
-      ]);
-      await vscode.workspace.applyEdit(edit);
-    } finally {
-      this.endRemoteEditSoon(notebookPath);
+      await this.setInputCollapsed(notebook, this.foldedCells(notebook), true);
+    } catch (error) {
+      this.outputChannel.appendLine(
+        `[FoldSync] Could not collapse folded cells: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -896,55 +925,41 @@ export class PlutoNotebookController {
     if (!cell) {
       return;
     }
-    await this.setCellFoldMetadata(
-      notebook,
-      cell,
-      folded,
-      serializerOptions().foldHiddenCells
-    );
+    if (cell.metadata?.code_folded !== folded) {
+      const notebookPath = notebook.uri.fsPath;
+      this.beginRemoteEdit(notebookPath);
+      try {
+        const edit = new vscode.WorkspaceEdit();
+        edit.set(notebook.uri, [
+          vscode.NotebookEdit.updateCellMetadata(cell.index, {
+            ...cell.metadata,
+            code_folded: folded,
+          }),
+        ]);
+        await vscode.workspace.applyEdit(edit);
+      } finally {
+        this.endRemoteEditSoon(notebookPath);
+      }
+    }
+    if (foldHiddenCellsEnabled()) {
+      await this.setInputCollapsed(notebook, [cell], folded);
+    }
     this.outputChannel.appendLine(
       `[FoldSync] Cell ${cellId} ${folded ? "folded" : "unfolded"} from Pluto`
     );
   }
 
-  /** The user collapsed or expanded a cell's input in VS Code: fold it in Pluto. */
-  private async handleVscodeMetadataChange(
-    notebook: vscode.NotebookDocument,
-    cell: vscode.NotebookCell
-  ): Promise<void> {
-    if (!serializerOptions().foldHiddenCells) {
-      return;
-    }
-    const cellId = cell.metadata?.pluto_cell_id as CellId | undefined;
-    if (!cellId) {
-      return;
-    }
-    const collapsed = cell.metadata?.inputCollapsed === true;
-    if (collapsed === (cell.metadata?.code_folded === true)) {
-      return;
-    }
-    await this.setCellFoldMetadata(notebook, cell, collapsed, true);
-    const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
-    if (worker) {
-      await this.plutoManager.foldCell(worker, cellId, collapsed);
-      this.outputChannel.appendLine(
-        `[FoldSync] Cell ${cellId} ${collapsed ? "folded" : "unfolded"} in Pluto`
-      );
-    }
-  }
-
-  /** Re-apply the fold setting to every cell of an open notebook. */
+  /** The setting changed: collapse folded cells, or expand them all. */
   private async applyFoldSetting(
     notebook: vscode.NotebookDocument
   ): Promise<void> {
-    const collapse = serializerOptions().foldHiddenCells;
-    for (const cell of notebook.getCells()) {
-      await this.setCellFoldMetadata(
-        notebook,
-        cell,
-        cell.metadata?.code_folded === true,
-        collapse
-      );
+    const folded = this.foldedCells(notebook);
+    if (foldHiddenCellsEnabled()) {
+      this.foldsApplied.add(notebook.uri.toString());
+      await this.setInputCollapsed(notebook, folded, true);
+    } else {
+      this.foldsApplied.delete(notebook.uri.toString());
+      await this.setInputCollapsed(notebook, folded, false);
     }
   }
 
@@ -1179,6 +1194,7 @@ export class PlutoNotebookController {
     if (notebook.notebookType === "pluto-notebook") {
       this.outputChannel.appendLine(`Notebook opened: ${notebook.uri.fsPath}`);
       void this.ensureSelected(notebook);
+      void this.applyFoldsOnce(notebook);
 
       // Only initialize if server is running
       if (this.plutoManager.isRunning()) {
@@ -1389,14 +1405,6 @@ export class PlutoNotebookController {
       return;
     }
 
-    // A collapsed/expanded input is the user folding a cell — mirror it
-    // into Pluto so the file and the browser view agree
-    for (const change of event.cellChanges) {
-      if (change.metadata !== undefined) {
-        await this.handleVscodeMetadataChange(notebook, change.cell);
-      }
-    }
-
     // A drag-reorder surfaces as the same pluto_cell_id in both the
     // removed and added lists — route those to moveCells; only genuine
     // additions and deletions go to the add/remove handlers
@@ -1456,6 +1464,7 @@ export class PlutoNotebookController {
    * Pluto's own UI may still be using the notebook.
    */
   public handleNotebookClosed(notebook: vscode.NotebookDocument): void {
+    this.foldsApplied.delete(notebook.uri.toString());
     if (notebook.notebookType !== "pluto-notebook") {
       return;
     }
