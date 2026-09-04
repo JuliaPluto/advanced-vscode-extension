@@ -1,9 +1,8 @@
 # [0.4.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.3.1...v0.4.0) (2026-09-04)
 
-
 ### Features
 
-* **cli:** status discovery, VS Code tool-server detection, strict args, cleaner help ([#46](https://github.com/JuliaPluto/advanced-vscode-extension/issues/46)) ([b114281](https://github.com/JuliaPluto/advanced-vscode-extension/commit/b114281edfe49c274851db5dde36a16a37c1cf94))
+- **cli:** status discovery, VS Code tool-server detection, strict args, cleaner help ([#46](https://github.com/JuliaPluto/advanced-vscode-extension/issues/46)) ([b114281](https://github.com/JuliaPluto/advanced-vscode-extension/commit/b114281edfe49c274851db5dde36a16a37c1cf94))
 
 ## [0.3.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.3.0...v0.3.1) (2026-09-04)
 
