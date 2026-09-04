@@ -64,6 +64,14 @@ jobs:
           echo "filename=$VSIX_FILE" >> $GITHUB_OUTPUT
           echo "Built VSIX file: $VSIX_FILE"
 
+      # The MCP CLI release may push its version-bump commits to main while
+      # this job runs; semantic-release refuses to publish from a branch
+      # that is behind its remote
+      - name: Sync with the tip of main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
