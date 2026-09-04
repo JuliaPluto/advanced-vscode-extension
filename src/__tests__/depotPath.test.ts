@@ -14,9 +14,11 @@ describe("resolveJuliaDepotPath", () => {
     }
   });
 
-  it("defaults to the home depot when unset", () => {
+  it("defaults to the home depot plus the bundled system depots when unset", () => {
     delete process.env.JULIA_DEPOT_PATH;
-    expect(resolveJuliaDepotPath()).toBe(path.join(os.homedir(), ".julia"));
+    expect(resolveJuliaDepotPath()).toBe(
+      path.join(os.homedir(), ".julia") + separator
+    );
   });
 
   it("expands a leading ~ to the home directory (issue #34)", () => {
@@ -38,8 +40,10 @@ describe("resolveJuliaDepotPath", () => {
     );
   });
 
-  it("falls back to the home depot for relative entries", () => {
+  it("falls back to the default depots for relative entries", () => {
     process.env.JULIA_DEPOT_PATH = "relative/depot";
-    expect(resolveJuliaDepotPath()).toBe(path.join(os.homedir(), ".julia"));
+    expect(resolveJuliaDepotPath()).toBe(
+      path.join(os.homedir(), ".julia") + separator
+    );
   });
 });

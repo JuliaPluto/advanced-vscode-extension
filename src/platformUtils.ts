@@ -17,7 +17,10 @@ export function isWindows(): boolean {
  * Julia requires absolute depot entries — a literal "~" is treated as a
  * relative directory named "~" (issue #34). Respects an existing
  * absolute setting, expands "~"-prefixed entries, and falls back to
- * the default depot in the user's home directory.
+ * the default depot in the user's home directory followed by an empty
+ * entry, which Julia expands to the depots bundled with the Julia
+ * install. Those bundled depots hold artifacts that some distributions
+ * (e.g. Dyad's Julia) load from their system image at startup.
  */
 export function resolveJuliaDepotPath(): string {
   const separator = isWindows() ? ";" : ":";
@@ -36,7 +39,7 @@ export function resolveJuliaDepotPath(): string {
     }
   }
 
-  return path.join(os.homedir(), ".julia");
+  return path.join(os.homedir(), ".julia") + separator;
 }
 
 /**
