@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.6.0...mcp-v0.7.0) (2026-09-04)
+
+
+### Features
+
+* **mcp:** read_cell_output tool; cell results summarize outputs instead of inlining them ([#48](https://github.com/JuliaPluto/advanced-vscode-extension/issues/48)) ([0a78865](https://github.com/JuliaPluto/advanced-vscode-extension/commit/0a788651694487f95898fd7a522b61be83e653c5))
+
 # [0.6.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.5.5...mcp-v0.6.0) (2026-09-04)
 
 ### Bug Fixes
