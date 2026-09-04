@@ -56,6 +56,11 @@
           "default": true,
           "description": "Automatically start the MCP HTTP server when the extension activates"
         },
+        "pluto-notebook.foldHiddenCells": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show cells that Pluto marks as hidden (╟─ in the file) with their code collapsed, as Pluto does. Collapsing or expanding a cell's input in VS Code updates the notebook's fold state in Pluto."
+        },
         "pluto-notebook.juliaVersion": {
           "type": "string",
           "default": "",
