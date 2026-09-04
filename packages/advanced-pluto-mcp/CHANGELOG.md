@@ -1,14 +1,12 @@
 # [0.8.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.7.1...mcp-v0.8.0) (2026-09-04)
 
-
 ### Bug Fixes
 
-* **notebook:** bind the controller to a notebook before rendering results that arrive first ([5a6498b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5a6498ba4cf8b0dedf2d7177d951280b95347579))
-
+- **notebook:** bind the controller to a notebook before rendering results that arrive first ([5a6498b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5a6498ba4cf8b0dedf2d7177d951280b95347579))
 
 ### Features
 
-* **cli:** argument files and relative-path resolution; cell edits and runs now go through Pluto ([f9aa28b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f9aa28bbce95c2a42027670a2955550224767ae2))
+- **cli:** argument files and relative-path resolution; cell edits and runs now go through Pluto ([f9aa28b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f9aa28bbce95c2a42027670a2955550224767ae2))
 
 ## [0.7.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.7.0...mcp-v0.7.1) (2026-09-04)
 
