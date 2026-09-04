@@ -1,8 +1,17 @@
 import * as vscode from "vscode";
 import {
+  type SerializerOptions,
   parsePlutoNotebook,
   serializePlutoNotebook,
 } from "./plutoSerializer.ts";
+
+export function serializerOptions(): SerializerOptions {
+  return {
+    foldHiddenCells: vscode.workspace
+      .getConfiguration("pluto-notebook")
+      .get<boolean>("foldHiddenCells", true),
+  };
+}
 import type { CellResultData } from "@plutojl/rainbow";
 
 export function formatCellOutput(
@@ -22,7 +31,7 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
     const contents = new TextDecoder().decode(content);
 
     try {
-      const parsed = parsePlutoNotebook(contents);
+      const parsed = parsePlutoNotebook(contents, serializerOptions());
 
       // Create notebook data with metadata
       const notebookData = new vscode.NotebookData(parsed.cells);
@@ -59,7 +68,8 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
     const serialized = serializePlutoNotebook(
       data.cells,
       data.metadata?.pluto_notebook_id as string,
-      data.metadata?.pluto_version as string
+      data.metadata?.pluto_version as string,
+      serializerOptions()
     );
 
     return new TextEncoder().encode(serialized);

@@ -7,7 +7,7 @@ import type {
   NotebookData,
   UpdateEvent,
 } from "@plutojl/rainbow";
-import { formatCellOutput } from "./serializer.ts";
+import { formatCellOutput, serializerOptions } from "./serializer.ts";
 import {
   extractMarkdownContent,
   createVsCodeCellFromPlutoCell,
@@ -150,6 +150,15 @@ export class PlutoNotebookController {
           void this.renderCurrentState(notebook);
         } else {
           this.selectedNotebooks.delete(key);
+        }
+      }),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("pluto-notebook.foldHiddenCells")) {
+          for (const notebook of vscode.workspace.notebookDocuments) {
+            if (notebook.notebookType === this.notebookType) {
+              void this.applyFoldSetting(notebook);
+            }
+          }
         }
       }),
       vscode.window.onDidChangeVisibleNotebookEditors((editors) => {
@@ -841,6 +850,104 @@ export class PlutoNotebookController {
    * Applies a Pluto-side code edit to the matching VSCode cell's text.
    * A patch matching the cell's current text is an echo and is dropped.
    */
+  /**
+   * Set a cell's fold-related metadata in the document. code_folded is
+   * what the serializer writes; inputCollapsed is what VS Code displays.
+   */
+  private async setCellFoldMetadata(
+    notebook: vscode.NotebookDocument,
+    cell: vscode.NotebookCell,
+    folded: boolean,
+    collapse: boolean
+  ): Promise<void> {
+    const current = cell.metadata ?? {};
+    const next: Record<string, unknown> = { ...current, code_folded: folded };
+    if (collapse) {
+      next.inputCollapsed = folded;
+    } else {
+      delete next.inputCollapsed;
+    }
+    if (
+      current.code_folded === next.code_folded &&
+      current.inputCollapsed === next.inputCollapsed
+    ) {
+      return;
+    }
+    const notebookPath = notebook.uri.fsPath;
+    this.beginRemoteEdit(notebookPath);
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(notebook.uri, [
+        vscode.NotebookEdit.updateCellMetadata(cell.index, next),
+      ]);
+      await vscode.workspace.applyEdit(edit);
+    } finally {
+      this.endRemoteEditSoon(notebookPath);
+    }
+  }
+
+  /** Pluto folded or unfolded a cell (browser UI, fold_cell): reflect it in the editor. */
+  private async _applyRemoteFold(
+    notebook: vscode.NotebookDocument,
+    cellId: CellId,
+    folded: boolean
+  ): Promise<void> {
+    const cell = this.getCellByPlutoId(notebook, cellId);
+    if (!cell) {
+      return;
+    }
+    await this.setCellFoldMetadata(
+      notebook,
+      cell,
+      folded,
+      serializerOptions().foldHiddenCells
+    );
+    this.outputChannel.appendLine(
+      `[FoldSync] Cell ${cellId} ${folded ? "folded" : "unfolded"} from Pluto`
+    );
+  }
+
+  /** The user collapsed or expanded a cell's input in VS Code: fold it in Pluto. */
+  private async handleVscodeMetadataChange(
+    notebook: vscode.NotebookDocument,
+    cell: vscode.NotebookCell
+  ): Promise<void> {
+    if (!serializerOptions().foldHiddenCells) {
+      return;
+    }
+    const cellId = cell.metadata?.pluto_cell_id as CellId | undefined;
+    if (!cellId) {
+      return;
+    }
+    const collapsed = cell.metadata?.inputCollapsed === true;
+    if (collapsed === (cell.metadata?.code_folded === true)) {
+      return;
+    }
+    await this.setCellFoldMetadata(notebook, cell, collapsed, true);
+    const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+    if (worker) {
+      await this.plutoManager.foldCell(worker, cellId, collapsed);
+      this.outputChannel.appendLine(
+        `[FoldSync] Cell ${cellId} ${collapsed ? "folded" : "unfolded"} in Pluto`
+      );
+    }
+  }
+
+  /** Re-apply the fold setting to every cell of an open notebook. */
+  private async applyFoldSetting(
+    notebook: vscode.NotebookDocument
+  ): Promise<void> {
+    const collapse = serializerOptions().foldHiddenCells;
+    for (const cell of notebook.getCells()) {
+      await this.setCellFoldMetadata(
+        notebook,
+        cell,
+        cell.metadata?.code_folded === true,
+        collapse
+      );
+    }
+  }
+
   private async _applyRemoteCodeEdit(
     notebook: vscode.NotebookDocument,
     cellId: CellId,
@@ -986,9 +1093,22 @@ export class PlutoNotebookController {
                   );
                 });
               }
-              // Other cell_inputs fields (cell_id, code_folded, metadata)
-              // have no document representation to update; structural
-              // add/remove is handled via cell_order sync
+              if (rest[1] === "code_folded" && patch.op === "replace") {
+                void this._applyRemoteFold(
+                  notebook,
+                  rest[0] as CellId,
+                  patch.value === true
+                ).catch((error) => {
+                  this.outputChannel.appendLine(
+                    `[FoldSync] Failed for ${rest[0]}: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`
+                  );
+                });
+              }
+              // Other cell_inputs fields (cell_id, metadata) have no
+              // document representation; structural add/remove is
+              // handled via cell_order sync
               break;
             }
             case "cell_results":
@@ -1269,11 +1389,13 @@ export class PlutoNotebookController {
       return;
     }
 
-    // Process cell changes
-    // for (const _change of event.cellChanges) {
-    // Handle cell metadata or output changes - we don't need to do anything here
-    // The worker will handle these through its update events
-    // }
+    // A collapsed/expanded input is the user folding a cell — mirror it
+    // into Pluto so the file and the browser view agree
+    for (const change of event.cellChanges) {
+      if (change.metadata !== undefined) {
+        await this.handleVscodeMetadataChange(notebook, change.cell);
+      }
+    }
 
     // A drag-reorder surfaces as the same pluto_cell_id in both the
     // removed and added lists — route those to moveCells; only genuine
