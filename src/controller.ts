@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+
+const EXTENSION_ID = "juliapluto-pankgeorg.advanced-vscode-extension";
 import type { PlutoManager } from "./plutoManager.ts";
 import type {
   CellResultData,
@@ -64,11 +66,20 @@ export class PlutoNotebookController {
   // last_run_timestamp of the most recently rendered result per cell;
   // a result is re-rendered only when its stamp differs
   private readonly lastRenderedStamp: Map<CellId, number> = new Map();
+  /**
+   * Notebooks VS Code has bound this controller to. Cell executions can
+   * only be created for bound notebooks; results that arrive earlier are
+   * rendered from the worker's state once the binding happens.
+   */
+  private readonly selectedNotebooks: Set<string> = new Set();
+  private readonly selectionAttempts: Map<string, Promise<void>> = new Map();
+  private readonly listeners: vscode.Disposable[] = [];
 
   private executeHandler = (
     cells: vscode.NotebookCell[],
     notebook: vscode.NotebookDocument
   ): void | Thenable<void> => {
+    this.selectedNotebooks.add(notebook.uri.toString());
     for (const cell of cells) {
       void this._doExecution(cell, notebook);
     }
@@ -127,6 +138,28 @@ export class PlutoNotebookController {
     this.controller.supportsExecutionOrder = true;
     this.controller.executeHandler = this.executeHandler;
     this.controller.interruptHandler = this.interruptHandler;
+
+    this.listeners.push(
+      this.controller.onDidChangeSelectedNotebooks(({ notebook, selected }) => {
+        const key = notebook.uri.toString();
+        if (selected) {
+          this.selectedNotebooks.add(key);
+          this.outputChannel.appendLine(
+            `[KERNEL] Bound to ${notebook.uri.fsPath}`
+          );
+          void this.renderCurrentState(notebook);
+        } else {
+          this.selectedNotebooks.delete(key);
+        }
+      }),
+      vscode.window.onDidChangeVisibleNotebookEditors((editors) => {
+        for (const editor of editors) {
+          if (editor.notebook.notebookType === this.notebookType) {
+            void this.ensureSelected(editor.notebook);
+          }
+        }
+      })
+    );
 
     // Setup messaging bridge between controller and renderer
     this.setupMessaging();
@@ -253,6 +286,69 @@ export class PlutoNotebookController {
   /**
    * Subscribe to worker updates, cleaning up any existing subscription
    */
+  private isSelectedFor(notebook: vscode.NotebookDocument): boolean {
+    return this.selectedNotebooks.has(notebook.uri.toString());
+  }
+
+  /**
+   * Ask VS Code to bind this controller to the notebook. Binding normally
+   * happens when the user runs a cell; a notebook whose cells run first on
+   * the Pluto side (opened through the tool server, or auto-run on open)
+   * needs it requested explicitly before any output can be shown.
+   */
+  private ensureSelected(notebook: vscode.NotebookDocument): Promise<void> {
+    const key = notebook.uri.toString();
+    if (this.selectedNotebooks.has(key)) {
+      return Promise.resolve();
+    }
+    const pending = this.selectionAttempts.get(key);
+    if (pending) {
+      return pending;
+    }
+    const attempt = (async () => {
+      this.controller.updateNotebookAffinity(
+        notebook,
+        vscode.NotebookControllerAffinity.Preferred
+      );
+      const editor = vscode.window.visibleNotebookEditors.find(
+        (e) => e.notebook === notebook
+      );
+      if (!editor) {
+        return;
+      }
+      try {
+        await vscode.commands.executeCommand("notebook.selectKernel", {
+          notebookEditor: editor,
+          id: this.controllerId,
+          extension: EXTENSION_ID,
+        });
+      } catch (error) {
+        this.outputChannel.appendLine(
+          `[KERNEL] Could not select controller for ${notebook.uri.fsPath}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    })().finally(() => this.selectionAttempts.delete(key));
+    this.selectionAttempts.set(key, attempt);
+    return attempt;
+  }
+
+  /** Render every settled result the notebook's worker currently holds. */
+  private async renderCurrentState(
+    notebook: vscode.NotebookDocument
+  ): Promise<void> {
+    const notebookPath = notebook.uri.fsPath;
+    if (!this.workerSubscriptions.has(notebookPath)) {
+      return;
+    }
+    const worker = await this.plutoManager.getWorker(notebookPath);
+    const state = worker?.getState();
+    if (state) {
+      this.reconcileCellsFromState(notebook, state);
+    }
+  }
+
   private subscribeToWorker(
     notebookPath: string,
     notebook: vscode.NotebookDocument,
@@ -327,6 +423,10 @@ export class PlutoNotebookController {
     let execution = this.activeExecutions.get(cellId);
 
     if (!execution) {
+      if (!this.isSelectedFor(notebook)) {
+        void this.ensureSelected(notebook);
+        return undefined;
+      }
       this.outputChannel.appendLine(
         `[EXEC INIT] Starting initial execution for cell ${cellId}`
       );
@@ -378,6 +478,10 @@ export class PlutoNotebookController {
     cellId: CellId,
     state: CellResultData
   ): void {
+    if (!this.isSelectedFor(notebook)) {
+      void this.ensureSelected(notebook);
+      return;
+    }
     const now = Date.now();
     const runtimeMs = (state.runtime ?? 0) / 1e6;
     const execution = this.controller.createNotebookCellExecution(cell);
@@ -954,6 +1058,7 @@ export class PlutoNotebookController {
   ): Promise<void> {
     if (notebook.notebookType === "pluto-notebook") {
       this.outputChannel.appendLine(`Notebook opened: ${notebook.uri.fsPath}`);
+      void this.ensureSelected(notebook);
 
       // Only initialize if server is running
       if (this.plutoManager.isRunning()) {
@@ -1253,6 +1358,9 @@ export class PlutoNotebookController {
   }
 
   public dispose(): void {
+    for (const listener of this.listeners) {
+      listener.dispose();
+    }
     this.plutoManager.off("workerRecreated", this.onWorkerRecreated);
     this.plutoManager.off("serverStateChanged", this.onServerStateChanged);
     this.lastRenderedStamp.clear();
