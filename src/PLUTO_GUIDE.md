@@ -36,7 +36,7 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 Cell results (`create_cell`, `execute_cell`, `read_cell`, `execute_code`) summarize the output: text is cut at 4,000 characters, tree views at 8,000, and images come back as just their mime type and size. When you need the whole output, call `read_cell_output`:
 
 - `{"path": ..., "cell_id": ..., "as": "text"}` — full SVG/HTML markup, long text, or the tree as JSON.
-- `{"path": ..., "cell_id": ..., "as": "file"}` — writes the output to `<notebook>.assets/<cell_id>.<ext>` (or `output_path`) and returns the path. Read that file with your own tools to look at a plot.
+- `{"path": ..., "cell_id": ..., "as": "file"}` — writes the output to `<notebook>.assets/<cell_id>.<ext>` (or `output_path`) and returns the path. Naming `output_path` with `.png` renders a non-raster output (such as an SVG plot) to PNG; any other extension that does not match the output's type is refused.
 - `{"path": ..., "cell_id": ..., "as": "image"}` — returns the output as an image. SVG plots and any other value with an `image/png` show method are rendered to PNG inside the notebook first, so this works for Plots, Makie, and Images figures. Needs a local Pluto server.
 
 Prefer `as: "image"` to see what a plot looks like, and `as: "file"` when the picture should stay on disk.

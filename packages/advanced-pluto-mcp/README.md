@@ -124,7 +124,7 @@ Example `.plutomcp.json`:
 }
 ```
 
-Cell results keep outputs small: text is cut at 4,000 characters, Pluto tree views at 8,000, and images and other binary outputs are replaced by their size with a `body_note`. `read_cell_output` fetches the whole thing — `as: "text"` for markup and long text, `as: "file"` to write it next to the notebook (`<notebook>.assets/<cell_id>.<ext>`), or `as: "image"` to get a picture; SVG plots and other non-raster values are rendered to PNG inside the notebook. From the CLI, image results are saved to a file (`--out`) rather than printed.
+Cell results keep outputs small: text is cut at 4,000 characters, Pluto tree views at 8,000, and images and other binary outputs are replaced by their size with a `body_note`. `read_cell_output` fetches the whole thing — `as: "text"` for markup and long text, `as: "file"` to write it next to the notebook (`<notebook>.assets/<cell_id>.<ext>`; an `output_path` ending in `.png` renders SVG plots to PNG), or `as: "image"` to get a picture; SVG plots and other non-raster values are rendered to PNG inside the notebook. From the CLI, image results are saved to a file (`--out`) rather than printed.
 
 Unknown options, options that do not apply to the command, and invalid values are errors (exit code 2). Set `PLUTO_CLI_DEBUG=1` to see stack traces for unexpected failures. Colors follow `NO_COLOR` / `FORCE_COLOR`.
 

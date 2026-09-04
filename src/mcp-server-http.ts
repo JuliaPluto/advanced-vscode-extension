@@ -13,7 +13,6 @@ import { randomUUID } from "crypto";
 import {
   extensionFor,
   fullOutput,
-  isImageMime,
   isRasterMime,
   newNotebookSource,
   presentOutput,
@@ -1045,21 +1044,63 @@ export class PlutoMCPHttpServer {
           };
         }
 
+        const renderPng = async (): Promise<Buffer> => {
+          if (!this.plutoManager.isLocalServer()) {
+            throw new Error(
+              `The cell's output is ${output.mime}; rendering it to PNG needs a local Pluto server. Use as: "file" with a .${extensionFor(output.mime)} name to save the original output instead.`
+            );
+          }
+          const pngPath = join(
+            tmpdir(),
+            `pluto-cell-${cell_id}-${Date.now()}.png`
+          );
+          const render = await this.plutoManager.executeCodeEphemeral(
+            worker,
+            renderCellToPngCode(cell_id, pngPath)
+          );
+          if (render.errored) {
+            const why = fullOutput(render.output)?.text ?? "unknown error";
+            throw new Error(
+              `Could not render cell ${cell_id} as PNG: ${why.slice(0, 500)}. Use as: "file" with a .${extensionFor(output.mime)} name to save the ${output.mime} output instead.`
+            );
+          }
+          try {
+            return await readFile(pngPath);
+          } finally {
+            await rm(pngPath, { force: true });
+          }
+        };
+
         if (as === "file") {
+          const nativeExt = extensionFor(output.mime);
           const dest =
             output_path ??
             join(
               dirname(path),
               `${basename(path, extname(path))}.assets`,
-              `${cell_id}.${extensionFor(output.mime)}`
+              `${cell_id}.${nativeExt}`
             );
+          const wantedExt = extname(dest).slice(1).toLowerCase();
+          let bytes: Uint8Array = output.bytes;
+          let mime = output.mime;
+          if (wantedExt && wantedExt !== nativeExt) {
+            // The caller named a format: render to it when possible, refuse otherwise
+            if (wantedExt === "png" && !isRasterMime(output.mime)) {
+              bytes = await renderPng();
+              mime = "image/png";
+            } else if (!(wantedExt === "jpg" && nativeExt === "jpg")) {
+              throw new Error(
+                `The cell's output is ${output.mime}, which is written as .${nativeExt}; name the file that way, or use .png to have it rendered${isRasterMime(output.mime) ? "" : " inside the notebook"}.`
+              );
+            }
+          }
           await mkdir(dirname(dest), { recursive: true });
-          await writeFile(dest, output.bytes);
+          await writeFile(dest, bytes);
           return {
             content: [
               {
                 type: "text",
-                text: `Wrote ${output.bytes.length} bytes of ${output.mime} to ${dest}`,
+                text: `Wrote ${bytes.length} bytes of ${mime} to ${dest}`,
               },
             ],
           };
@@ -1081,31 +1122,7 @@ export class PlutoMCPHttpServer {
             ],
           };
         }
-        if (!this.plutoManager.isLocalServer()) {
-          throw new Error(
-            `The cell's output is ${output.mime}; rendering it to PNG needs a local Pluto server. Use as: "file" to save the ${isImageMime(output.mime) ? "image" : "output"} instead.`
-          );
-        }
-        const pngPath = join(
-          tmpdir(),
-          `pluto-cell-${cell_id}-${Date.now()}.png`
-        );
-        const render = await this.plutoManager.executeCodeEphemeral(
-          worker,
-          renderCellToPngCode(cell_id, pngPath)
-        );
-        if (render.errored) {
-          const why = fullOutput(render.output)?.text ?? "unknown error";
-          throw new Error(
-            `Could not render cell ${cell_id} as PNG: ${why.slice(0, 500)}. Use as: "file" to save the ${output.mime} output instead.`
-          );
-        }
-        let png: Buffer;
-        try {
-          png = await readFile(pngPath);
-        } finally {
-          await rm(pngPath, { force: true });
-        }
+        const png = await renderPng();
         return {
           content: [
             {
