@@ -17,7 +17,7 @@ describe("presentOutput", () => {
     expect(out.body).toBeNull();
     expect(out.bytes).toBe(13);
     expect(out.body_note).toMatch(/image\/svg\+xml output of 13 bytes/);
-    expect(out.body_note).toMatch(/read_cell_output/);
+    expect(out.body_note).toMatch(/as: "image" to see it/);
   });
 
   it("does the same for raster images and PDFs", () => {

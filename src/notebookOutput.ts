@@ -13,6 +13,8 @@ const HEAVY_MIME = /^(image\/|application\/pdf|application\/octet-stream)/;
 
 const FETCH_HINT =
   'use read_cell_output with as: "text", "file", or "image" to fetch it';
+const IMAGE_HINT =
+  'use read_cell_output with as: "image" to see it, or as: "file" / "text" for the original output';
 
 function bytesOf(value: unknown): Uint8Array | undefined {
   if (value instanceof Uint8Array) return value;
@@ -101,7 +103,7 @@ export function presentOutput(output: unknown): unknown {
       ...record,
       body: null,
       bytes: size,
-      body_note: `${mime} output${size !== undefined ? ` of ${size} bytes` : ""} is not returned inline; ${FETCH_HINT}`,
+      body_note: `${mime} output${size !== undefined ? ` of ${size} bytes` : ""} is not returned inline; ${IMAGE_MIME.test(mime) ? IMAGE_HINT : FETCH_HINT}`,
     };
   }
 

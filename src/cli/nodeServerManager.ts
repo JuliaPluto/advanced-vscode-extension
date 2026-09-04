@@ -184,6 +184,13 @@ export class NodeServerManager implements IPlutoServerManager {
         stdio: ["ignore", "pipe", "pipe"],
         env,
       });
+      // Whatever ends this process, Julia must not outlive it
+      const julia = this.juliaProcess;
+      process.once("exit", () => {
+        if (!julia.killed && julia.exitCode === null) {
+          julia.kill("SIGKILL");
+        }
+      });
 
       this.juliaProcess.stdout?.on("data", (data: Buffer) => {
         process.stderr.write(`[julia] ${data}`);

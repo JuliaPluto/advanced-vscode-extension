@@ -184,13 +184,14 @@ export async function run(config: CliConfig): Promise<void> {
       console.error("[cli] Shutdown is taking too long; exiting.");
       process.exit(1);
     }, 15_000).unref();
+    // Julia first: it is the process a user would otherwise find orphaned
     try {
-      await mcpServer.stop();
+      await plutoManager.stop();
     } catch {
       // ignore
     }
     try {
-      await plutoManager.stop();
+      await mcpServer.stop();
     } catch {
       // ignore
     }
