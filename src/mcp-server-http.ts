@@ -132,7 +132,7 @@ export class PlutoMCPHttpServer {
     // Learn Pluto Basics
     server.tool(
       "learn_pluto_basics",
-      "Get comprehensive guide on Pluto.jl notebook structure, reactivity, PlutoUI components, and best practices",
+      "Read this first. The guide to working with Pluto notebooks through these tools: the recommended workflow, reactivity rules (one definition per variable), package environments — including notebooks inside a Julia project that load a local package — how paths work inside Pluto, PlutoUI, and how to read outputs and plots.",
       {},
       async () => {
         return {
@@ -290,7 +290,7 @@ export class PlutoMCPHttpServer {
       "open_notebook",
       "Open a Pluto notebook file and create a worker session. The .jl file must already exist on disk — Pluto will not create a new file from a nonexistent path. Create the file first if needed.",
       {
-        path: z.string().describe("Path to the .jl notebook file"),
+        path: z.string().describe("Absolute path to the .jl notebook file"),
       },
       async ({ path }) => {
         if (!this.plutoManager.isConnected()) {
@@ -387,7 +387,7 @@ export class PlutoMCPHttpServer {
         }
 
         const outcome = await withExecutionTimeout(
-          this.plutoManager.executeCell(worker, cell_id, cellData.input.code)
+          this.plutoManager.runCell(worker, cell_id)
         );
 
         if (outcome.timedOut) {
@@ -497,7 +497,7 @@ export class PlutoMCPHttpServer {
     // Edit Cell
     server.tool(
       "edit_cell",
-      "Update the code of an existing cell. Note: editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through the MCP API. Use save_notebook to persist changes to disk.",
+      "Update the code of an existing cell and, by default, run it; the result returned is the cell's output after that run. Editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through these tools. Use save_notebook to persist changes to disk.",
       {
         path: z.string().describe("Path to the notebook"),
         cell_id: z.string().describe("UUID of the cell to edit"),
@@ -524,7 +524,7 @@ export class PlutoMCPHttpServer {
         if (run) {
           result = await this.plutoManager.executeCell(worker, cell_id, code);
         } else {
-          await worker.updateSnippetCode(cell_id, code, false);
+          await this.plutoManager.setCellCode(worker, cell_id, code);
         }
 
         return {
@@ -538,8 +538,8 @@ export class PlutoMCPHttpServer {
                   runtime: result?.runtime,
                   errored: result?.errored,
                   message: run
-                    ? "Cell updated and executed successfully"
-                    : "Cell code updated (not executed)",
+                    ? "Cell updated and executed"
+                    : "Cell code updated in Pluto (not executed; run it with execute_cell)",
                 },
                 null,
                 2

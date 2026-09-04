@@ -49,7 +49,8 @@ npx @plutojl/cli call list_cells '{"path": "/abs/path/nb.pluto.jl"}'
 - Notebooks are **not auto-saved**: call `save_notebook` to persist. Never edit the `.pluto.jl` on disk while it's open — Pluto owns the file.
 - Prefer plain `using PackageName` — Pluto installs packages automatically.
 - Long/slow cells: `edit_cell` with `run: false`, then `execute_cell`, then `wait_for_notebook_idle`.
-- Passing large code through `call`'s JSON argument fights shell escaping — for multi-line cells, write the `.jl` file and `open_notebook`, or pipe carefully quoted JSON.
+- Passing large code through `call`'s JSON argument fights shell escaping — write the arguments to a file and pass `@args.json`, or pipe JSON on stdin with `-`.
+- Notebook inside a Julia project that needs the local package? One environment cell: `Pkg.activate(mktempdir()); Pkg.develop(path=joinpath(@__DIR__, ".."))`, then the `using` lines in the same cell. Never `Pkg.add` into the user's project. `@__DIR__` is the notebook's directory; `pwd()` is not. Details: `call learn_pluto_basics`.
 - `call --timeout <seconds>` raises the client-side wait (default 120s); `--raw` prints the raw JSON response.
 - Cell results summarize outputs (images come back as a size only). To see a plot: `call read_cell_output '{"path": ..., "cell_id": ..., "as": "image"}'` saves a PNG (`--out <file>` to name it) that you can Read; `"as": "file"` writes the original output next to the notebook; `"as": "text"` returns full markup or long text.
 
