@@ -402,7 +402,7 @@ x = 1`;
   });
 });
 
-describe("folded cells ↔ VS Code collapsed input", () => {
+describe("folded cells", () => {
   const src = `### A Pluto.jl notebook ###
 # v0.20.0
 
@@ -422,27 +422,18 @@ md"""
 # ╠═aaaaaaaa-0000-0000-0000-000000000001
 `;
 
-  it("collapses folded cells by default and leaves the rest alone", () => {
-    const parsed = parsePlutoNotebook(src);
-    const [title, code] = parsed.cells;
+  it("carries the fold marker as code_folded metadata", () => {
+    const [title, code] = parsePlutoNotebook(src).cells;
     expect(title.metadata?.code_folded).toBe(true);
-    expect(title.metadata?.inputCollapsed).toBe(true);
     expect(code.metadata?.code_folded).toBe(false);
-    expect(code.metadata?.inputCollapsed).toBeUndefined();
   });
 
-  it("does not touch the collapsed state when the option is off", () => {
-    const parsed = parsePlutoNotebook(src, { foldHiddenCells: false });
-    expect(parsed.cells[0].metadata?.code_folded).toBe(true);
-    expect(parsed.cells[0].metadata?.inputCollapsed).toBeUndefined();
-  });
-
-  it("writes the editor's collapsed state back as the fold marker", () => {
+  it("writes code_folded back as the fold marker and drops editor-internal keys", () => {
     const cells = parsePlutoNotebook(src).cells;
-    // user expanded the title cell and collapsed the code cell
-    cells[0].metadata = { ...cells[0].metadata, inputCollapsed: false };
+    cells[0].metadata = { ...cells[0].metadata, code_folded: false };
     cells[1].metadata = {
       ...cells[1].metadata,
+      code_folded: true,
       inputCollapsed: true,
       outputCollapsed: true,
     };
@@ -451,15 +442,5 @@ md"""
     expect(out).toContain("# ╟─aaaaaaaa-0000-0000-0000-000000000001");
     expect(out).not.toContain("inputCollapsed");
     expect(out).not.toContain("outputCollapsed");
-  });
-
-  it("ignores the collapsed state when the option is off", () => {
-    const cells = parsePlutoNotebook(src, { foldHiddenCells: false }).cells;
-    cells[0].metadata = { ...cells[0].metadata, inputCollapsed: false };
-    const out = serializePlutoNotebook(cells, "nb", "0.20.0", {
-      foldHiddenCells: false,
-    });
-    expect(out).toContain("# ╟─bbbbbbbb-0000-0000-0000-000000000002");
-    expect(out).not.toContain("inputCollapsed");
   });
 });
