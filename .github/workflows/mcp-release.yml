@@ -62,13 +62,25 @@ jobs:
       - name: Build CLI production bundle
         run: npm run build:production --workspace=packages/advanced-pluto-mcp
 
+      # The extension release may push its version-bump commits to main
+      # while this job runs; semantic-release refuses to publish from a
+      # branch that is behind its remote
+      - name: Sync with the tip of main
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      # Run from the package directory so its .releaserc.json is the only
+      # config semantic-release loads (the repository's own config would
+      # otherwise be merged in, plugins included)
       - name: Run semantic-release for MCP CLI
+        working-directory: packages/advanced-pluto-mcp
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            npx semantic-release --extends ./packages/advanced-pluto-mcp/.releaserc.json --dry-run
+            npx semantic-release --dry-run
           else
-            npx semantic-release --extends ./packages/advanced-pluto-mcp/.releaserc.json
+            npx semantic-release
           fi
