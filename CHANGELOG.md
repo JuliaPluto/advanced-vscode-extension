@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.6.0...v0.7.0) (2026-09-04)
+
+
+### Features
+
+* **notebook:** show Pluto's hidden cells with their code collapsed ([47b4c42](https://github.com/JuliaPluto/advanced-vscode-extension/commit/47b4c42916defc42a6704f3a1f3ee639b51742d3))
+
 # [0.6.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.2...v0.6.0) (2026-09-04)
 
 ### Features
