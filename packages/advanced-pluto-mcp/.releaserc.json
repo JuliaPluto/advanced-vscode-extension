@@ -7,14 +7,13 @@
     [
       "@semantic-release/changelog",
       {
-        "changelogFile": "packages/advanced-pluto-mcp/CHANGELOG.md"
+        "changelogFile": "CHANGELOG.md"
       }
     ],
     [
       "@semantic-release/npm",
       {
-        "npmPublish": false,
-        "pkgRoot": "packages/advanced-pluto-mcp"
+        "npmPublish": false
       }
     ],
     [
@@ -22,7 +21,7 @@
       {
         "assets": [
           {
-            "path": "packages/advanced-pluto-mcp/CHANGELOG.md",
+            "path": "CHANGELOG.md",
             "label": "MCP CLI Changelog"
           }
         ]
@@ -31,10 +30,7 @@
     [
       "@semantic-release/git",
       {
-        "assets": [
-          "packages/advanced-pluto-mcp/package.json",
-          "packages/advanced-pluto-mcp/CHANGELOG.md"
-        ],
+        "assets": ["package.json", "CHANGELOG.md"],
         "message": "chore(mcp-release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ]
