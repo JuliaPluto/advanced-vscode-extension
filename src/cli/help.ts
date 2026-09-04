@@ -71,6 +71,7 @@ export function helpText(): string {
         `How long to wait for the result ${dim("(default 120)")}`
       ),
       opt("--raw", "Print the raw JSON-RPC result"),
+      opt("--out <file>", "Where to save an image returned by the tool"),
       opt("--mcp-port <port>", "Tool server to talk to"),
     ]),
     "",

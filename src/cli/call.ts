@@ -4,7 +4,10 @@
  * Uses raw fetch + SSE parsing to avoid eventsource polyfill issues in CJS bundles.
  */
 
+import * as fs from "fs";
+import * as path from "path";
 import { VERSION } from "./config.ts";
+import { extensionFor } from "../notebookOutput.ts";
 import { bold, cyan, dim, err, yellow } from "./ui.ts";
 
 interface ToolSchema {
@@ -28,7 +31,12 @@ interface JsonRpcResponse {
   id: number;
   result?: {
     tools?: ToolInfo[];
-    content?: Array<{ type: string; text?: string }>;
+    content?: Array<{
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+    }>;
     isError?: boolean;
   };
   error?: { code: number; message: string };
@@ -278,13 +286,20 @@ export async function listTools(port: number, filter?: string): Promise<void> {
   );
 }
 
+export interface CallOptions {
+  raw: boolean;
+  timeoutMs: number;
+  /** Where to write image content; defaults to ./<cell_id or tool>.<ext>. */
+  out?: string;
+}
+
 export async function callTool(
   port: number,
   toolName: string,
   argsJson: string,
-  raw: boolean,
-  timeoutMs = 120000
+  options: CallOptions
 ): Promise<void> {
+  const { raw, timeoutMs, out } = options;
   let args: unknown;
   try {
     args = JSON.parse(argsJson);
@@ -316,9 +331,26 @@ export async function callTool(
   if (raw) {
     console.log(JSON.stringify(result, null, 2));
   } else {
+    let imageIndex = 0;
     for (const item of result?.content ?? []) {
       if (item.type === "text" && item.text) {
         console.log(item.text);
+      } else if (item.type === "image" && item.data) {
+        // Never print base64 to the terminal: save the image and say where
+        const ext = extensionFor(item.mimeType ?? "image/png");
+        const stem =
+          typeof (args as Record<string, unknown>).cell_id === "string"
+            ? String((args as Record<string, unknown>).cell_id)
+            : toolName;
+        const dest =
+          out ??
+          path.resolve(`${stem}${imageIndex ? `-${imageIndex}` : ""}.${ext}`);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, Buffer.from(item.data, "base64"));
+        console.log(
+          `${dim("image")} ${item.mimeType ?? ""} written to ${dest}`
+        );
+        imageIndex++;
       }
     }
   }

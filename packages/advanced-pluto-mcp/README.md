@@ -124,7 +124,7 @@ Example `.plutomcp.json`:
 }
 ```
 
-Cell outputs returned by tools are trimmed for the terminal: byte bodies are decoded (text, SVG) or base64-encoded (images), and bodies longer than 32,000 characters are truncated with a `body_note`; `export_notebook_html` writes the complete output.
+Cell results keep outputs small: text is cut at 4,000 characters, Pluto tree views at 8,000, and images and other binary outputs are replaced by their size with a `body_note`. `read_cell_output` fetches the whole thing — `as: "text"` for markup and long text, `as: "file"` to write it next to the notebook (`<notebook>.assets/<cell_id>.<ext>`), or `as: "image"` to get a picture; SVG plots and other non-raster values are rendered to PNG inside the notebook. From the CLI, image results are saved to a file (`--out`) rather than printed.
 
 Unknown options, options that do not apply to the command, and invalid values are errors (exit code 2). Set `PLUTO_CLI_DEBUG=1` to see stack traces for unexpected failures. Colors follow `NO_COLOR` / `FORCE_COLOR`.
 
@@ -149,7 +149,8 @@ These tools are callable from the command line via `call`, and exposed to AI ass
 | `get_notebook_url`        | Get the Pluto web UI URL for a notebook    |
 | `list_cells`              | List cells with IDs and execution status   |
 | `create_cell`             | Create and execute a new cell              |
-| `read_cell`               | Read cell code and output                  |
+| `read_cell`               | Read cell code and output (summarized)     |
+| `read_cell_output`        | Full output as text, a file, or an image   |
 | `edit_cell`               | Update cell code                           |
 | `execute_cell`            | Run an existing cell                       |
 | `delete_cell`             | Remove a cell                              |

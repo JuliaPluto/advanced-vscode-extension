@@ -21,6 +21,7 @@ export interface RawArgs {
   toolName?: string;
   toolArgs?: string;
   raw?: boolean;
+  out?: string;
   timeoutSeconds?: number;
   // status
   json?: boolean;
@@ -126,6 +127,11 @@ const FLAGS: Record<string, FlagSpec> = {
     commands: ["call"],
     value: false,
     apply: (a) => (a.raw = true),
+  },
+  "--out": {
+    commands: ["call"],
+    value: true,
+    apply: (a, v) => (a.out = v),
   },
   "--timeout": {
     commands: ["call", "status"],

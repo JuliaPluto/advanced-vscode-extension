@@ -51,6 +51,7 @@ npx @plutojl/cli call list_cells '{"path": "/abs/path/nb.pluto.jl"}'
 - Long/slow cells: `edit_cell` with `run: false`, then `execute_cell`, then `wait_for_notebook_idle`.
 - Passing large code through `call`'s JSON argument fights shell escaping — for multi-line cells, write the `.jl` file and `open_notebook`, or pipe carefully quoted JSON.
 - `call --timeout <seconds>` raises the client-side wait (default 120s); `--raw` prints the raw JSON response.
+- Cell results summarize outputs (images come back as a size only). To see a plot: `call read_cell_output '{"path": ..., "cell_id": ..., "as": "image"}'` saves a PNG (`--out <file>` to name it) that you can Read; `"as": "file"` writes the original output next to the notebook; `"as": "text"` returns full markup or long text.
 
 ## Finishing
 
