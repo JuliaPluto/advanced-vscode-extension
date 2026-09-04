@@ -1,3 +1,10 @@
+## [0.7.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.7.1...v0.7.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **notebook:** collapse folded cells through VS Code's own commands ([5955542](https://github.com/JuliaPluto/advanced-vscode-extension/commit/59555426dd5315a897e56dbed77e7383f3e33d4b))
+
 ## [0.7.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.7.0...v0.7.1) (2026-09-04)
 
 ### Bug Fixes
