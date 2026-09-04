@@ -1,11 +1,14 @@
 import esbuild from "esbuild";
-import { chmodSync, mkdirSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { join, dirname } from "path";
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const { version } = JSON.parse(
+  readFileSync(join(__dirname, "package.json"), "utf-8")
+);
 
 async function main() {
   mkdirSync("dist", { recursive: true });
@@ -19,6 +22,9 @@ async function main() {
     outfile: "dist/cli.cjs",
     banner: {
       js: "#!/usr/bin/env node",
+    },
+    define: {
+      __CLI_VERSION__: JSON.stringify(version),
     },
     minify: production,
     sourcemap: !production,

@@ -1,12 +1,15 @@
 import express from "express";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
-import { writeFile } from "fs/promises";
+import { existsSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
+import { dirname } from "path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
+import { newNotebookSource, presentOutput } from "./notebookOutput.ts";
 import type { PlutoManager } from "./plutoManager.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
@@ -50,6 +53,14 @@ async function withExecutionTimeout<T>(
  * HTTP/SSE-based MCP Server for Pluto Notebooks
  * This allows the extension and MCP clients to share the same PlutoManager instance
  */
+export interface McpServerOptions {
+  /** Move to a free port when the requested one is busy. */
+  dynamicPort?: boolean;
+  /** Which program runs this server; reported by /health. */
+  host?: "vscode" | "cli";
+  version?: string;
+}
+
 export class PlutoMCPHttpServer {
   private readonly app: Express;
   private httpServer?: HttpServer;
@@ -66,6 +77,8 @@ export class PlutoMCPHttpServer {
   private sessionSweeper?: ReturnType<typeof setInterval>;
   private readonly plutoManager: PlutoManager;
   private port: number;
+  private readonly host: "vscode" | "cli";
+  private readonly version: string | undefined;
   private readonly dynamicPort: boolean;
 
   /**
@@ -73,10 +86,16 @@ export class PlutoMCPHttpServer {
    * free one instead of failing (used by the extension so multiple VSCode
    * windows can coexist; the CLI stays strict so `tools`/`call` can find it)
    */
-  constructor(plutoManager: PlutoManager, port = 3100, dynamicPort = false) {
+  constructor(
+    plutoManager: PlutoManager,
+    port = 3100,
+    options: McpServerOptions = {}
+  ) {
     this.plutoManager = plutoManager;
     this.port = port;
-    this.dynamicPort = dynamicPort;
+    this.dynamicPort = options.dynamicPort ?? false;
+    this.host = options.host ?? "vscode";
+    this.version = options.version;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -86,7 +105,7 @@ export class PlutoMCPHttpServer {
     const server = new McpServer(
       {
         name: "pluto-notebook-mcp-server",
-        version: "0.0.1",
+        version: this.version ?? "0.0.1",
       },
       {
         capabilities: {
@@ -210,6 +229,48 @@ export class PlutoMCPHttpServer {
               text: stillRunning
                 ? "Warning: stop() returned but the server process may still be running. It should be force-killed shortly."
                 : "Pluto server stopped",
+            },
+          ],
+        };
+      }
+    );
+
+    // Create Notebook
+    server.tool(
+      "create_notebook",
+      "Create a new, empty Pluto notebook file at the given path (optionally with a markdown title cell) and open it. Fails if the file already exists — use open_notebook for existing files.",
+      {
+        path: z
+          .string()
+          .describe("Absolute path of the .pluto.jl or .jl file to create"),
+        title: z
+          .string()
+          .describe("Title for an initial markdown cell")
+          .optional(),
+      },
+      async ({ path, title }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error(
+            "Pluto server is not running. Start it first with start_pluto_server"
+          );
+        }
+        if (existsSync(path)) {
+          throw new Error(
+            `${path} already exists — use open_notebook to open it`
+          );
+        }
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, newNotebookSource(title), "utf-8");
+
+        const worker = await this.plutoManager.getWorker(path);
+        if (!worker) {
+          throw new Error("Failed to create worker for notebook");
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Notebook created and opened: ${path}\nNotebook ID: ${worker.notebook_id}\nAdd cells with create_cell; call save_notebook to persist them.`,
             },
           ],
         };
@@ -348,7 +409,7 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   cell_id: cell_id,
-                  output: result?.output,
+                  output: presentOutput(result?.output),
                   runtime: result?.runtime,
                   errored: result?.errored,
                 },
@@ -411,7 +472,7 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   cell_id: result.cell_id,
-                  output: result.output,
+                  output: presentOutput(result.output),
                   runtime: result.runtime,
                   errored: result.errored,
                   message: "Cell created and executed successfully",
@@ -465,7 +526,7 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   cell_id: cell_id,
-                  output: result?.output,
+                  output: presentOutput(result?.output),
                   runtime: result?.runtime,
                   errored: result?.errored,
                   message: run
@@ -527,7 +588,7 @@ export class PlutoMCPHttpServer {
                 {
                   cell_id: cell_id,
                   code: cellData.input.code,
-                  output: cellData.result.output,
+                  output: presentOutput(cellData.result.output),
                   runtime: cellData.result.runtime,
                   errored: cellData.result.errored,
                   running: cellData.result.running,
@@ -653,7 +714,7 @@ export class PlutoMCPHttpServer {
               type: "text",
               text: JSON.stringify(
                 {
-                  output: result.output,
+                  output: presentOutput(result.output),
                   runtime: result.runtime,
                   errored: result.errored,
                   message: "Code executed successfully (no cell created)",
@@ -1348,7 +1409,12 @@ export class PlutoMCPHttpServer {
     this.app.get("/health", (_req: Request, res: Response) => {
       res.json({
         status: "ok",
+        host: this.host,
+        version: this.version,
         plutoServerRunning: this.plutoManager.isConnected(),
+        plutoUrl: this.plutoManager.isConnected()
+          ? this.plutoManager.getServerUrl()
+          : undefined,
         activeSessions: this.transports.size + this.streamableTransports.size,
         transports: {
           sse: this.transports.size,
@@ -1450,6 +1516,7 @@ export class PlutoMCPHttpServer {
         resolve();
         return;
       }
+      this.httpServer.closeAllConnections?.();
       this.httpServer.close(() => {
         console.log("[MCP HTTP] HTTP server closed");
         resolve();
@@ -1488,7 +1555,10 @@ export function initializeMCPServer(
   }
 
   // Dynamic port: a second VSCode window must not fail on a busy port
-  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, true);
+  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, {
+    dynamicPort: true,
+    host: "vscode",
+  });
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
 

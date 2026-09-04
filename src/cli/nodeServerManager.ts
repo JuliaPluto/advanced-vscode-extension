@@ -41,9 +41,15 @@ export class NodeServerManager implements IPlutoServerManager {
   constructor(
     private readonly port: number,
     private readonly juliaVersion: string,
-    private readonly workDir: string
+    private readonly workDir: string,
+    private readonly options: { update?: boolean } = {}
   ) {
     this.actualPort = port;
+  }
+
+  /** "default" (or "system") means: no juliaup channel pin, use whatever `julia` is. */
+  private get usesJuliaupChannel(): boolean {
+    return !["default", "system", ""].includes(this.juliaVersion);
   }
 
   isRunning(): boolean {
@@ -105,27 +111,29 @@ export class NodeServerManager implements IPlutoServerManager {
         );
       }
 
-      // 3. Try juliaup to ensure the requested version is available
-      let useJuliaupPrefix = true;
-      const juliaupCmd = getExecutableName("juliaup");
-      const juliaupResult = await runProcess(
-        juliaupCmd,
-        ["add", this.juliaVersion],
-        {
-          stdio: "pipe",
-          timeout: 60000,
+      // 3. Pin the requested juliaup channel, unless the user asked for their default julia
+      let useJuliaupPrefix = this.usesJuliaupChannel;
+      if (useJuliaupPrefix) {
+        const juliaupCmd = getExecutableName("juliaup");
+        const juliaupResult = await runProcess(
+          juliaupCmd,
+          ["add", this.juliaVersion],
+          {
+            stdio: "pipe",
+            timeout: 60000,
+          }
+        );
+        if (juliaupResult.error) {
+          console.log(
+            "[pluto] juliaup not found — using system julia (ignoring --julia-version)"
+          );
+          useJuliaupPrefix = false;
+        } else if (juliaupResult.status !== 0) {
+          console.warn(
+            `[pluto] juliaup add ${this.juliaVersion} failed (exit ${juliaupResult.status}), continuing with system julia`
+          );
+          useJuliaupPrefix = false;
         }
-      );
-      if (juliaupResult.error) {
-        console.log(
-          "[pluto] juliaup not found — using system julia (ignoring --julia-version)"
-        );
-        useJuliaupPrefix = false;
-      } else if (juliaupResult.status !== 0) {
-        console.warn(
-          `[pluto] juliaup add ${this.juliaVersion} failed (exit ${juliaupResult.status}), continuing with system julia`
-        );
-        useJuliaupPrefix = false;
       }
 
       // 4. Build Julia arguments
@@ -144,44 +152,33 @@ export class NodeServerManager implements IPlutoServerManager {
       // 6. Optional JuliaHub auth
       await this.tryJuliaHubAuth(env, juliaCmd, juliaArgs);
 
-      // 7. Setup task — install Pluto if needed
-      console.log(
-        "[pluto] Setting up Julia environment (first run may take a few minutes)..."
-      );
-      const setupCode = [
+      // 7. One Julia process: make sure Pluto is present in the shared
+      // environment, then serve. Pkg.instantiate() always runs so a pruned
+      // depot is repaired; the registry update and resolve only run when
+      // Pluto is not in the project yet or --update was passed.
+      const install = this.options.update ? "true" : "false";
+      const runCode = [
         "import Pkg",
         "s = string",
-        `Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))))`,
+        "env = mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION)))",
+        "Pkg.activate(env)",
+        `if ${install} || !haskey(Pkg.project().dependencies, s(:Pluto))`,
         "Pkg.Registry.add()",
         "Pkg.add(s(:Pluto))",
         "Pkg.add(s(:Pkg))",
+        "end",
         "Pkg.instantiate()",
+        `if ${install}`,
         "Pkg.precompile()",
+        "end",
+        "using Pluto",
+        `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
       ].join(";");
 
-      const setupResult = await runProcess(
-        juliaCmd,
-        [...juliaArgs, "-e", setupCode],
-        {
-          stdio: "inherit",
-          env,
-          timeout: 600000,
-        }
-      );
-      if (setupResult.error) {
-        throw new Error(`Julia setup failed: ${setupResult.error.message}`);
-      }
-      if (setupResult.status !== 0) {
-        throw new Error(
-          `Julia setup failed with exit code ${setupResult.status}`
-        );
-      }
-
-      // 8. Start Pluto server
-      const runCode = `import Pkg;s = string;Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))));using Pluto; Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`;
-
       console.log(
-        `[pluto] Starting Pluto server on port ${this.actualPort}...`
+        this.options.update
+          ? "[pluto] Installing and precompiling Pluto (--update), then starting the server..."
+          : "[pluto] Starting Pluto (first run installs Pluto and may take a few minutes)..."
       );
       this.juliaProcess = spawn(juliaCmd, [...juliaArgs, "-e", runCode], {
         stdio: ["ignore", "pipe", "pipe"],
@@ -304,7 +301,8 @@ export class NodeServerManager implements IPlutoServerManager {
   }
 
   private async pollServerReady(): Promise<void> {
-    const maxAttempts = 120;
+    // Long enough for a cold install and precompile of Pluto
+    const maxAttempts = 600;
     const pollInterval = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

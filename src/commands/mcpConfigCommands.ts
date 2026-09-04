@@ -33,7 +33,7 @@ function getClaudeConfig(mcpUrl: string): object {
 }
 
 /**
- * Generate MCP server configuration for GitHub Copilot (mcp.json).
+ * Generate MCP server configuration for GitHub Copilot (.vscode/mcp.json).
  */
 function getCopilotConfig(mcpUrl: string): object {
   return {
@@ -62,8 +62,12 @@ async function createProjectMCPConfig(
   }
 
   const workspaceFolder = workspaceFolders[0];
-  const configFileName = configType === "claude" ? ".mcp.json" : "mcp.json";
-  const configPath = vscode.Uri.joinPath(workspaceFolder.uri, configFileName);
+  // Claude Code reads .mcp.json at the project root; VS Code reads
+  // workspace MCP servers from .vscode/mcp.json
+  const configPath =
+    configType === "claude"
+      ? vscode.Uri.joinPath(workspaceFolder.uri, ".mcp.json")
+      : vscode.Uri.joinPath(workspaceFolder.uri, ".vscode", "mcp.json");
 
   try {
     // Try to read existing config
@@ -97,6 +101,9 @@ async function createProjectMCPConfig(
     }
 
     // Write the config file
+    await vscode.workspace.fs.createDirectory(
+      vscode.Uri.joinPath(configPath, "..")
+    );
     const configContent = JSON.stringify(existingConfig, null, 2);
     await vscode.workspace.fs.writeFile(
       configPath,
@@ -139,7 +146,8 @@ export function registerCreateProjectMCPConfigCommand(
             },
             {
               label: "GitHub Copilot",
-              description: "Create config for GitHub Copilot (mcp.json)",
+              description:
+                "Create config for GitHub Copilot (.vscode/mcp.json)",
               value: "copilot" as const,
             },
           ],

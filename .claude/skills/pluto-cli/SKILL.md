@@ -5,9 +5,15 @@ description: Drive Julia Pluto notebooks from the terminal with npx @plutojl/cli
 
 # Driving Pluto notebooks with @plutojl/cli
 
-The CLI has four subcommands: `run` (start Pluto + the tool server), `tools` (list notebook tools), `call <tool> [json]` (invoke one), and `install` (write MCP config for AI assistants). You mostly need `run` once, then `call` for everything.
+The CLI has these subcommands: `status` (what is running), `run` (start Pluto + the tool server), `tools [name]` (list notebook tools, or one tool's parameters), `call <tool> [json]` (invoke one), and `install` (write MCP config for AI assistants). You mostly need `run` once, then `call` for everything.
 
-## Start the servers (once)
+## Check first, then start the servers (once)
+
+```bash
+npx @plutojl/cli status       # is Pluto (:1234) or a tool server already up?
+```
+
+Inside VS Code the Advanced Pluto Notebook extension usually already runs a tool server; `status`, `tools`, and `call` find it automatically (even on a nearby port), so there is nothing to start. Otherwise:
 
 ```bash
 npx @plutojl/cli run          # starts Pluto + tool server on :3100
@@ -15,15 +21,16 @@ npx @plutojl/cli run          # starts Pluto + tool server on :3100
 npx @plutojl/cli run --pluto-url http://localhost:1234
 ```
 
-Run this in the background — it stays up. First run installs and precompiles Pluto: **allow up to 10 minutes**; the tool server's `/health` endpoint responds throughout. Check readiness with:
+Run this in the background — it stays up. First run installs and precompiles Pluto: **allow up to 10 minutes**; later runs skip the install (pass `--update` to force it). The tool server's `/health` endpoint responds throughout. Check readiness with:
 
 ```bash
-curl -s http://localhost:3100/health   # {"status":"ok","plutoServerRunning":true,...}
+npx @plutojl/cli status --wait         # blocks until Pluto is connected (up to --timeout, default 600s)
+curl -s http://localhost:3100/health   # {"status":"ok","host":"cli","plutoServerRunning":true,...}
 ```
 
 ## The validation loop (the main workflow)
 
-Hand-write or edit the `.pluto.jl` file BEFORE opening it (fastest for multi-cell authoring — see `learn_pluto_basics` for the exact file format), then use the notebook as your correctness oracle:
+Start from `create_notebook` (`{"path": "/abs/path/nb.pluto.jl", "title": "My notebook"}`) and add cells with `create_cell`, or hand-write the `.pluto.jl` file BEFORE opening it (fastest for multi-cell authoring — see `learn_pluto_basics` for the exact file format). Then use the notebook as your correctness oracle:
 
 ```bash
 npx @plutojl/cli call open_notebook '{"path": "/abs/path/nb.pluto.jl"}'
@@ -53,4 +60,4 @@ npx @plutojl/cli call export_notebook_html '{"path": "/abs/path/nb.pluto.jl"}'
 npx @plutojl/cli call get_notebook_url '{"path": "/abs/path/nb.pluto.jl"}'   # browser link for the user
 ```
 
-For the full tool list with parameters: `npx @plutojl/cli tools`. For Pluto file format, reactivity, PlutoUI, and beautification guidance: `call learn_pluto_basics` (or read `src/PLUTO_GUIDE.md` in this repo).
+For the full tool list: `npx @plutojl/cli tools`; for one tool's parameters and an example call: `npx @plutojl/cli tools <name>`. For Pluto file format, reactivity, PlutoUI, and beautification guidance: `call learn_pluto_basics` (or read `src/PLUTO_GUIDE.md` in this repo).

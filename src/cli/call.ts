@@ -4,22 +4,37 @@
  * Uses raw fetch + SSE parsing to avoid eventsource polyfill issues in CJS bundles.
  */
 
+import { VERSION } from "./config.ts";
+import { bold, cyan, dim, err, yellow } from "./ui.ts";
+
+interface ToolSchema {
+  type?: string;
+  description?: string;
+  enum?: unknown[];
+  default?: unknown;
+}
+
+interface ToolInfo {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    properties?: Record<string, ToolSchema>;
+    required?: string[];
+  };
+}
+
 interface JsonRpcResponse {
   jsonrpc: string;
   id: number;
   result?: {
-    tools?: Array<{
-      name: string;
-      description?: string;
-      inputSchema?: { properties?: Record<string, unknown> };
-    }>;
+    tools?: ToolInfo[];
     content?: Array<{ type: string; text?: string }>;
     isError?: boolean;
   };
   error?: { code: number; message: string };
 }
 
-async function mcpRequest(
+export async function mcpRequest(
   port: number,
   method: string,
   params: Record<string, unknown> = {},
@@ -73,7 +88,7 @@ async function mcpRequest(
       params: {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "plutojl-mcp-cli", version: "0.1.0" },
+        clientInfo: { name: "plutojl-cli", version: VERSION },
       },
     }),
   });
@@ -168,9 +183,82 @@ async function mcpRequest(
   throw new Error("No response received from MCP server");
 }
 
-export async function listTools(port: number): Promise<void> {
+/** First sentence of a description, for the one-line listing. */
+function summary(text: string | undefined): string {
+  if (!text) return "";
+  const match = /^(.+?[.!?])(\s|$)/.exec(text);
+  return match ? match[1] : text;
+}
+
+function describeTool(tool: ToolInfo): string {
+  const lines = [bold(tool.name)];
+  if (tool.description) {
+    lines.push(`  ${tool.description}`);
+  }
+  const props = tool.inputSchema?.properties ?? {};
+  const required = new Set(tool.inputSchema?.required ?? []);
+  const names = Object.keys(props);
+  lines.push("");
+  if (names.length === 0) {
+    lines.push(`  ${dim("no parameters")}`);
+  } else {
+    lines.push(`  ${dim("Parameters")}`);
+    const width = Math.max(...names.map((n) => n.length));
+    for (const name of names) {
+      const schema = props[name];
+      const type = schema.enum
+        ? schema.enum.map(String).join(" | ")
+        : (schema.type ?? "any");
+      const flags = [
+        required.has(name) ? yellow("required") : "",
+        schema.default !== undefined
+          ? dim(`default ${JSON.stringify(schema.default)}`)
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      lines.push(
+        `    ${cyan(name.padEnd(width))}  ${dim(type)}${flags ? "  " + flags : ""}`
+      );
+      if (schema.description) {
+        lines.push(`    ${" ".repeat(width)}  ${schema.description}`);
+      }
+    }
+  }
+  lines.push("");
+  const example: Record<string, unknown> = {};
+  for (const name of names) {
+    if (required.has(name)) {
+      example[name] = props[name].type === "number" ? 0 : `<${name}>`;
+    }
+  }
+  lines.push(
+    `  ${dim("Example")}  npx @plutojl/cli call ${tool.name}${
+      names.length ? ` '${JSON.stringify(example)}'` : ""
+    }`
+  );
+  return lines.join("\n");
+}
+
+export async function listTools(port: number, filter?: string): Promise<void> {
   const result = await mcpRequest(port, "tools/list");
   const tools = result?.tools ?? [];
+
+  if (filter) {
+    const tool = tools.find((t) => t.name === filter);
+    if (!tool) {
+      const close = tools
+        .filter((t) => t.name.includes(filter))
+        .map((t) => t.name);
+      console.error(
+        `${err.red("error:")} no tool named '${filter}'` +
+          (close.length ? `. Did you mean: ${close.join(", ")}?` : "")
+      );
+      process.exit(1);
+    }
+    console.log(describeTool(tool));
+    return;
+  }
 
   if (tools.length === 0) {
     console.log("No tools available.");
@@ -178,16 +266,16 @@ export async function listTools(port: number): Promise<void> {
   }
 
   const maxLen = Math.max(...tools.map((t) => t.name.length));
-
   for (const tool of tools) {
-    const params = tool.inputSchema?.properties
-      ? Object.keys(tool.inputSchema.properties)
-      : [];
-    const paramStr = params.length > 0 ? `  (${params.join(", ")})` : "";
+    const params = Object.keys(tool.inputSchema?.properties ?? {});
+    const paramStr = params.length > 0 ? dim(`  (${params.join(", ")})`) : "";
     console.log(
-      `  ${tool.name.padEnd(maxLen)}  ${tool.description ?? ""}${paramStr}`
+      `  ${cyan(tool.name.padEnd(maxLen))}  ${summary(tool.description)}${paramStr}`
     );
   }
+  console.log(
+    dim(`\n  npx @plutojl/cli tools <name> shows a tool's parameters.`)
+  );
 }
 
 export async function callTool(
@@ -197,11 +285,21 @@ export async function callTool(
   raw: boolean,
   timeoutMs = 120000
 ): Promise<void> {
-  let args: Record<string, unknown>;
+  let args: unknown;
   try {
-    args = JSON.parse(argsJson) as Record<string, unknown>;
+    args = JSON.parse(argsJson);
   } catch {
-    console.error(`Invalid JSON arguments: ${argsJson}`);
+    args = undefined;
+  }
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    console.error(
+      `${err.red("error:")} tool arguments must be a JSON object, got: ${argsJson}`
+    );
+    console.error(
+      err.dim(
+        `  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'`
+      )
+    );
     process.exit(1);
   }
 
@@ -210,20 +308,15 @@ export async function callTool(
     "tools/call",
     {
       name: toolName,
-      arguments: args,
+      arguments: args as Record<string, unknown>,
     },
     timeoutMs
   );
 
   if (raw) {
     console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-
-  const content = result?.content as
-    Array<{ type: string; text?: string }> | undefined;
-  if (content) {
-    for (const item of content) {
+  } else {
+    for (const item of result?.content ?? []) {
       if (item.type === "text" && item.text) {
         console.log(item.text);
       }

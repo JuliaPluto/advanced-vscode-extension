@@ -10,6 +10,7 @@
     "../../src/plutoManager.ts",
     "../../src/plutoManagerTypes.ts",
     "../../src/mcp-server-http.ts",
+    "../../src/notebookOutput.ts",
     "../../src/platformUtils.ts",
     "../../src/portUtils.ts",
     "../../src/helpers.ts"
