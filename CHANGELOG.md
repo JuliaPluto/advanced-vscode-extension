@@ -1,9 +1,8 @@
 ## [0.3.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.3.0...v0.3.1) (2026-09-04)
 
-
 ### Bug Fixes
 
-* **julia:** keep Julia's bundled depots when spawning the Pluto server ([#45](https://github.com/JuliaPluto/advanced-vscode-extension/issues/45)) ([9544a7e](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9544a7eb2b2f8284c1328da49bee2db874ad7395))
+- **julia:** keep Julia's bundled depots when spawning the Pluto server ([#45](https://github.com/JuliaPluto/advanced-vscode-extension/issues/45)) ([9544a7e](https://github.com/JuliaPluto/advanced-vscode-extension/commit/9544a7eb2b2f8284c1328da49bee2db874ad7395))
 
 # [0.3.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.2.7...v0.3.0) (2026-08-14)
 
