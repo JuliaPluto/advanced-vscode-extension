@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { VERSION } from "./config.ts";
 import { extensionFor } from "../notebookOutput.ts";
+import { readToolArgsSource, resolvePathArgs } from "./toolArgs.ts";
 import { bold, cyan, dim, err, yellow } from "./ui.ts";
 
 interface ToolSchema {
@@ -273,6 +274,9 @@ export async function listTools(port: number, filter?: string): Promise<void> {
     return;
   }
 
+  console.log(
+    `  ${dim("Start with")} npx @plutojl/cli call learn_pluto_basics ${dim("— environments, paths, reactivity rules, and the workflow.")}\n`
+  );
   const maxLen = Math.max(...tools.map((t) => t.name.length));
   for (const tool of tools) {
     const params = Object.keys(tool.inputSchema?.properties ?? {});
@@ -300,30 +304,43 @@ export async function callTool(
   options: CallOptions
 ): Promise<void> {
   const { raw, timeoutMs, out } = options;
-  let args: unknown;
+  let source: string;
   try {
-    args = JSON.parse(argsJson);
-  } catch {
-    args = undefined;
-  }
-  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    source = readToolArgsSource(argsJson, process.cwd());
+  } catch (e) {
     console.error(
-      `${err.red("error:")} tool arguments must be a JSON object, got: ${argsJson}`
+      `${err.red("error:")} could not read tool arguments from ${argsJson}: ${e instanceof Error ? e.message : String(e)}`
+    );
+    process.exit(1);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    console.error(
+      `${err.red("error:")} tool arguments must be a JSON object, got: ${source.slice(0, 200)}`
     );
     console.error(
       err.dim(
-        `  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'`
+        `  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'  (or @args.json, or - for stdin)`
       )
     );
     process.exit(1);
   }
+  const args = resolvePathArgs(
+    parsed as Record<string, unknown>,
+    process.cwd()
+  );
 
   const result = await mcpRequest(
     port,
     "tools/call",
     {
       name: toolName,
-      arguments: args as Record<string, unknown>,
+      arguments: args,
     },
     timeoutMs
   );
@@ -338,10 +355,7 @@ export async function callTool(
       } else if (item.type === "image" && item.data) {
         // Never print base64 to the terminal: save the image and say where
         const ext = extensionFor(item.mimeType ?? "image/png");
-        const stem =
-          typeof (args as Record<string, unknown>).cell_id === "string"
-            ? String((args as Record<string, unknown>).cell_id)
-            : toolName;
+        const stem = typeof args.cell_id === "string" ? args.cell_id : toolName;
         const dest =
           out ??
           path.resolve(`${stem}${imageIndex ? `-${imageIndex}` : ""}.${ext}`);

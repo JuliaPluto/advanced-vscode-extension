@@ -1,5 +1,6 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host, serialize } from "@plutojl/rainbow";
+import * as path from "path";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { unlink } from "fs/promises";
@@ -328,6 +329,11 @@ export class PlutoManager {
     notebookPath: string,
     documentContent?: string
   ): Promise<Worker | undefined> {
+    if (!path.isAbsolute(notebookPath)) {
+      throw new Error(
+        `Notebook paths must be absolute — Pluto identifies a notebook by its absolute path and cannot resolve '${notebookPath}' against your working directory. Pass the full path.`
+      );
+    }
     if (!this.isConnected()) {
       await this.start();
     }
@@ -507,20 +513,107 @@ export class PlutoManager {
   /**
    * Execute a cell
    */
+  /**
+   * Send a cell's new code to Pluto without running it. The worker's own
+   * updateSnippetCode(run=false) only records the code locally, which
+   * neither save_notebook nor a later run would see.
+   */
+  public async setCellCode(
+    worker: Worker,
+    cellId: string,
+    code: string
+  ): Promise<void> {
+    await this.updateNotebookState(worker, (nb) => {
+      const input = nb.cell_inputs[cellId];
+      if (!input) {
+        throw new Error(`Cell ${cellId} not found`);
+      }
+      input.code = code;
+    });
+  }
+
+  /** Run a cell with whatever code Pluto currently holds for it, and wait for the result. */
+  public async runCell(
+    worker: Worker,
+    cellId: string
+  ): Promise<CellResultData | null> {
+    if (!worker.client) {
+      throw new Error("Not connected to notebook");
+    }
+    const before =
+      worker.getSnippet(cellId)?.result.output?.last_run_timestamp ?? 0;
+    await worker.client.send(
+      "run_multiple_cells",
+      { cells: [cellId] },
+      { notebook_id: worker.notebook_id }
+    );
+    return await this.waitForCellRun(worker, cellId, before);
+  }
+
+  /** Replace a cell's code, run it, and return the result of that run. */
   public async executeCell(
     worker: Worker,
     cellId: string,
     code: string
   ): Promise<CellResultData | null> {
-    // Update existing cell code and run it
-    await worker.updateSnippetCode(cellId, code, true);
+    await this.setCellCode(worker, cellId, code);
+    return await this.runCell(worker, cellId);
+  }
 
-    // Wait for execution to complete
-    // await worker.wait(true);
+  /**
+   * Mutate the worker's notebook state through its own updater, which
+   * diffs the change, sends it to Pluto, and keeps the local copy in sync.
+   */
+  private async updateNotebookState(
+    worker: Worker,
+    mutate: (nb: {
+      cell_inputs: Record<
+        string,
+        { code: string; code_folded: boolean; [key: string]: unknown }
+      >;
+    }) => void
+  ): Promise<void> {
+    if (!worker.client || !worker.notebook_state) {
+      throw new Error("Not connected to notebook");
+    }
+    await (
+      worker as unknown as {
+        _update_notebook_state: (fn: typeof mutate) => Promise<void>;
+      }
+    )._update_notebook_state(mutate);
+  }
 
-    // Get cell result
-    const cellData = worker.getSnippet(cellId);
-    return cellData?.result ?? null;
+  /**
+   * Wait until a cell has run since `before`. Pluto may decide not to run
+   * a cell at all (e.g. a parse error), so give it a few seconds to pick
+   * the cell up before returning whatever result it holds.
+   */
+  private async waitForCellRun(
+    worker: Worker,
+    cellId: string,
+    before: number,
+    limitMs = 60 * 60_000
+  ): Promise<CellResultData | null> {
+    const start = Date.now();
+    const pickupDeadline = start + 5_000;
+    let seenBusy = false;
+    while (Date.now() - start < limitMs) {
+      const result = worker.getSnippet(cellId)?.result;
+      if (!result) {
+        return null;
+      }
+      const busy = result.running || result.queued;
+      seenBusy ||= busy;
+      const stamp = result.output?.last_run_timestamp ?? 0;
+      if (!busy && stamp > before) {
+        return result;
+      }
+      if (!busy && !seenBusy && Date.now() > pickupDeadline) {
+        return result;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    throw new Error("Timed out waiting for cell execution to finish");
   }
 
   /**
@@ -581,17 +674,7 @@ export class PlutoManager {
       return;
     }
 
-    // Route through the worker's own state updater so the local notebook
-    // state (which list_cells and save_notebook read) and Pluto stay in sync
-    await (
-      worker as unknown as {
-        _update_notebook_state: (
-          mutate: (nb: {
-            cell_inputs: Record<string, { code_folded: boolean }>;
-          }) => void
-        ) => Promise<void>;
-      }
-    )._update_notebook_state((nb) => {
+    await this.updateNotebookState(worker, (nb) => {
       nb.cell_inputs[cellId].code_folded = folded;
     });
   }

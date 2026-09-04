@@ -23,6 +23,38 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 - To persist changes to disk, call `save_notebook` explicitly. **Notebooks are NOT auto-saved.**
 - **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — Pluto manages file writes and the issue may be on the server side.
 
+### Notebooks inside a Julia project (local packages, environments, paths)
+
+By default a Pluto notebook has its **own** package environment, managed by Pluto: `using Foo` installs `Foo` automatically. That environment knows nothing about the project the notebook file happens to live in, so `using MyLocalPackage` fails with `Package MyLocalPackage not found in current path`.
+
+To use a local (unregistered or `dev`) package, put **one** environment cell in the notebook that activates an environment containing it, and do all `using` statements for that environment **in the same cell**. Prefer a temporary environment so the user's `Project.toml` is never modified:
+
+```julia
+begin
+    import Pkg
+    Pkg.activate(mktempdir())
+    Pkg.develop(path = joinpath(@__DIR__, ".."))   # the project that contains this notebook
+    Pkg.add(["Plots", "PlutoUI"])                    # anything else the notebook needs
+    using MyLocalPackage, Plots, PlutoUI
+end
+```
+
+Activating the project itself (`Pkg.activate(joinpath(@__DIR__, ".."))`) also works when it already has every package the notebook needs. Never `Pkg.add` into the user's project from a notebook cell — that edits their `Project.toml` and `Manifest.toml` as a side effect. If a package is missing there, use the temporary-environment recipe above instead.
+
+Rules that follow from this:
+
+- Once a cell calls `Pkg.activate`, Pluto's automatic package installation is **off** for the whole notebook. Every package must be provided by that environment, and `using` lines outside the environment cell will fail until it has run.
+- The environment cell is slow (instantiate, precompile) — expect minutes on first run. Call `wait_for_notebook_idle` after editing it rather than retrying.
+- Keep it as one `begin ... end` cell; splitting the activation and the `using` lines across cells breaks because Pluto orders cells by data flow, not position.
+
+**Paths inside a Pluto notebook**
+
+- `@__DIR__` is the notebook file's directory and is the anchor for everything: `joinpath(@__DIR__, "..", "data", "x.csv")`.
+- `pwd()` is the Pluto server's working directory, not the notebook's. Do not rely on it and do not `cd`.
+- `@__FILE__` is the notebook path with a `#==#<cell id>` suffix; use `@__DIR__` instead.
+- Tool arguments (`path`, `output_path`, `new_path`) must be **absolute**: Pluto identifies a notebook by its absolute path, and the server cannot resolve a relative path against your working directory. The `npx @plutojl/cli call` command resolves relative paths for you; other clients must pass absolute paths.
+- Files the notebook writes (plots, exports, `read_cell_output` files) land where you say; default to `joinpath(@__DIR__, ...)` or `<notebook>.assets/`.
+
 ### Long computations and waiting
 
 - `create_cell`, `execute_cell`, and `execute_code` block until the cell finishes, but return after **5 minutes** with a `timed_out: true` message if it hasn't. The computation KEEPS RUNNING server-side — the response tells you how to pick up the result.
@@ -650,7 +682,7 @@ Aim for this top-to-bottom layout:
 3. **Key results and summary** — the main outputs, plots, or conclusions the reader cares about
 4. **Analysis sections** — the substantive work, organized under markdown headers
 5. **Boilerplate at the bottom** — helper functions, constants, and configuration cells
-6. **`Pkg` cells at the very end** — any manual `Pkg.activate` / `Pkg.add` cells should be the last cells in the notebook
+6. **One environment cell** — a manual `Pkg.activate` cell (see "Notebooks inside a Julia project") holds all its `using` lines; order in the file does not matter to Pluto, but keep it near the top so readers see what the notebook depends on
 
 Use `move_cells` to reorder cells into this layout.
 

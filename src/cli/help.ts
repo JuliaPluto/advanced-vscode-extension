@@ -29,7 +29,7 @@ export function helpText(): string {
         "Show whether Pluto and a tool server are running (--wait blocks until both are)"
       ),
       cmd("tools", "List notebook tools; `tools <name>` shows its parameters"),
-      cmd("call", "Call a notebook tool: `call <tool> [json]`"),
+      cmd("call", "Call a notebook tool: `call <tool> [json | @file | -]`"),
       cmd("install", "Write MCP config so AI assistants can connect"),
       cmd("help", "Show this help"),
       cmd("version", "Print the version"),
@@ -72,6 +72,10 @@ export function helpText(): string {
       ),
       opt("--raw", "Print the raw JSON-RPC result"),
       opt("--out <file>", "Where to save an image returned by the tool"),
+      opt(
+        "",
+        `Relative ${dim("path")}/${dim("output_path")} arguments are resolved against the current directory`
+      ),
       opt("--mcp-port <port>", "Tool server to talk to"),
     ]),
     "",
@@ -91,6 +95,7 @@ export function helpText(): string {
     "",
     section("Examples", [
       `  ${CMD} run`,
+      `  ${CMD} call learn_pluto_basics        ${dim("# read this first")}`,
       `  ${CMD} run --pluto-url http://localhost:1234`,
       `  ${CMD} call open_notebook '{"path": "notebook.pluto.jl"}'`,
       `  ${CMD} call execute_code '{"code": "1 + 1"}'`,

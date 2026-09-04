@@ -69,12 +69,13 @@ npx @plutojl/cli tools [name] [--mcp-port <port>]
 
 ### `call`
 
-Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options.
+Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options. The JSON may also come from a file (`@args.json`) or stdin (`-`), which avoids shell quoting for multi-line cell code. Relative `path`, `output_path`, and `new_path` arguments are resolved against the current directory before they are sent, since the server needs absolute notebook paths.
 
 ```bash
-npx @plutojl/cli call <tool_name> [json_args] [options]
+npx @plutojl/cli call <tool_name> [json_args | @file | -] [options]
 
 # Examples
+npx @plutojl/cli call learn_pluto_basics          # read this first
 npx @plutojl/cli call get_notebook_status
 npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 npx @plutojl/cli call execute_code '{"code": "sqrt(2)"}'
