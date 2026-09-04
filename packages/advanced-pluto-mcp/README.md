@@ -5,6 +5,9 @@ Command-line tool for [Pluto.jl](https://plutojl.org/) notebooks. Start a Pluto 
 ## Quick Start
 
 ```bash
+# See what is running and how to use the CLI
+npx @plutojl/cli
+
 # Start Pluto and the tool server
 npx @plutojl/cli run
 
@@ -17,6 +20,12 @@ npx @plutojl/cli call execute_code '{"code": "1 + 1"}'
 npx @plutojl/cli install
 ```
 
+Running with no arguments prints the help followed by a status block that says whether a Pluto server (port 1234) and a tool server are running, and who owns the tool server.
+
+## Inside VS Code
+
+The [Advanced Pluto Notebook](https://marketplace.visualstudio.com/items?itemName=juliapluto-pankgeorg.advanced-vscode-extension) extension runs the same tool server automatically. When the CLI runs inside a VS Code terminal (or from an agent launched there), `tools` and `call` find and use that server, including when the extension had to move to a nearby port because the default was busy. `run` notices it too and tells you nothing needs starting; pass `--mcp-port` to run a separate server anyway.
+
 ## Prerequisites
 
 - **Node.js** >= 18
@@ -27,31 +36,40 @@ npx @plutojl/cli install
 
 ### `run`
 
-Start Pluto and the tool server.
+Start Pluto and the tool server. Pluto is installed into a shared Julia environment on the first run; later runs skip the install unless `--update` is passed.
 
 ```bash
 npx @plutojl/cli run [options]
 ```
 
-| Option                  | Default  | Description                                          |
-| ----------------------- | -------- | ---------------------------------------------------- |
-| `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                               |
-| `--pluto-port <port>`   | `1234`   | Pluto server port                                    |
-| `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one) |
-| `--julia-version <ver>` | `1.12.6` | Julia version via juliaup                            |
-| `--no-pluto`            | —        | Start the tool server only, without starting Pluto   |
+| Option                  | Default  | Description                                                          |
+| ----------------------- | -------- | -------------------------------------------------------------------- |
+| `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                                               |
+| `--pluto-port <port>`   | `1234`   | Pluto server port                                                    |
+| `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one)                 |
+| `--julia-version <ver>` | `1.12.7` | juliaup channel to use, or `default` for whatever `julia` resolves to |
+| `--update`              | —        | Re-install and precompile Pluto before starting                      |
+| `--no-pluto`            | —        | Start the tool server only, without starting Pluto                   |
+
+### `status`
+
+Show whether Pluto and a tool server are running. Exits 0 when a tool server was found, 1 otherwise. `--json` prints the same information as JSON.
+
+```bash
+npx @plutojl/cli status [--json] [--mcp-port <port>] [--pluto-port <port>]
+```
 
 ### `tools`
 
-List the notebook tools available on a running server.
+List the notebook tools available on a running server, or show one tool's parameters.
 
 ```bash
-npx @plutojl/cli tools [--mcp-port <port>]
+npx @plutojl/cli tools [name] [--mcp-port <port>]
 ```
 
 ### `call`
 
-Call a notebook tool from the command line.
+Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options.
 
 ```bash
 npx @plutojl/cli call <tool_name> [json_args] [options]
@@ -62,10 +80,11 @@ npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 npx @plutojl/cli call execute_code '{"code": "sqrt(2)"}'
 ```
 
-| Option              | Default | Description              |
-| ------------------- | ------- | ------------------------ |
-| `--mcp-port <port>` | `3100`  | Tool server (MCP) port   |
-| `--raw`             | —       | Output raw JSON response |
+| Option                | Default | Description                              |
+| --------------------- | ------- | ---------------------------------------- |
+| `--mcp-port <port>`   | `3100`  | Tool server (MCP) port                   |
+| `--timeout <seconds>` | `120`   | How long to wait for the tool result     |
+| `--raw`               | —       | Output raw JSON response                 |
 
 ### `install`
 
@@ -75,13 +94,15 @@ Add MCP configuration files so AI assistants can connect to the tool server.
 npx @plutojl/cli install [options]
 ```
 
-| Option              | Default       | Description                                        |
-| ------------------- | ------------- | -------------------------------------------------- |
-| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`  |
-| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                |
-| `--global`          | —             | Write to `~/.claude.json` instead of `./.mcp.json` |
-| `--dry-run`         | —             | Print config without writing                       |
-| `--force`           | —             | Overwrite existing config                          |
+| Option              | Default       | Description                                                    |
+| ------------------- | ------------- | -------------------------------------------------------------- |
+| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`              |
+| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                            |
+| `--global`          | —             | Claude Code: write `~/.claude.json` instead of `./.mcp.json`   |
+| `--dry-run`         | —             | Print config without writing                                   |
+| `--force`           | —             | Overwrite existing config                                      |
+
+Claude Code config goes to `.mcp.json` at the project root; Copilot (VS Code) config goes to `.vscode/mcp.json`.
 
 ## Configuration
 
@@ -98,9 +119,12 @@ Example `.plutomcp.json`:
 {
   "mcpPort": 3100,
   "plutoPort": 1234,
-  "juliaVersion": "1.12.6"
+  "juliaVersion": "1.12.7",
+  "serverUrl": "http://localhost:1234"
 }
 ```
+
+Unknown options, options that do not apply to the command, and invalid values are errors (exit code 2). Set `PLUTO_CLI_DEBUG=1` to see stack traces for unexpected failures. Colors follow `NO_COLOR` / `FORCE_COLOR`.
 
 ## Notebook tools
 

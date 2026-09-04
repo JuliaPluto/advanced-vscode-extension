@@ -1,173 +1,241 @@
-import { DEFAULTS, VERSION } from "./config.ts";
+export type Command =
+  | "help"
+  | "version"
+  | "status"
+  | "run"
+  | "tools"
+  | "call"
+  | "install";
 
 export interface RawArgs {
-  command: "run" | "install" | "call" | "tools" | "help";
+  command: Command;
   mcpPort?: number;
   plutoPort?: number;
   plutoUrl?: string;
   juliaVersion?: string;
-  // install-specific
+  // run
+  noPluto?: boolean;
+  update?: boolean;
+  // install
   target?: "claude-code" | "copilot" | "all";
   global?: boolean;
   dryRun?: boolean;
   force?: boolean;
-  // run-specific
-  noPluto?: boolean;
-  // call-specific
+  // tools
+  toolFilter?: string;
+  // call
   toolName?: string;
   toolArgs?: string;
   raw?: boolean;
   timeoutSeconds?: number;
+  // status
+  json?: boolean;
 }
 
-function printHelp(): void {
-  console.log(`
-@plutojl/cli v${VERSION} — command-line tool for Pluto.jl notebooks
+/** A user mistake on the command line; the message is printed with the usage hint. */
+export class UsageError extends Error {}
 
-Usage:
-  npx @plutojl/cli <command> [options]
+export const COMMANDS: Command[] = [
+  "run",
+  "status",
+  "tools",
+  "call",
+  "install",
+  "help",
+  "version",
+];
 
-Commands:
-  run       Start Pluto and the tool server
-  tools     List available notebook tools
-  call      Call a notebook tool (open, edit, execute cells, ...)
-  install   Add MCP config for AI assistants (.mcp.json or mcp.json)
-
-Run options:
-  --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
-  --pluto-port <port>      Pluto server port (default: ${DEFAULTS.plutoPort})
-  --pluto-url <url>        Connect to existing Pluto server (skip starting one)
-  --julia-version <ver>    Julia version via juliaup (default: ${DEFAULTS.juliaVersion})
-  --no-pluto               Start MCP server only, without starting Pluto
-
-Install options:
-  --target <target>        Config target: claude-code, copilot, all (default: claude-code)
-  --mcp-port <port>        MCP server port to configure (default: ${DEFAULTS.mcpPort})
-  --global                 Write to ~/.claude.json instead of ./.mcp.json
-  --dry-run                Print config without writing
-  --force                  Overwrite existing config without prompting
-
-Call options:
-  npx @plutojl/cli call <tool_name> [json_args]
-  --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
-  --raw                    Output raw JSON response
-  --timeout <seconds>      Wait this long for the tool result (default: 120)
-
-Tools options:
-  --mcp-port <port>        MCP server port (default: ${DEFAULTS.mcpPort})
-
-Examples:
-  npx @plutojl/cli run
-  npx @plutojl/cli run --pluto-url http://localhost:1234
-  npx @plutojl/cli install
-  npx @plutojl/cli install --target all --global
-  npx @plutojl/cli tools
-  npx @plutojl/cli call get_notebook_status
-  npx @plutojl/cli call start_pluto_server
-  npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
-`);
+interface FlagSpec {
+  /** Commands this flag is valid for. */
+  commands: Command[];
+  /** Whether the flag consumes a value. */
+  value: boolean;
+  apply: (args: RawArgs, value: string | undefined, flag: string) => void;
 }
 
-const COMMANDS = new Set(["run", "install", "call", "tools", "help"]);
-
-export function parseArgs(argv: string[]): RawArgs {
-  const args: RawArgs = { command: "help" };
-
-  let i = 0;
-
-  // First non-flag token is the command
-  while (i < argv.length && argv[i].startsWith("-")) {
-    if (argv[i] === "--help" || argv[i] === "-h") {
-      printHelp();
-      process.exit(0);
-    }
-    i++;
+function parsePort(flag: string, value: string | undefined): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    throw new UsageError(`${flag} expects a port number, got '${value}'`);
   }
+  return n;
+}
 
-  if (i < argv.length) {
-    const cmd = argv[i];
-    if (COMMANDS.has(cmd)) {
-      args.command = cmd as RawArgs["command"];
-    } else {
-      console.error(`Unknown command: ${cmd}`);
-      printHelp();
-      process.exit(1);
-    }
-    i++;
-  }
+const SERVER_COMMANDS: Command[] = ["run", "status", "tools", "call", "install"];
 
-  // For `call`, grab positional args: tool_name and optional json_args
-  if (args.command === "call") {
-    // Collect positional args (non-flag tokens) before any flags
-    while (i < argv.length && !argv[i].startsWith("-")) {
-      if (!args.toolName) {
-        args.toolName = argv[i];
-      } else if (!args.toolArgs) {
-        args.toolArgs = argv[i];
-      }
-      i++;
-    }
-  }
-
-  // Parse flags
-  while (i < argv.length) {
-    const flag = argv[i];
-
-    if (flag === "--help" || flag === "-h") {
-      printHelp();
-      process.exit(0);
-    }
-
-    if (flag === "--mcp-port" && i + 1 < argv.length) {
-      args.mcpPort = parseInt(argv[++i], 10);
-    } else if (flag === "--pluto-port" && i + 1 < argv.length) {
-      args.plutoPort = parseInt(argv[++i], 10);
-    } else if (flag === "--pluto-url" && i + 1 < argv.length) {
-      args.plutoUrl = argv[++i];
-    } else if (flag === "--julia-version" && i + 1 < argv.length) {
-      args.juliaVersion = argv[++i];
-    } else if (flag === "--target" && i + 1 < argv.length) {
-      const target = argv[++i];
-      if (
-        target === "claude-code" ||
-        target === "copilot" ||
-        target === "all"
-      ) {
-        args.target = target;
-      } else {
-        console.error(
-          `Unknown target: ${target} (use claude-code, copilot, or all)`
+const FLAGS: Record<string, FlagSpec> = {
+  "--mcp-port": {
+    commands: SERVER_COMMANDS,
+    value: true,
+    apply: (a, v, f) => (a.mcpPort = parsePort(f, v)),
+  },
+  "--pluto-port": {
+    commands: ["run", "status"],
+    value: true,
+    apply: (a, v, f) => (a.plutoPort = parsePort(f, v)),
+  },
+  "--pluto-url": {
+    commands: ["run", "status"],
+    value: true,
+    apply: (a, v) => (a.plutoUrl = v),
+  },
+  "--julia-version": {
+    commands: ["run"],
+    value: true,
+    apply: (a, v) => (a.juliaVersion = v),
+  },
+  "--no-pluto": {
+    commands: ["run"],
+    value: false,
+    apply: (a) => (a.noPluto = true),
+  },
+  "--update": {
+    commands: ["run"],
+    value: false,
+    apply: (a) => (a.update = true),
+  },
+  "--target": {
+    commands: ["install"],
+    value: true,
+    apply: (a, v) => {
+      if (v !== "claude-code" && v !== "copilot" && v !== "all") {
+        throw new UsageError(
+          `--target expects claude-code, copilot, or all, got '${v}'`
         );
-        process.exit(1);
       }
-    } else if (flag === "--global") {
-      args.global = true;
-    } else if (flag === "--dry-run") {
-      args.dryRun = true;
-    } else if (flag === "--force") {
-      args.force = true;
-    } else if (flag === "--raw") {
-      args.raw = true;
-    } else if (flag === "--timeout") {
-      const value = argv[++i];
-      const seconds = value === undefined ? NaN : parseInt(value, 10);
-      if (isNaN(seconds) || seconds <= 0) {
-        console.error(`Invalid --timeout value: ${value ?? "(missing)"}`);
-        process.exit(1);
+      a.target = v;
+    },
+  },
+  "--global": {
+    commands: ["install"],
+    value: false,
+    apply: (a) => (a.global = true),
+  },
+  "--dry-run": {
+    commands: ["install"],
+    value: false,
+    apply: (a) => (a.dryRun = true),
+  },
+  "--force": {
+    commands: ["install"],
+    value: false,
+    apply: (a) => (a.force = true),
+  },
+  "--raw": {
+    commands: ["call"],
+    value: false,
+    apply: (a) => (a.raw = true),
+  },
+  "--timeout": {
+    commands: ["call"],
+    value: true,
+    apply: (a, v) => {
+      const seconds = Number(v);
+      if (!Number.isInteger(seconds) || seconds <= 0) {
+        throw new UsageError(`--timeout expects a number of seconds, got '${v}'`);
       }
-      args.timeoutSeconds = seconds;
-    } else if (flag === "--no-pluto") {
-      args.noPluto = true;
-    } else {
-      console.warn(`Unknown flag: ${flag}`);
-    }
+      a.timeoutSeconds = seconds;
+    },
+  },
+  "--json": {
+    commands: ["status"],
+    value: false,
+    apply: (a) => (a.json = true),
+  },
+};
 
-    i++;
+/**
+ * Parse argv into a command plus options. The command is the first
+ * positional token; other positionals belong to the command (`call <tool>
+ * [json]`, `tools [name]`) and may appear before or after flags. Unknown
+ * flags and flags that do not apply to the command are errors.
+ */
+export function parseArgs(argv: string[]): RawArgs {
+  const positionals: string[] = [];
+  const flags: Array<{ flag: string; value: string | undefined }> = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === "--") {
+      positionals.push(...argv.slice(i + 1));
+      break;
+    }
+    if (!token.startsWith("-") || token === "-") {
+      positionals.push(token);
+      continue;
+    }
+    if (token === "--help" || token === "-h") {
+      return { command: "help" };
+    }
+    if (token === "--version" || token === "-V") {
+      return { command: "version" };
+    }
+    const eq = token.indexOf("=");
+    const flag = eq === -1 ? token : token.slice(0, eq);
+    const spec = FLAGS[flag];
+    if (!spec) {
+      throw new UsageError(`Unknown option '${flag}'`);
+    }
+    let value: string | undefined;
+    if (spec.value) {
+      if (eq !== -1) {
+        value = token.slice(eq + 1);
+      } else {
+        value = argv[++i];
+        if (value === undefined) {
+          throw new UsageError(`${flag} requires a value`);
+        }
+      }
+    } else if (eq !== -1) {
+      throw new UsageError(`${flag} does not take a value`);
+    }
+    flags.push({ flag, value });
   }
 
-  if (args.command === "help") {
-    printHelp();
-    process.exit(0);
+  const first = positionals.shift();
+  if (first === undefined) {
+    return { command: "help" };
+  }
+  if (!COMMANDS.includes(first as Command)) {
+    throw new UsageError(`Unknown command '${first}'`);
+  }
+  const args: RawArgs = { command: first as Command };
+
+  for (const { flag, value } of flags) {
+    const spec = FLAGS[flag];
+    if (!spec.commands.includes(args.command)) {
+      throw new UsageError(
+        `${flag} is not valid for '${args.command}' (valid for: ${spec.commands.join(", ")})`
+      );
+    }
+    spec.apply(args, value, flag);
+  }
+
+  switch (args.command) {
+    case "call":
+      if (positionals.length === 0) {
+        throw new UsageError("call needs a tool name: call <tool> [json]");
+      }
+      if (positionals.length > 2) {
+        throw new UsageError(
+          `call takes at most two arguments (tool name and JSON), got ${positionals.length}`
+        );
+      }
+      args.toolName = positionals[0];
+      args.toolArgs = positionals[1];
+      break;
+    case "tools":
+      if (positionals.length > 1) {
+        throw new UsageError("tools takes at most one argument: tools [name]");
+      }
+      args.toolFilter = positionals[0];
+      break;
+    default:
+      if (positionals.length > 0) {
+        throw new UsageError(
+          `'${args.command}' does not take arguments (got '${positionals[0]}')`
+        );
+      }
   }
 
   return args;

@@ -50,6 +50,14 @@ async function withExecutionTimeout<T>(
  * HTTP/SSE-based MCP Server for Pluto Notebooks
  * This allows the extension and MCP clients to share the same PlutoManager instance
  */
+export interface McpServerOptions {
+  /** Move to a free port when the requested one is busy (a second VS Code window). */
+  dynamicPort?: boolean;
+  /** Who runs this server; reported by /health so CLI clients can tell them apart. */
+  host?: "vscode" | "cli";
+  version?: string;
+}
+
 export class PlutoMCPHttpServer {
   private readonly app: Express;
   private httpServer?: HttpServer;
@@ -66,6 +74,8 @@ export class PlutoMCPHttpServer {
   private sessionSweeper?: ReturnType<typeof setInterval>;
   private readonly plutoManager: PlutoManager;
   private port: number;
+  private readonly host: "vscode" | "cli";
+  private readonly version: string | undefined;
   private readonly dynamicPort: boolean;
 
   /**
@@ -73,10 +83,16 @@ export class PlutoMCPHttpServer {
    * free one instead of failing (used by the extension so multiple VSCode
    * windows can coexist; the CLI stays strict so `tools`/`call` can find it)
    */
-  constructor(plutoManager: PlutoManager, port = 3100, dynamicPort = false) {
+  constructor(
+    plutoManager: PlutoManager,
+    port = 3100,
+    options: McpServerOptions = {}
+  ) {
     this.plutoManager = plutoManager;
     this.port = port;
-    this.dynamicPort = dynamicPort;
+    this.dynamicPort = options.dynamicPort ?? false;
+    this.host = options.host ?? "vscode";
+    this.version = options.version;
     this.app = express();
     this.app.use(express.json());
     this.setupRoutes();
@@ -1348,7 +1364,12 @@ export class PlutoMCPHttpServer {
     this.app.get("/health", (_req: Request, res: Response) => {
       res.json({
         status: "ok",
+        host: this.host,
+        version: this.version,
         plutoServerRunning: this.plutoManager.isConnected(),
+        plutoUrl: this.plutoManager.isConnected()
+          ? this.plutoManager.getServerUrl()
+          : undefined,
         activeSessions: this.transports.size + this.streamableTransports.size,
         transports: {
           sse: this.transports.size,
@@ -1488,7 +1509,10 @@ export function initializeMCPServer(
   }
 
   // Dynamic port: a second VSCode window must not fail on a busy port
-  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, true);
+  mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, {
+    dynamicPort: true,
+    host: "vscode",
+  });
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
 

@@ -5,14 +5,47 @@ import { NodeServerManager } from "./nodeServerManager.ts";
 import { NodeFileReader } from "./nodeFileReader.ts";
 import { consoleLogger } from "./logger.ts";
 import { type CliConfig, VERSION } from "./config.ts";
+import { describeHost, probeMcp } from "./discover.ts";
+import { hasMcpConfig } from "./install.ts";
+import { bold, dim, green, yellow } from "./ui.ts";
+
+const CMD = "npx @plutojl/cli";
 
 export async function run(config: CliConfig): Promise<void> {
-  console.log(`@plutojl/cli v${VERSION} — command-line tool for Pluto.jl\n`);
+  console.log(`${bold("@plutojl/cli")} ${dim(`v${VERSION}`)}\n`);
+
+  // A tool server already on this port is either VS Code's (fine: use it)
+  // or another `run` (a mistake) — say which instead of failing on EADDRINUSE
+  const existing = await probeMcp(config.mcpPort);
+  if (existing) {
+    if (existing.host === "vscode") {
+      console.log(
+        `${green("✓")} The VS Code extension already runs a tool server at ${existing.url}`
+      );
+      console.log(
+        dim(`  '${CMD} call' and '${CMD} tools' use it; nothing to start.`)
+      );
+      console.log(
+        dim(`  To run a separate server anyway, pass --mcp-port <other port>.`)
+      );
+      return;
+    }
+    const owner =
+      existing.host === "unknown" ? "" : ` (${describeHost(existing.host)})`;
+    console.error(
+      `${yellow("!")} A tool server${owner} is already listening at ${existing.url}.`
+    );
+    console.error(
+      dim(`  Stop it first, or pass --mcp-port <other port> to run a second one.`)
+    );
+    process.exit(1);
+  }
 
   const serverManager = new NodeServerManager(
     config.plutoPort,
     config.juliaVersion,
-    config.workDir
+    config.workDir,
+    { update: config.update }
   );
 
   const plutoManager = new PlutoManager(
@@ -24,7 +57,10 @@ export async function run(config: CliConfig): Promise<void> {
   );
 
   // Start the MCP HTTP server first (so health endpoint is available during Pluto startup)
-  const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort);
+  const mcpServer = new PlutoMCPHttpServer(plutoManager, config.mcpPort, {
+    host: "cli",
+    version: VERSION,
+  });
   try {
     await mcpServer.start();
   } catch (err) {
@@ -34,13 +70,13 @@ export async function run(config: CliConfig): Promise<void> {
       }`
     );
     console.error(
-      `[cli] Is another 'run' already active? Pass --mcp-port <port> to use a different port.`
+      `[cli] Something else owns that port. Pass --mcp-port <port> to use a different one.`
     );
     process.exit(1);
   }
 
   console.log(
-    `[cli] MCP server listening at http://localhost:${config.mcpPort}/mcp`
+    `[cli] Tool server listening at http://localhost:${config.mcpPort}/mcp`
   );
   console.log(`[cli] Health check: http://localhost:${config.mcpPort}/health`);
 
@@ -55,25 +91,30 @@ export async function run(config: CliConfig): Promise<void> {
     }
     try {
       await plutoManager.start();
-      console.log(`[cli] Pluto server is ready.`);
+      console.log(`[cli] ${green("Pluto server is ready.")}`);
     } catch (err) {
       console.error(
-        `[cli] Failed to start Pluto: ${err instanceof Error ? err.message : String(err)}`
+        `[cli] ${yellow("Failed to start Pluto:")} ${err instanceof Error ? err.message : String(err)}`
       );
       console.error(
-        `[cli] MCP server is still running — you can start Pluto later via:`
+        `[cli] The tool server is still running — start Pluto later with:`
       );
-      console.error(`[cli]   npx @plutojl/cli call start_pluto_server`);
+      console.error(`[cli]   ${CMD} call start_pluto_server`);
+      console.error(
+        `[cli] If the Julia environment looks broken, rerun with --update.`
+      );
     }
   } else {
     console.log(`[cli] Pluto auto-start skipped (--no-pluto).`);
-    console.log(
-      `[cli] Start it later: npx @plutojl/cli call start_pluto_server`
-    );
+    console.log(`[cli] Start it later: ${CMD} call start_pluto_server`);
   }
 
   console.log(`\n[cli] Press Ctrl+C to stop\n`);
-  console.log(`Tip: Run 'npx @plutojl/cli install' to configure Claude Code\n`);
+  if (!hasMcpConfig(config.workDir)) {
+    console.log(
+      dim(`Tip: '${CMD} install' lets Claude Code or Copilot use this server.\n`)
+    );
+  }
 
   // Graceful shutdown — owns both signals; guard against a second signal
   // arriving while shutdown is already in progress

@@ -9,6 +9,8 @@ on:
       - "src/plutoManagerTypes.ts"
       - "src/plutoManager.ts"
       - "src/mcp-server-http.ts"
+      - "src/platformUtils.ts"
+      - "src/portUtils.ts"
       - "packages/advanced-pluto-mcp/**"
   workflow_dispatch:
     inputs:
