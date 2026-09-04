@@ -2,14 +2,23 @@ import express from "express";
 import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { existsSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { dirname } from "path";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { basename, dirname, extname, join } from "path";
+import { tmpdir } from "os";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
-import { newNotebookSource, presentOutput } from "./notebookOutput.ts";
+import {
+  extensionFor,
+  fullOutput,
+  isImageMime,
+  isRasterMime,
+  newNotebookSource,
+  presentOutput,
+  renderCellToPngCode,
+} from "./notebookOutput.ts";
 import type { PlutoManager } from "./plutoManager.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
@@ -971,6 +980,142 @@ export class PlutoMCPHttpServer {
             {
               type: "text",
               text: `Notebook exported to ${savePath} (${html.length} bytes)`,
+            },
+          ],
+        };
+      }
+    );
+
+    // Read Cell Output
+    server.tool(
+      "read_cell_output",
+      'Fetch a cell\'s complete output, which cell results only summarize. as: "text" returns the full body (SVG/HTML markup, long text, tree JSON); "file" writes it next to the notebook (or to output_path) and returns the path — the way to look at a plot with your own file tools; "image" returns it as an image content block, rendering non-raster values such as SVG plots to PNG inside the notebook first.',
+      {
+        path: z.string().describe("Path to the notebook"),
+        cell_id: z.string().describe("UUID of the cell (from list_cells)"),
+        as: z
+          .enum(["text", "file", "image"])
+          .describe("How to return the output (default text)")
+          .optional()
+          .default("text"),
+        output_path: z
+          .string()
+          .describe(
+            'For as: "file" — where to write; defaults to <notebook>.assets/<cell_id>.<ext>'
+          )
+          .optional(),
+      },
+      async ({ path, cell_id, as, output_path }) => {
+        if (!this.plutoManager.isConnected()) {
+          throw new Error("Pluto server is not running");
+        }
+        const worker = await this.plutoManager.getWorker(path);
+        if (!worker) {
+          throw new Error(`Notebook ${path} is not open`);
+        }
+        const snippet = worker.getSnippet(cell_id);
+        if (!snippet) {
+          throw new Error(`Cell ${cell_id} not found — use list_cells`);
+        }
+        const output = fullOutput(snippet.result.output);
+        if (!output) {
+          throw new Error(`Cell ${cell_id} has no output`);
+        }
+
+        if (as === "text") {
+          const text =
+            output.text ?? Buffer.from(output.bytes).toString("base64");
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    cell_id,
+                    mime: output.mime,
+                    bytes: output.bytes.length,
+                    encoding: output.text === undefined ? "base64" : "utf-8",
+                    body: text,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (as === "file") {
+          const dest =
+            output_path ??
+            join(
+              dirname(path),
+              `${basename(path, extname(path))}.assets`,
+              `${cell_id}.${extensionFor(output.mime)}`
+            );
+          await mkdir(dirname(dest), { recursive: true });
+          await writeFile(dest, output.bytes);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Wrote ${output.bytes.length} bytes of ${output.mime} to ${dest}`,
+              },
+            ],
+          };
+        }
+
+        // as === "image"
+        if (isRasterMime(output.mime)) {
+          return {
+            content: [
+              {
+                type: "image",
+                data: Buffer.from(output.bytes).toString("base64"),
+                mimeType: output.mime,
+              },
+              {
+                type: "text",
+                text: `${output.mime}, ${output.bytes.length} bytes`,
+              },
+            ],
+          };
+        }
+        if (!this.plutoManager.isLocalServer()) {
+          throw new Error(
+            `The cell's output is ${output.mime}; rendering it to PNG needs a local Pluto server. Use as: "file" to save the ${isImageMime(output.mime) ? "image" : "output"} instead.`
+          );
+        }
+        const pngPath = join(
+          tmpdir(),
+          `pluto-cell-${cell_id}-${Date.now()}.png`
+        );
+        const render = await this.plutoManager.executeCodeEphemeral(
+          worker,
+          renderCellToPngCode(cell_id, pngPath)
+        );
+        if (render.errored) {
+          const why = fullOutput(render.output)?.text ?? "unknown error";
+          throw new Error(
+            `Could not render cell ${cell_id} as PNG: ${why.slice(0, 500)}. Use as: "file" to save the ${output.mime} output instead.`
+          );
+        }
+        let png: Buffer;
+        try {
+          png = await readFile(pngPath);
+        } finally {
+          await rm(pngPath, { force: true });
+        }
+        return {
+          content: [
+            {
+              type: "image",
+              data: png.toString("base64"),
+              mimeType: "image/png",
+            },
+            {
+              type: "text",
+              text: `Rendered the cell's ${output.mime} output to image/png (${png.length} bytes)`,
             },
           ],
         };

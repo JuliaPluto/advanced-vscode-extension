@@ -105,13 +105,11 @@ async function main() {
     }
     case "call": {
       const port = await requireMcpPort(resolveMcpPort(args));
-      await callTool(
-        port,
-        args.toolName!,
-        args.toolArgs ?? "{}",
-        args.raw ?? false,
-        (args.timeoutSeconds ?? 120) * 1000
-      );
+      await callTool(port, args.toolName!, args.toolArgs ?? "{}", {
+        raw: args.raw ?? false,
+        timeoutMs: (args.timeoutSeconds ?? 120) * 1000,
+        out: args.out,
+      });
       break;
     }
   }

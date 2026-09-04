@@ -31,6 +31,16 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 - For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it, then (3) `wait_for_notebook_idle`.
 - Use `delete_cell` to remove any accidental duplicate cells.
 
+### Reading outputs, plots, and images
+
+Cell results (`create_cell`, `execute_cell`, `read_cell`, `execute_code`) summarize the output: text is cut at 4,000 characters, tree views at 8,000, and images come back as just their mime type and size. When you need the whole output, call `read_cell_output`:
+
+- `{"path": ..., "cell_id": ..., "as": "text"}` — full SVG/HTML markup, long text, or the tree as JSON.
+- `{"path": ..., "cell_id": ..., "as": "file"}` — writes the output to `<notebook>.assets/<cell_id>.<ext>` (or `output_path`) and returns the path. Read that file with your own tools to look at a plot.
+- `{"path": ..., "cell_id": ..., "as": "image"}` — returns the output as an image. SVG plots and any other value with an `image/png` show method are rendered to PNG inside the notebook first, so this works for Plots, Makie, and Images figures. Needs a local Pluto server.
+
+Prefer `as: "image"` to see what a plot looks like, and `as: "file"` when the picture should stay on disk.
+
 ### Pluto Reactivity Rules
 
 - **Each variable can only be defined in one cell.** If you get a "Multiple definitions" error, use `list_cells` to find the duplicate, then `delete_cell` to remove it.
