@@ -1,9 +1,8 @@
 # [0.6.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.2...v0.6.0) (2026-09-04)
 
-
 ### Features
 
-* **cli:** argument files and relative-path resolution; cell edits and runs now go through Pluto ([f9aa28b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f9aa28bbce95c2a42027670a2955550224767ae2))
+- **cli:** argument files and relative-path resolution; cell edits and runs now go through Pluto ([f9aa28b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f9aa28bbce95c2a42027670a2955550224767ae2))
 
 ## [0.5.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.1...v0.5.2) (2026-09-04)
 
