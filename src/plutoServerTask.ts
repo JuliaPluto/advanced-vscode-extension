@@ -19,10 +19,13 @@ export class PlutoServerTaskManager {
   private taskEndListener?: vscode.Disposable;
   private isStarting = false;
   private actualPort: number;
+  /** Port the manager last heard about; every change is reported, including back to the default. */
+  private lastReportedPort: number;
   private onPortChangedCallback?: (newPort: number) => void;
 
   constructor(private readonly port = 1234) {
     this.actualPort = port;
+    this.lastReportedPort = port;
   }
 
   /**
@@ -44,6 +47,19 @@ export class PlutoServerTaskManager {
    */
   public onPortChanged(callback: (newPort: number) => void): void {
     this.onPortChangedCallback = callback;
+  }
+
+  /**
+   * Record the port the server actually uses and tell the manager when it
+   * differs from what it last heard — a return to the default port after
+   * a run on an alternative one is a change too.
+   */
+  private setActualPort(port: number): void {
+    this.actualPort = port;
+    if (port !== this.lastReportedPort) {
+      this.lastReportedPort = port;
+      this.onPortChangedCallback?.(port);
+    }
   }
 
   /**
@@ -76,8 +92,7 @@ export class PlutoServerTaskManager {
         // Adopt the reused task's port — it may differ from our configured one
         const taskPort = execution.task.definition.port as number | undefined;
         if (taskPort && taskPort !== this.actualPort) {
-          this.actualPort = taskPort;
-          this.onPortChangedCallback?.(taskPort);
+          this.setActualPort(taskPort);
         }
 
         // Watch the adopted task for termination like a task we started
@@ -87,7 +102,7 @@ export class PlutoServerTaskManager {
             this.serverReadyPromise = undefined;
             this.serverReadyResolve = undefined;
             this.isStarting = false;
-            this.actualPort = this.port;
+            this.setActualPort(this.port);
             this.taskEndListener?.dispose();
             this.taskEndListener = undefined;
             this.onStopCallback?.();
@@ -107,14 +122,10 @@ export class PlutoServerTaskManager {
         `[PlutoServerTask] Port ${this.port} is not available, finding alternative...`
       );
       try {
-        this.actualPort = await findAvailablePort(this.port);
+        this.setActualPort(await findAvailablePort(this.port));
         console.log(
           `[PlutoServerTask] Found available port: ${this.actualPort}`
         );
-
-        if (this.onPortChangedCallback && this.actualPort !== this.port) {
-          this.onPortChangedCallback(this.actualPort);
-        }
 
         if (this.actualPort !== this.port) {
           vscode.window.showWarningMessage(
@@ -128,7 +139,7 @@ export class PlutoServerTaskManager {
         throw new Error(`Failed to find available port: ${errorMessage}`);
       }
     } else {
-      this.actualPort = this.port;
+      this.setActualPort(this.port);
     }
 
     // Create promise that resolves when server is ready
@@ -235,7 +246,7 @@ export class PlutoServerTaskManager {
         this.serverReadyPromise = undefined;
         this.serverReadyResolve = undefined;
         this.isStarting = false;
-        this.actualPort = this.port;
+        this.setActualPort(this.port);
 
         if (this.taskEndListener) {
           this.taskEndListener.dispose();
@@ -345,7 +356,7 @@ export class PlutoServerTaskManager {
       this.taskEndListener = undefined;
     }
 
-    this.actualPort = this.port;
+    this.setActualPort(this.port);
   }
 
   /**
