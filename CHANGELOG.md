@@ -1,3 +1,10 @@
+## [0.5.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.1...v0.5.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **notebook:** bind the controller to a notebook before rendering results that arrive first ([5a6498b](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5a6498ba4cf8b0dedf2d7177d951280b95347579))
+
 ## [0.5.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.5.0...v0.5.1) (2026-09-04)
 
 ### Bug Fixes
