@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.7.0...v0.7.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **server:** report the Pluto port to the manager when it returns to the default ([ca8dd48](https://github.com/JuliaPluto/advanced-vscode-extension/commit/ca8dd488e7b2ef3ca76b3ffe3ac556a0cd1b0143))
+
 # [0.7.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.6.0...v0.7.0) (2026-09-04)
 
 ### Features
