@@ -11,14 +11,33 @@ interface ConfigFile {
   serverUrl?: string;
 }
 
-export function loadConfigFile(dir: string): ConfigFile {
-  const filePath = path.join(dir, CONFIG_FILE);
+function readJsonObject(filePath: string): Record<string, unknown> {
   try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw) as ConfigFile;
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
+}
+
+export function loadConfigFile(dir: string): ConfigFile {
+  return readJsonObject(path.join(dir, CONFIG_FILE)) as ConfigFile;
+}
+
+/**
+ * The port the VS Code extension's tool server starts on in this workspace
+ * (`pluto-notebook.mcpPort` in .vscode/settings.json), when set.
+ */
+export function loadVSCodeMcpPort(dir: string): number | undefined {
+  const settings = readJsonObject(path.join(dir, ".vscode", "settings.json"));
+  const value = settings["pluto-notebook.mcpPort"];
+  return typeof value === "number" && Number.isInteger(value)
+    ? value
+    : undefined;
 }
 
 function envInt(name: string, env: NodeJS.ProcessEnv): number | undefined {
@@ -35,22 +54,30 @@ export interface ResolveContext {
 
 export interface McpPortResolution {
   port: number;
-  /** True when the port came from a flag, env var, or config file rather than the default. */
+  /**
+   * True when the port was named on the command line or in the environment.
+   * Ports from config files are a starting point that discovery may look past.
+   */
   explicit: boolean;
 }
 
-/** Tool-server port shared by every command: flag > env > .plutomcp.json > default. */
+/**
+ * Tool-server port shared by every command:
+ * flag > env > .plutomcp.json > pluto-notebook.mcpPort in .vscode/settings.json > default.
+ */
 export function resolveMcpPort(
   args: RawArgs,
   ctx: ResolveContext = {}
 ): McpPortResolution {
   const env = ctx.env ?? process.env;
-  const file = loadConfigFile(ctx.cwd ?? process.cwd());
-  const configured =
-    args.mcpPort ?? envInt("PLUTO_MCP_PORT", env) ?? file.mcpPort;
-  return configured === undefined
-    ? { port: DEFAULTS.mcpPort, explicit: false }
-    : { port: configured, explicit: true };
+  const cwd = ctx.cwd ?? process.cwd();
+  const explicit = args.mcpPort ?? envInt("PLUTO_MCP_PORT", env);
+  if (explicit !== undefined) {
+    return { port: explicit, explicit: true };
+  }
+  const port =
+    loadConfigFile(cwd).mcpPort ?? loadVSCodeMcpPort(cwd) ?? DEFAULTS.mcpPort;
+  return { port, explicit: false };
 }
 
 export function resolveRunConfig(
@@ -61,6 +88,8 @@ export function resolveRunConfig(
   const workDir = ctx.cwd ?? process.cwd();
   const file = loadConfigFile(workDir);
   const mcp = resolveMcpPort(args, ctx);
+  const juliaVersion =
+    args.juliaVersion ?? env.JULIA_VERSION ?? file.juliaVersion;
 
   return {
     mcpPort: mcp.port,
@@ -72,11 +101,8 @@ export function resolveRunConfig(
       DEFAULTS.plutoPort,
     plutoUrl:
       args.plutoUrl ?? env.PLUTO_SERVER_URL ?? file.serverUrl ?? undefined,
-    juliaVersion:
-      args.juliaVersion ??
-      env.JULIA_VERSION ??
-      file.juliaVersion ??
-      DEFAULTS.juliaVersion,
+    juliaVersion: juliaVersion ?? DEFAULTS.juliaVersion,
+    juliaVersionExplicit: juliaVersion !== undefined,
     workDir,
     noPluto: args.noPluto ?? false,
     update: args.update ?? false,

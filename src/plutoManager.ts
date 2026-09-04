@@ -578,23 +578,22 @@ export class PlutoManager {
     }
 
     if (cellInput.code_folded === folded) {
-      return; // Already in desired state
+      return;
     }
 
-    const updates = [
-      {
-        op: "replace" as const,
-        path: ["cell_inputs", cellId, "code_folded"],
-        value: folded,
-      },
-    ];
-
-    await worker.client.send(
-      "update_notebook",
-      { updates },
-      { notebook_id: worker.notebook_id },
-      false
-    );
+    // Route through the worker's own state updater so the local notebook
+    // state (which list_cells and save_notebook read) and Pluto stay in sync
+    await (
+      worker as unknown as {
+        _update_notebook_state: (
+          mutate: (nb: {
+            cell_inputs: Record<string, { code_folded: boolean }>;
+          }) => void
+        ) => Promise<void>;
+      }
+    )._update_notebook_state((nb) => {
+      nb.cell_inputs[cellId].code_folded = folded;
+    });
   }
 
   /**

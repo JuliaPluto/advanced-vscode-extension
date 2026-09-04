@@ -25,7 +25,37 @@ describe("resolveConfig", () => {
     expect(config.mcpPortExplicit).toBe(false);
     expect(config.plutoPort).toBe(DEFAULTS.plutoPort);
     expect(config.juliaVersion).toBe(DEFAULTS.juliaVersion);
+    expect(config.juliaVersionExplicit).toBe(false);
     expect(config.update).toBe(false);
+  });
+
+  it("marks ports from config files as a starting point, not explicit", () => {
+    fs.writeFileSync(
+      path.join(cwd, ".plutomcp.json"),
+      JSON.stringify({ mcpPort: 3300 })
+    );
+    expect(resolveMcpPort({ command: "tools" }, { cwd, env: {} })).toEqual({
+      port: 3300,
+      explicit: false,
+    });
+    expect(
+      resolveMcpPort(
+        { command: "tools" },
+        { cwd, env: { PLUTO_MCP_PORT: "3400" } }
+      )
+    ).toEqual({ port: 3400, explicit: true });
+  });
+
+  it("falls back to the VS Code extension's configured port", () => {
+    fs.mkdirSync(path.join(cwd, ".vscode"));
+    fs.writeFileSync(
+      path.join(cwd, ".vscode", "settings.json"),
+      JSON.stringify({ "pluto-notebook.mcpPort": 3150 })
+    );
+    expect(resolveMcpPort({ command: "call" }, { cwd, env: {} })).toEqual({
+      port: 3150,
+      explicit: false,
+    });
   });
 
   it("applies flag > env > file precedence", () => {
@@ -49,12 +79,8 @@ describe("resolveConfig", () => {
       path.join(cwd, ".plutomcp.json"),
       JSON.stringify({ mcpPort: 3300 })
     );
-    expect(resolveMcpPort({ command: "tools" }, { cwd, env: {} })).toEqual({
-      port: 3300,
-      explicit: true,
-    });
-    expect(resolveInstallArgs({ command: "install" }, { cwd, env: {} }).mcpPort).toBe(
-      3300
-    );
+    expect(
+      resolveInstallArgs({ command: "install" }, { cwd, env: {} }).mcpPort
+    ).toBe(3300);
   });
 });

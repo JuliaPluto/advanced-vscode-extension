@@ -9,6 +9,7 @@ on:
       - "src/plutoManagerTypes.ts"
       - "src/plutoManager.ts"
       - "src/mcp-server-http.ts"
+      - "src/notebookOutput.ts"
       - "src/platformUtils.ts"
       - "src/portUtils.ts"
       - "packages/advanced-pluto-mcp/**"

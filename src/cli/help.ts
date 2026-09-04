@@ -1,6 +1,6 @@
 import { DEFAULTS, VERSION } from "./config.ts";
 import { type Status, describeHost } from "./discover.ts";
-import { bold, cyan, dim, green, red, row, yellow } from "./ui.ts";
+import { bold, cyan, dim, err, green, row, yellow } from "./ui.ts";
 
 const CMD = "npx @plutojl/cli";
 
@@ -24,7 +24,10 @@ export function helpText(): string {
     "",
     section("Commands", [
       cmd("run", "Start Pluto and the tool server (Ctrl+C stops both)"),
-      cmd("status", "Show whether Pluto and a tool server are running"),
+      cmd(
+        "status",
+        "Show whether Pluto and a tool server are running (--wait blocks until both are)"
+      ),
       cmd("tools", "List notebook tools; `tools <name>` shows its parameters"),
       cmd("call", "Call a notebook tool: `call <tool> [json]`"),
       cmd("install", "Write MCP config so AI assistants can connect"),
@@ -33,9 +36,18 @@ export function helpText(): string {
     ]),
     "",
     section("Options for run", [
-      opt("--pluto-port <port>", `Pluto server port ${dim(`(default ${DEFAULTS.plutoPort})`)}`),
-      opt("--pluto-url <url>", "Connect to a Pluto server that is already running"),
-      opt("--mcp-port <port>", `Tool server port ${dim(`(default ${DEFAULTS.mcpPort})`)}`),
+      opt(
+        "--pluto-port <port>",
+        `Pluto server port ${dim(`(default ${DEFAULTS.plutoPort})`)}`
+      ),
+      opt(
+        "--pluto-url <url>",
+        "Connect to a Pluto server that is already running"
+      ),
+      opt(
+        "--mcp-port <port>",
+        `Tool server port ${dim(`(default ${DEFAULTS.mcpPort})`)}`
+      ),
       opt(
         "--julia-version <ver>",
         `juliaup channel, or 'default' for your current julia ${dim(`(default ${DEFAULTS.juliaVersion})`)}`
@@ -44,15 +56,33 @@ export function helpText(): string {
       opt("--no-pluto", "Start the tool server only"),
     ]),
     "",
+    section("Options for status", [
+      opt("--wait", "Block until a tool server with Pluto connected answers"),
+      opt(
+        "--timeout <seconds>",
+        `Give up waiting after this long ${dim("(default 600)")}`
+      ),
+      opt("--json", "Print the status as JSON"),
+    ]),
+    "",
     section("Options for call", [
-      opt("--timeout <seconds>", `How long to wait for the result ${dim("(default 120)")}`),
+      opt(
+        "--timeout <seconds>",
+        `How long to wait for the result ${dim("(default 120)")}`
+      ),
       opt("--raw", "Print the raw JSON-RPC result"),
       opt("--mcp-port <port>", "Tool server to talk to"),
     ]),
     "",
     section("Options for install", [
-      opt("--target <t>", `claude-code, copilot, or all ${dim("(default claude-code)")}`),
-      opt("--global", "Claude Code: write ~/.claude.json instead of ./.mcp.json"),
+      opt(
+        "--target <t>",
+        `claude-code, copilot, or all ${dim("(default claude-code)")}`
+      ),
+      opt(
+        "--global",
+        "Claude Code: write ~/.claude.json instead of ./.mcp.json"
+      ),
       opt("--dry-run", "Print the config instead of writing it"),
       opt("--force", "Replace an existing pluto-notebook entry"),
       opt("--mcp-port <port>", "Tool server port to put in the config"),
@@ -87,19 +117,19 @@ export function statusText(status: Status): string {
   );
 
   if (mcp) {
-    const owner = mcp.host === "unknown" ? "" : ` ${dim(`(${describeHost(mcp.host)})`)}`;
+    const owner =
+      mcp.host === "unknown" ? "" : ` ${dim(`(${describeHost(mcp.host)})`)}`;
     const details = [
       `${green("running")}${owner} at ${mcp.url}`,
-      mcp.plutoRunning ? green("Pluto connected") : yellow("Pluto not connected"),
+      mcp.plutoRunning
+        ? green("Pluto connected")
+        : yellow("Pluto not connected"),
       dim(`${mcp.sessions} session${mcp.sessions === 1 ? "" : "s"}`),
     ];
     lines.push(row("Tool server", details.join(dim(" · "))));
   } else {
     lines.push(
-      row(
-        "Tool server",
-        `${dim("not running")} on port ${status.mcpPort}`
-      )
+      row("Tool server", `${dim("not running")} on port ${status.mcpPort}`)
     );
   }
 
@@ -124,6 +154,7 @@ export function statusText(status: Status): string {
   );
 }
 
+/** Styled for stderr. */
 export function usageErrorText(message: string): string {
-  return `${red("error:")} ${message}\n${dim(`Run '${CMD} help' for usage.`)}`;
+  return `${err.red("error:")} ${message}\n${err.dim(`Run '${CMD} help' for usage.`)}`;
 }

@@ -57,4 +57,4 @@ jobs:
           echo "CLI binary looks good"
 
       - name: Smoke test
-        run: node packages/advanced-pluto-mcp/dist/cli.cjs --help | grep -q "Usage:"
+        run: node packages/advanced-pluto-mcp/dist/cli.cjs --help | grep -q "Usage"

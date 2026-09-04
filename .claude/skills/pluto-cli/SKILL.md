@@ -24,13 +24,13 @@ npx @plutojl/cli run --pluto-url http://localhost:1234
 Run this in the background — it stays up. First run installs and precompiles Pluto: **allow up to 10 minutes**; later runs skip the install (pass `--update` to force it). The tool server's `/health` endpoint responds throughout. Check readiness with:
 
 ```bash
-npx @plutojl/cli status                # exit 0 once a tool server answers
+npx @plutojl/cli status --wait         # blocks until Pluto is connected (up to --timeout, default 600s)
 curl -s http://localhost:3100/health   # {"status":"ok","host":"cli","plutoServerRunning":true,...}
 ```
 
 ## The validation loop (the main workflow)
 
-Hand-write or edit the `.pluto.jl` file BEFORE opening it (fastest for multi-cell authoring — see `learn_pluto_basics` for the exact file format), then use the notebook as your correctness oracle:
+Start from `create_notebook` (`{"path": "/abs/path/nb.pluto.jl", "title": "My notebook"}`) and add cells with `create_cell`, or hand-write the `.pluto.jl` file BEFORE opening it (fastest for multi-cell authoring — see `learn_pluto_basics` for the exact file format). Then use the notebook as your correctness oracle:
 
 ```bash
 npx @plutojl/cli call open_notebook '{"path": "/abs/path/nb.pluto.jl"}'

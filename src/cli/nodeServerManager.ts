@@ -152,19 +152,23 @@ export class NodeServerManager implements IPlutoServerManager {
       // 6. Optional JuliaHub auth
       await this.tryJuliaHubAuth(env, juliaCmd, juliaArgs);
 
-      // 7. One Julia process: install Pluto into the shared environment only
-      // when it is missing (or --update was passed), then run the server
+      // 7. One Julia process: make sure Pluto is present in the shared
+      // environment, then serve. Pkg.instantiate() always runs so a pruned
+      // depot is repaired; the registry update and resolve only run when
+      // Pluto is not in the project yet or --update was passed.
       const install = this.options.update ? "true" : "false";
       const runCode = [
         "import Pkg",
         "s = string",
         "env = mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION)))",
         "Pkg.activate(env)",
-        `if ${install} || Base.identify_package(s(:Pluto)) === nothing`,
+        `if ${install} || !haskey(Pkg.project().dependencies, s(:Pluto))`,
         "Pkg.Registry.add()",
         "Pkg.add(s(:Pluto))",
         "Pkg.add(s(:Pkg))",
+        "end",
         "Pkg.instantiate()",
+        `if ${install}`,
         "Pkg.precompile()",
         "end",
         "using Pluto",

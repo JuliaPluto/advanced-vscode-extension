@@ -6,6 +6,8 @@ export interface CliConfig {
   plutoUrl: string | undefined;
   /** juliaup channel, or "default" to use whatever `julia` resolves to. */
   juliaVersion: string;
+  /** True when the channel was named by the user rather than defaulted. */
+  juliaVersionExplicit: boolean;
   workDir: string;
   noPluto: boolean;
   /** Re-run the Pluto install/precompile step even when Pluto is already installed. */

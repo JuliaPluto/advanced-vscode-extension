@@ -30,17 +30,19 @@ export interface Status {
 
 const PROBE_TIMEOUT_MS = 800;
 
-/** How many ports above the base to try for a VS Code window that had to move. */
-const VSCODE_PORT_SPREAD = 5;
+/**
+ * How many ports above the base to try. The extension moves up one port at
+ * a time when its configured port is busy, so a handful of extra windows or
+ * stray listeners still land inside this range.
+ */
+const VSCODE_PORT_SPREAD = 10;
 
 /**
  * True when the process runs inside a VS Code terminal (directly or through
  * an agent launched from one). VS Code marks its terminals with TERM_PROGRAM
  * and a family of VSCODE_* variables that child processes inherit.
  */
-export function isInsideVSCode(
-  env: NodeJS.ProcessEnv = process.env
-): boolean {
+export function isInsideVSCode(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.TERM_PROGRAM === "vscode") return true;
   return [
     "VSCODE_PID",
@@ -102,33 +104,31 @@ export async function probePluto(
 
 export interface DiscoverOptions {
   port: number;
-  /** When true only `port` is probed; otherwise nearby ports are tried inside VS Code. */
+  /** When true only `port` is probed; otherwise nearby ports are also tried inside VS Code. */
   explicit: boolean;
   env?: NodeJS.ProcessEnv;
 }
 
 /**
- * Locate a running tool server. Inside VS Code the extension's server is
- * preferred: it may have moved up a few ports when its default was busy,
- * so a small range above the base port is probed as well.
+ * Locate a running tool server. The configured port wins when something
+ * answers there. Otherwise, inside VS Code, the extension may have moved up
+ * a few ports because its default was busy, so a small range above the
+ * base port is probed and a server owned by VS Code is preferred.
  */
 export async function discoverMcp(
   opts: DiscoverOptions
 ): Promise<McpProbe | undefined> {
-  const inside = isInsideVSCode(opts.env);
-  const ports =
-    opts.explicit || !inside
-      ? [opts.port]
-      : Array.from({ length: VSCODE_PORT_SPREAD + 1 }, (_, i) => opts.port + i);
+  const onPort = await probeMcp(opts.port);
+  if (onPort) return onPort;
+  if (opts.explicit || !isInsideVSCode(opts.env)) return undefined;
 
+  const ports = Array.from(
+    { length: VSCODE_PORT_SPREAD },
+    (_, i) => opts.port + 1 + i
+  );
   const probes = await Promise.all(ports.map((p) => probeMcp(p)));
   const found = probes.filter((p): p is McpProbe => p !== undefined);
-  if (found.length === 0) return undefined;
-  if (inside) {
-    const fromVSCode = found.find((p) => p.host === "vscode");
-    if (fromVSCode) return fromVSCode;
-  }
-  return found[0];
+  return found.find((p) => p.host === "vscode") ?? found[0];
 }
 
 export async function collectStatus(opts: {

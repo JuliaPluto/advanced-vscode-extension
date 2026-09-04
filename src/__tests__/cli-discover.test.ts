@@ -103,7 +103,9 @@ describe("probePluto", () => {
       res.end("nginx");
     });
     try {
-      expect((await probePluto(`http://localhost:${port}`)).running).toBe(false);
+      expect((await probePluto(`http://localhost:${port}`)).running).toBe(
+        false
+      );
     } finally {
       server.close();
     }
@@ -111,45 +113,26 @@ describe("probePluto", () => {
 });
 
 describe("discoverMcp", () => {
-  it("prefers the VS Code extension's server inside VS Code, even on a moved port", async () => {
+  it("uses whatever answers on the configured port, even inside VS Code", async () => {
     const cli = await healthServer({
       status: "ok",
       host: "cli",
       plutoServerRunning: false,
     });
-    const vscode = await healthServer({
-      status: "ok",
-      host: "vscode",
-      plutoServerRunning: true,
-    });
     try {
-      // The ports are random; make the VS Code one sit within the probed spread
-      // by probing from the lower of the two only when they are close enough.
-      const base = Math.min(cli.port, vscode.port);
-      const spread = Math.abs(cli.port - vscode.port);
-      if (spread > 5) {
-        // Fall back to a direct check of the preference logic on the same port set
-        const found = await discoverMcp({
-          port: vscode.port,
-          explicit: false,
-          env: { TERM_PROGRAM: "vscode" },
-        });
-        expect(found?.host).toBe("vscode");
-      } else {
-        const found = await discoverMcp({
-          port: base,
-          explicit: false,
-          env: { TERM_PROGRAM: "vscode" },
-        });
-        expect(found?.host).toBe("vscode");
-      }
+      const found = await discoverMcp({
+        port: cli.port,
+        explicit: false,
+        env: { TERM_PROGRAM: "vscode" },
+      });
+      expect(found?.host).toBe("cli");
+      expect(found?.port).toBe(cli.port);
     } finally {
       cli.server.close();
-      vscode.server.close();
     }
   });
 
-  it("only probes the configured port when it was set explicitly", async () => {
+  it("looks above the configured port inside VS Code when nothing answers on it", async () => {
     const vscode = await healthServer({
       status: "ok",
       host: "vscode",
@@ -157,11 +140,34 @@ describe("discoverMcp", () => {
     });
     try {
       const found = await discoverMcp({
-        port: vscode.port - 1,
-        explicit: true,
+        port: vscode.port - 3,
+        explicit: false,
         env: { TERM_PROGRAM: "vscode" },
       });
-      expect(found).toBeUndefined();
+      expect(found?.port).toBe(vscode.port);
+      expect(found?.host).toBe("vscode");
+    } finally {
+      vscode.server.close();
+    }
+  });
+
+  it("does not scan outside VS Code or when the port was given explicitly", async () => {
+    const vscode = await healthServer({
+      status: "ok",
+      host: "vscode",
+      plutoServerRunning: true,
+    });
+    try {
+      expect(
+        await discoverMcp({ port: vscode.port - 1, explicit: false, env: {} })
+      ).toBeUndefined();
+      expect(
+        await discoverMcp({
+          port: vscode.port - 1,
+          explicit: true,
+          env: { TERM_PROGRAM: "vscode" },
+        })
+      ).toBeUndefined();
     } finally {
       vscode.server.close();
     }

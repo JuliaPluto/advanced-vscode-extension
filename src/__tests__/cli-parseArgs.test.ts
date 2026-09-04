@@ -35,9 +35,19 @@ describe("parseArgs", () => {
   });
 
   it("accepts call positionals before or after flags", () => {
-    const before = parseArgs(["call", "open_notebook", '{"path":"x"}', "--raw"]);
+    const before = parseArgs([
+      "call",
+      "open_notebook",
+      '{"path":"x"}',
+      "--raw",
+    ]);
     const after = parseArgs(["call", "--raw", "open_notebook", '{"path":"x"}']);
-    const between = parseArgs(["call", "open_notebook", "--raw", '{"path":"x"}']);
+    const between = parseArgs([
+      "call",
+      "open_notebook",
+      "--raw",
+      '{"path":"x"}',
+    ]);
     for (const args of [before, after, between]) {
       expect(args).toEqual({
         command: "call",
@@ -49,13 +59,20 @@ describe("parseArgs", () => {
   });
 
   it("parses tools [name]", () => {
-    expect(parseArgs(["tools"])).toEqual({ command: "tools", toolFilter: undefined });
-    expect(parseArgs(["tools", "open_notebook"]).toolFilter).toBe("open_notebook");
+    expect(parseArgs(["tools"])).toEqual({
+      command: "tools",
+      toolFilter: undefined,
+    });
+    expect(parseArgs(["tools", "open_notebook"]).toolFilter).toBe(
+      "open_notebook"
+    );
     expect(() => parseArgs(["tools", "a", "b"])).toThrow(UsageError);
   });
 
   it("rejects unknown commands and options", () => {
-    expect(() => parseArgs(["frobnicate"])).toThrow(/Unknown command 'frobnicate'/);
+    expect(() => parseArgs(["frobnicate"])).toThrow(
+      /Unknown command 'frobnicate'/
+    );
     expect(() => parseArgs(["run", "--pluto_port", "5000"])).toThrow(
       /Unknown option '--pluto_port'/
     );
@@ -63,22 +80,36 @@ describe("parseArgs", () => {
 
   it("rejects options that do not belong to the command", () => {
     expect(() => parseArgs(["run", "--raw"])).toThrow(/not valid for 'run'/);
-    expect(() => parseArgs(["tools", "--force"])).toThrow(/not valid for 'tools'/);
+    expect(() => parseArgs(["tools", "--force"])).toThrow(
+      /not valid for 'tools'/
+    );
   });
 
   it("validates values", () => {
-    expect(() => parseArgs(["run", "--pluto-port", "abc"])).toThrow(/port number/);
-    expect(() => parseArgs(["run", "--pluto-port", "70000"])).toThrow(/port number/);
-    expect(() => parseArgs(["run", "--pluto-port"])).toThrow(/requires a value/);
+    expect(() => parseArgs(["run", "--pluto-port", "abc"])).toThrow(
+      /port number/
+    );
+    expect(() => parseArgs(["run", "--pluto-port", "70000"])).toThrow(
+      /port number/
+    );
+    expect(() => parseArgs(["run", "--pluto-port"])).toThrow(
+      /requires a value/
+    );
     expect(() => parseArgs(["call", "x", "--timeout", "0"])).toThrow(/seconds/);
-    expect(() => parseArgs(["install", "--target", "cursor"])).toThrow(/--target expects/);
-    expect(() => parseArgs(["run", "--no-pluto=yes"])).toThrow(/does not take a value/);
+    expect(() => parseArgs(["install", "--target", "cursor"])).toThrow(
+      /--target expects/
+    );
+    expect(() => parseArgs(["run", "--no-pluto=yes"])).toThrow(
+      /does not take a value/
+    );
   });
 
   it("requires a tool name for call and rejects extra positionals", () => {
     expect(() => parseArgs(["call"])).toThrow(/call needs a tool name/);
     expect(() => parseArgs(["call", "a", "b", "c"])).toThrow(/at most two/);
-    expect(() => parseArgs(["run", "extra"])).toThrow(/does not take arguments/);
+    expect(() => parseArgs(["run", "extra"])).toThrow(
+      /does not take arguments/
+    );
   });
 
   it("passes everything after -- as positionals", () => {

@@ -42,21 +42,21 @@ Start Pluto and the tool server. Pluto is installed into a shared Julia environm
 npx @plutojl/cli run [options]
 ```
 
-| Option                  | Default  | Description                                                          |
-| ----------------------- | -------- | -------------------------------------------------------------------- |
-| `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                                               |
-| `--pluto-port <port>`   | `1234`   | Pluto server port                                                    |
-| `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one)                 |
+| Option                  | Default  | Description                                                           |
+| ----------------------- | -------- | --------------------------------------------------------------------- |
+| `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                                                |
+| `--pluto-port <port>`   | `1234`   | Pluto server port                                                     |
+| `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one)                  |
 | `--julia-version <ver>` | `1.12.7` | juliaup channel to use, or `default` for whatever `julia` resolves to |
-| `--update`              | —        | Re-install and precompile Pluto before starting                      |
-| `--no-pluto`            | —        | Start the tool server only, without starting Pluto                   |
+| `--update`              | —        | Re-install and precompile Pluto before starting                       |
+| `--no-pluto`            | —        | Start the tool server only, without starting Pluto                    |
 
 ### `status`
 
-Show whether Pluto and a tool server are running. Exits 0 when a tool server was found, 1 otherwise. `--json` prints the same information as JSON.
+Show whether Pluto and a tool server are running. Exits 0 when a tool server was found, 1 otherwise. `--json` prints the same information as JSON. `--wait` blocks until a tool server with Pluto connected answers (up to `--timeout`, default 600 seconds), which is the easy way to wait out a first `run`.
 
 ```bash
-npx @plutojl/cli status [--json] [--mcp-port <port>] [--pluto-port <port>]
+npx @plutojl/cli status [--wait] [--timeout <seconds>] [--json] [--mcp-port <port>] [--pluto-port <port>]
 ```
 
 ### `tools`
@@ -80,11 +80,11 @@ npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 npx @plutojl/cli call execute_code '{"code": "sqrt(2)"}'
 ```
 
-| Option                | Default | Description                              |
-| --------------------- | ------- | ---------------------------------------- |
-| `--mcp-port <port>`   | `3100`  | Tool server (MCP) port                   |
-| `--timeout <seconds>` | `120`   | How long to wait for the tool result     |
-| `--raw`               | —       | Output raw JSON response                 |
+| Option                | Default | Description                          |
+| --------------------- | ------- | ------------------------------------ |
+| `--mcp-port <port>`   | `3100`  | Tool server (MCP) port               |
+| `--timeout <seconds>` | `120`   | How long to wait for the tool result |
+| `--raw`               | —       | Output raw JSON response             |
 
 ### `install`
 
@@ -94,13 +94,13 @@ Add MCP configuration files so AI assistants can connect to the tool server.
 npx @plutojl/cli install [options]
 ```
 
-| Option              | Default       | Description                                                    |
-| ------------------- | ------------- | -------------------------------------------------------------- |
-| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`              |
-| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                            |
-| `--global`          | —             | Claude Code: write `~/.claude.json` instead of `./.mcp.json`   |
-| `--dry-run`         | —             | Print config without writing                                   |
-| `--force`           | —             | Overwrite existing config                                      |
+| Option              | Default       | Description                                                  |
+| ------------------- | ------------- | ------------------------------------------------------------ |
+| `--target <target>` | `claude-code` | Config target: `claude-code`, `copilot`, or `all`            |
+| `--mcp-port <port>` | `3100`        | Tool server (MCP) port to configure                          |
+| `--global`          | —             | Claude Code: write `~/.claude.json` instead of `./.mcp.json` |
+| `--dry-run`         | —             | Print config without writing                                 |
+| `--force`           | —             | Overwrite existing config                                    |
 
 Claude Code config goes to `.mcp.json` at the project root; Copilot (VS Code) config goes to `.vscode/mcp.json`.
 
@@ -124,6 +124,8 @@ Example `.plutomcp.json`:
 }
 ```
 
+Cell outputs returned by tools are trimmed for the terminal: byte bodies are decoded (text, SVG) or base64-encoded (images), and bodies longer than 32,000 characters are truncated with a `body_note`; `export_notebook_html` writes the complete output.
+
 Unknown options, options that do not apply to the command, and invalid values are errors (exit code 2). Set `PLUTO_CLI_DEBUG=1` to see stack traces for unexpected failures. Colors follow `NO_COLOR` / `FORCE_COLOR`.
 
 ## Notebook tools
@@ -137,6 +139,7 @@ These tools are callable from the command line via `call`, and exposed to AI ass
 | `stop_pluto_server`       | Stop the Pluto server                      |
 | `connect_to_pluto_server` | Connect to an existing server              |
 | `get_notebook_status`     | Check server status                        |
+| `create_notebook`         | Create an empty notebook file and open it  |
 | `open_notebook`           | Open a notebook file                       |
 | `move_notebook`           | Move a notebook to a new path              |
 | `save_notebook`           | Save the running notebook to disk          |

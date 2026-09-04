@@ -1,11 +1,5 @@
 export type Command =
-  | "help"
-  | "version"
-  | "status"
-  | "run"
-  | "tools"
-  | "call"
-  | "install";
+  "help" | "version" | "status" | "run" | "tools" | "call" | "install";
 
 export interface RawArgs {
   command: Command;
@@ -30,6 +24,7 @@ export interface RawArgs {
   timeoutSeconds?: number;
   // status
   json?: boolean;
+  wait?: boolean;
 }
 
 /** A user mistake on the command line; the message is printed with the usage hint. */
@@ -61,7 +56,13 @@ function parsePort(flag: string, value: string | undefined): number {
   return n;
 }
 
-const SERVER_COMMANDS: Command[] = ["run", "status", "tools", "call", "install"];
+const SERVER_COMMANDS: Command[] = [
+  "run",
+  "status",
+  "tools",
+  "call",
+  "install",
+];
 
 const FLAGS: Record<string, FlagSpec> = {
   "--mcp-port": {
@@ -127,12 +128,14 @@ const FLAGS: Record<string, FlagSpec> = {
     apply: (a) => (a.raw = true),
   },
   "--timeout": {
-    commands: ["call"],
+    commands: ["call", "status"],
     value: true,
     apply: (a, v) => {
       const seconds = Number(v);
       if (!Number.isInteger(seconds) || seconds <= 0) {
-        throw new UsageError(`--timeout expects a number of seconds, got '${v}'`);
+        throw new UsageError(
+          `--timeout expects a number of seconds, got '${v}'`
+        );
       }
       a.timeoutSeconds = seconds;
     },
@@ -141,6 +144,11 @@ const FLAGS: Record<string, FlagSpec> = {
     commands: ["status"],
     value: false,
     apply: (a) => (a.json = true),
+  },
+  "--wait": {
+    commands: ["status"],
+    value: false,
+    apply: (a) => (a.wait = true),
   },
 };
 

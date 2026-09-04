@@ -5,38 +5,91 @@ import { NodeServerManager } from "./nodeServerManager.ts";
 import { NodeFileReader } from "./nodeFileReader.ts";
 import { consoleLogger } from "./logger.ts";
 import { type CliConfig, VERSION } from "./config.ts";
-import { describeHost, probeMcp } from "./discover.ts";
+import { type McpProbe, describeHost, probeMcp } from "./discover.ts";
 import { hasMcpConfig } from "./install.ts";
-import { bold, dim, green, yellow } from "./ui.ts";
+import { mcpRequest } from "./call.ts";
+import { bold, dim, err, green, yellow } from "./ui.ts";
 
 const CMD = "npx @plutojl/cli";
+
+/**
+ * Bring Pluto up through a tool server that VS Code already runs on the
+ * configured port. Options that shape a CLI-owned server cannot apply to
+ * it and are reported as ignored.
+ */
+async function runThroughVSCode(
+  existing: McpProbe,
+  config: CliConfig
+): Promise<void> {
+  console.log(
+    `${green("✓")} The VS Code extension runs a tool server at ${existing.url}`
+  );
+  console.log(dim(`  '${CMD} call' and '${CMD} tools' use it.`));
+
+  const ignored: string[] = [];
+  if (config.update) ignored.push("--update");
+  if (config.juliaVersionExplicit) ignored.push("--julia-version");
+  if (ignored.length) {
+    console.log(
+      yellow(
+        `  ${ignored.join(" and ")} only apply to a server started by this CLI; pass --mcp-port <other port> for that.`
+      )
+    );
+  }
+
+  if (config.noPluto) {
+    return;
+  }
+  if (existing.plutoRunning) {
+    console.log(
+      `${green("✓")} Pluto is connected${existing.plutoUrl ? ` at ${existing.plutoUrl}` : ""}; nothing to start.`
+    );
+    return;
+  }
+
+  const [tool, args, verb] = config.plutoUrl
+    ? ["connect_to_pluto_server", { url: config.plutoUrl }, "Connecting to"]
+    : ["start_pluto_server", {}, "Starting"];
+  console.log(
+    `[cli] ${verb} Pluto through the VS Code extension${config.plutoUrl ? ` (${config.plutoUrl})` : ""}...`
+  );
+  const result = await mcpRequest(
+    existing.port,
+    "tools/call",
+    { name: tool, arguments: args },
+    10 * 60 * 1000
+  );
+  const text = (result?.content ?? [])
+    .filter((c) => c.type === "text" && c.text)
+    .map((c) => c.text)
+    .join("\n");
+  if (result?.isError) {
+    console.error(`${err.red("✗")} ${text || "Pluto did not start."}`);
+    process.exit(1);
+  }
+  console.log(`${green("✓")} ${text || "Pluto is ready."}`);
+}
 
 export async function run(config: CliConfig): Promise<void> {
   console.log(`${bold("@plutojl/cli")} ${dim(`v${VERSION}`)}\n`);
 
-  // A tool server already on this port is either VS Code's (fine: use it)
-  // or another `run` (a mistake) — say which instead of failing on EADDRINUSE
+  // Whoever already listens on the port decides what `run` means: VS Code's
+  // server is used as-is, another CLI server is a conflict.
   const existing = await probeMcp(config.mcpPort);
+  if (existing?.host === "vscode") {
+    await runThroughVSCode(existing, config);
+    return;
+  }
   if (existing) {
-    if (existing.host === "vscode") {
-      console.log(
-        `${green("✓")} The VS Code extension already runs a tool server at ${existing.url}`
-      );
-      console.log(
-        dim(`  '${CMD} call' and '${CMD} tools' use it; nothing to start.`)
-      );
-      console.log(
-        dim(`  To run a separate server anyway, pass --mcp-port <other port>.`)
-      );
-      return;
-    }
     const owner =
       existing.host === "unknown" ? "" : ` (${describeHost(existing.host)})`;
     console.error(
-      `${yellow("!")} A tool server${owner} is already listening at ${existing.url}.`
+      `${err.yellow("!")} A tool server${owner} is already listening at ${existing.url}.`
     );
     console.error(
-      dim(`  Stop it first, or pass --mcp-port <other port> to run a second one.`)
+      err.dim(
+        `  Stop it first, or pass --mcp-port <other port> to run a second one.`
+      )
     );
     process.exit(1);
   }
@@ -63,10 +116,10 @@ export async function run(config: CliConfig): Promise<void> {
   });
   try {
     await mcpServer.start();
-  } catch (err) {
+  } catch (e) {
     console.error(
       `[cli] Could not start the tool server on port ${config.mcpPort}: ${
-        err instanceof Error ? err.message : String(err)
+        e instanceof Error ? e.message : String(e)
       }`
     );
     console.error(
@@ -92,9 +145,9 @@ export async function run(config: CliConfig): Promise<void> {
     try {
       await plutoManager.start();
       console.log(`[cli] ${green("Pluto server is ready.")}`);
-    } catch (err) {
+    } catch (e) {
       console.error(
-        `[cli] ${yellow("Failed to start Pluto:")} ${err instanceof Error ? err.message : String(err)}`
+        `[cli] ${err.yellow("Failed to start Pluto:")} ${e instanceof Error ? e.message : String(e)}`
       );
       console.error(
         `[cli] The tool server is still running — start Pluto later with:`
@@ -112,7 +165,9 @@ export async function run(config: CliConfig): Promise<void> {
   console.log(`\n[cli] Press Ctrl+C to stop\n`);
   if (!hasMcpConfig(config.workDir)) {
     console.log(
-      dim(`Tip: '${CMD} install' lets Claude Code or Copilot use this server.\n`)
+      dim(
+        `Tip: '${CMD} install' lets Claude Code or Copilot use this server.\n`
+      )
     );
   }
 
@@ -125,6 +180,10 @@ export async function run(config: CliConfig): Promise<void> {
     }
     shuttingDown = true;
     console.log("\n[cli] Shutting down...");
+    setTimeout(() => {
+      console.error("[cli] Shutdown is taking too long; exiting.");
+      process.exit(1);
+    }, 15_000).unref();
     try {
       await mcpServer.stop();
     } catch {

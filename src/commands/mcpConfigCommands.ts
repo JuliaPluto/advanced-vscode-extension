@@ -146,7 +146,8 @@ export function registerCreateProjectMCPConfigCommand(
             },
             {
               label: "GitHub Copilot",
-              description: "Create config for GitHub Copilot (.vscode/mcp.json)",
+              description:
+                "Create config for GitHub Copilot (.vscode/mcp.json)",
               value: "copilot" as const,
             },
           ],

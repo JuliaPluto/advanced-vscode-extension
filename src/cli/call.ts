@@ -5,7 +5,7 @@
  */
 
 import { VERSION } from "./config.ts";
-import { bold, cyan, dim, red, yellow } from "./ui.ts";
+import { bold, cyan, dim, err, yellow } from "./ui.ts";
 
 interface ToolSchema {
   type?: string;
@@ -34,7 +34,7 @@ interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
-async function mcpRequest(
+export async function mcpRequest(
   port: number,
   method: string,
   params: Record<string, unknown> = {},
@@ -251,7 +251,7 @@ export async function listTools(port: number, filter?: string): Promise<void> {
         .filter((t) => t.name.includes(filter))
         .map((t) => t.name);
       console.error(
-        `${red("error:")} no tool named '${filter}'` +
+        `${err.red("error:")} no tool named '${filter}'` +
           (close.length ? `. Did you mean: ${close.join(", ")}?` : "")
       );
       process.exit(1);
@@ -273,7 +273,9 @@ export async function listTools(port: number, filter?: string): Promise<void> {
       `  ${cyan(tool.name.padEnd(maxLen))}  ${summary(tool.description)}${paramStr}`
     );
   }
-  console.log(dim(`\n  npx @plutojl/cli tools <name> shows a tool's parameters.`));
+  console.log(
+    dim(`\n  npx @plutojl/cli tools <name> shows a tool's parameters.`)
+  );
 }
 
 export async function callTool(
@@ -283,14 +285,21 @@ export async function callTool(
   raw: boolean,
   timeoutMs = 120000
 ): Promise<void> {
-  let args: Record<string, unknown>;
+  let args: unknown;
   try {
-    args = JSON.parse(argsJson) as Record<string, unknown>;
+    args = JSON.parse(argsJson);
   } catch {
+    args = undefined;
+  }
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
     console.error(
-      `${red("error:")} tool arguments must be a JSON object, got: ${argsJson}`
+      `${err.red("error:")} tool arguments must be a JSON object, got: ${argsJson}`
     );
-    console.error(dim(`  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'`));
+    console.error(
+      err.dim(
+        `  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'`
+      )
+    );
     process.exit(1);
   }
 
@@ -299,7 +308,7 @@ export async function callTool(
     "tools/call",
     {
       name: toolName,
-      arguments: args,
+      arguments: args as Record<string, unknown>,
     },
     timeoutMs
   );
