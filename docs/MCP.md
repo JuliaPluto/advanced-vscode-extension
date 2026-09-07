@@ -21,7 +21,7 @@ Get started with the Pluto Notebook MCP server in 2 minutes!
 
 ### What is This?
 
-The Pluto Notebook extension includes an HTTP-based MCP (Model Context Protocol) server that lets AI assistants like Claude Desktop and GitHub Copilot interact with your Julia Pluto notebooks.
+The Pluto Notebook extension includes an HTTP-based MCP (Model Context Protocol) server that lets AI assistants like GitHub Copilot Chat and Claude Code interact with your Julia Pluto notebooks.
 
 ### Step 1: Activate the Extension
 
@@ -33,21 +33,13 @@ Open any `.jl` file in VS Code. The extension will:
 
 ### Step 2: Configure Your AI Tool
 
-Run this command in VS Code:
+- **VS Code chat (GitHub Copilot and other in-editor agents)**: nothing to do. The extension registers a "Pluto Notebook" server with VS Code's native MCP support, so it appears in `MCP: List Servers` and in the chat tools picker.
+- **Claude Code**: run `Pluto: Create Claude Code MCP Config (.mcp.json)` to write the workspace `.mcp.json`.
 
-```
-Pluto: Create MCP Config (Claude or Copilot)
-```
+### Step 3: Start the Tools
 
-Choose your tool:
-
-- **Claude Desktop** → Creates `.mcp.json`
-- **GitHub Copilot** → Creates `mcp.json`
-
-### Step 3: Restart Your AI Tool
-
-- **Claude Desktop**: Restart the app
-- **GitHub Copilot**: Reload VS Code window (`Ctrl+Shift+P` → "Reload Window")
+- **VS Code chat**: enable the "Pluto Notebook" tools in the chat tools picker. VS Code starts the MCP server on demand if it is not running.
+- **Claude Code**: start (or restart) Claude Code in the workspace so it picks up `.mcp.json`
 
 ### Step 4: Test It!
 
@@ -125,16 +117,26 @@ When auto-start is disabled, use `Pluto: Start MCP Server` command to start manu
 
 ### Client Configuration
 
-#### Claude Desktop
+#### VS Code chat (GitHub Copilot and other in-editor agents)
 
-Create `.mcp.json` in your workspace root:
+The extension contributes an MCP server definition provider (`pluto-notebook.mcpServers`), the native way for extensions to expose MCP servers in VS Code 1.101 and newer. No config file is involved:
+
+- `MCP: List Servers` shows "Pluto Notebook" once the extension has activated (open any `.pluto.jl` file).
+- Enable the "Pluto Notebook" tools in the chat tools picker. If the MCP server is not running, VS Code starts it on demand.
+- The definition always points at the port the server is actually listening on. When the configured port is busy (another VS Code window), the server moves to the next free port and VS Code is told about the new address.
+
+Do not add a `pluto-notebook` entry to `.vscode/mcp.json` as well: it would register the same server twice, and a hand-written port goes stale as soon as the server falls back to another one.
+
+#### Claude Code
+
+Claude Code runs outside VS Code, so it needs `.mcp.json` in your workspace root:
 
 ```json
 {
   "mcpServers": {
     "pluto-notebook": {
       "url": "http://localhost:3100/mcp",
-      "type": "sse"
+      "type": "http"
     }
   }
 }
@@ -142,47 +144,15 @@ Create `.mcp.json` in your workspace root:
 
 **Quick Setup:**
 
-1. Run command: `Pluto: Create MCP Config (Claude or Copilot)`
-2. Select "Claude Desktop"
-3. File `.mcp.json` is created in workspace root
-4. Restart Claude Desktop to load the config
+1. Run command: `Pluto: Create Claude Code MCP Config (.mcp.json)`
+2. File `.mcp.json` is created (or the `pluto-notebook` entry is merged into the existing one) in the workspace root and opened
+3. Start or restart Claude Code in the workspace to load the config
 
-#### GitHub Copilot
-
-Create `mcp.json` in your workspace root:
-
-```json
-{
-  "servers": {
-    "pluto-notebook": {
-      "url": "http://localhost:3100/mcp",
-      "type": "http"
-    }
-  },
-  "inputs": []
-}
-```
-
-**Quick Setup:**
-
-1. Run command: `Pluto: Create MCP Config (Claude or Copilot)`
-2. Select "GitHub Copilot"
-3. File `mcp.json` is created/updated
-4. Reload VS Code window (`Ctrl+Shift+P` → "Reload Window")
-
-#### Configuration Differences
-
-| Feature      | Claude Desktop | GitHub Copilot |
-| ------------ | -------------- | -------------- |
-| **File**     | `.mcp.json`    | `mcp.json`     |
-| **Location** | Workspace root | Workspace root |
-| **Type**     | `sse`          | `http`         |
-| **Restart**  | Restart app    | Reload window  |
-| **Purpose**  | MCP-specific   | MCP-specific   |
+The command writes the port the server is currently listening on, so run it from the VS Code window whose server you want Claude Code to talk to.
 
 ### Port Configuration
 
-Both configs use the port from VS Code settings:
+The server starts on the port from VS Code settings and falls back to the next free port when that one is taken:
 
 ```json
 {
@@ -193,8 +163,8 @@ Both configs use the port from VS Code settings:
 To change the port:
 
 1. Update setting: `pluto-notebook.mcpPort`
-2. Recreate config files
-3. Restart MCP server: `Pluto: Restart MCP Server`
+2. Restart MCP server: `Pluto: Restart MCP Server`
+3. VS Code chat picks up the new address automatically; recreate `.mcp.json` for Claude Code
 
 ---
 
@@ -710,17 +680,18 @@ Try asking Claude or Copilot:
 
 ### Configuration Commands
 
-| Command                                        | Description                                |
-| ---------------------------------------------- | ------------------------------------------ |
-| `Pluto: Create MCP Config (Claude or Copilot)` | Create config file with interactive picker |
-| `Pluto: Get MCP HTTP Server URL`               | Get URL and config options                 |
+| Command                                            | Description                                     |
+| -------------------------------------------------- | ----------------------------------------------- |
+| `Pluto: Create Claude Code MCP Config (.mcp.json)` | Write the workspace `.mcp.json` for Claude Code |
+| `Pluto: Get MCP HTTP Server URL`                   | Show the endpoint URL and related actions       |
 
 The `Pluto: Get MCP HTTP Server URL` command provides actions:
 
 - **Copy URL** - Copy MCP endpoint URL to clipboard
-- **Create Claude Config** - Create `.mcp.json`
-- **Create Copilot Config** - Create `mcp.json`
-- **Open Health Check** - Open health endpoint in browser
+- **Create Claude Code Config** - Create `.mcp.json`
+- **Open Health Check** - Open health endpoint in a browser
+
+VS Code chat needs no command: the server is registered through the native MCP provider.
 
 ---
 
@@ -753,16 +724,16 @@ Change the port in settings:
 Then:
 
 1. Restart the MCP server: `Pluto: Restart MCP Server`
-2. Recreate your config files
+2. Recreate `.mcp.json` for Claude Code (VS Code chat follows the new port on its own)
 
-### Claude Desktop Can't Connect
+### Claude Code Can't Connect
 
 1. Verify extension is active (open a `.jl` file)
 2. Check health endpoint: `http://localhost:3100/health`
 3. Verify config file location:
-   - **Claude Desktop config**: Workspace root
+   - **Claude Code config**: Workspace root
    - **Name**: `.mcp.json`
-4. Restart Claude Desktop
+4. Restart Claude Code
 
 **Checklist**:
 
@@ -770,21 +741,15 @@ Then:
 2. ✅ File has correct format (see above)
 3. ✅ Extension is active (open a `.jl` file)
 4. ✅ MCP server is running
-5. ✅ Restarted Claude Desktop after creating config
+5. ✅ Restarted Claude Code after creating config
 
-### GitHub Copilot Can't Connect
+### VS Code Chat Can't See the Server
 
-1. Verify config in `mcp.json` (workspace root)
-2. Reload VS Code window
-3. Check MCP support is enabled in Copilot settings
-
-**Checklist**:
-
-1. ✅ `mcp.json` exists in workspace root
-2. ✅ File has correct format (see above)
-3. ✅ Reloaded VS Code window
-4. ✅ GitHub Copilot MCP support is enabled
-5. ✅ Extension is active
+1. Verify VS Code is 1.101 or newer and MCP support is enabled (`chat.mcp.enabled`)
+2. Open a `.pluto.jl` file so the extension activates and registers the provider
+3. Run `MCP: List Servers` and check that "Pluto Notebook" is listed; check the "Pluto Controller" output channel for the registration line
+4. Start the server from that list (or enable its tools in the chat tools picker) and check the health endpoint
+5. Remove any stale `pluto-notebook` entry from `.vscode/mcp.json`; it would point at a fixed port
 
 ### Config File Not Created
 
@@ -822,17 +787,13 @@ Expected response:
 
 **Check Config File Exists**
 
-Claude:
+Claude Code:
 
 ```bash
 cat <workspace>/.mcp.json
 ```
 
-Copilot:
-
-```bash
-cat <workspace>/mcp.json
-```
+VS Code chat: run `MCP: List Servers` instead; there is no file to check.
 
 **Check MCP Server Running**
 
@@ -881,9 +842,9 @@ Common errors:
 - Use ephemeral execution for exploration
 - Create persistent cells for important code
 - Check health endpoint before debugging
-- Use the command for config creation over manual editing
+- Use the command for `.mcp.json` creation over manual editing
 - Add `.mcp.json` to `.gitignore` if needed
-- Keep `mcpPort` setting consistent with config files
+- Recreate `.mcp.json` after changing `mcpPort`
 - Test connection using health check
 - Document the MCP port in project README for team sharing
 
@@ -893,21 +854,17 @@ Common errors:
 
 1. Open Pluto notebook project in VS Code
 2. Extension activates, MCP server starts on port 3100
-3. Run: `Pluto: Create MCP Config (Claude or Copilot)`
-4. Choose "Claude Desktop"
-5. `.mcp.json` created and opened
-6. Restart Claude Desktop
-7. Ask Claude: "List all open Pluto notebooks"
-8. Claude connects via MCP and responds!
+3. VS Code chat: enable the "Pluto Notebook" tools in the tools picker
+4. Claude Code: run `Pluto: Create Claude Code MCP Config (.mcp.json)` and restart Claude Code
+5. Ask the assistant: "List all open Pluto notebooks"
+6. It connects via MCP and responds!
 
 ---
 
 ## Summary
 
-- **Claude Desktop**: Uses `.mcp.json` in workspace root
-- **GitHub Copilot**: Uses `mcp.json` in workspace root
-- **Interactive**: Use command for easy setup
-- **Smart Merging**: Preserves existing configurations
+- **VS Code chat**: Discovers the server through the native MCP server definition provider; no config file
+- **Claude Code**: Uses `.mcp.json` in workspace root, written by a command that preserves existing entries
 - **Port Configurable**: Via `pluto-notebook.mcpPort` setting
 - **Shared State**: Single PlutoManager instance for extension and MCP
 - **HTTP-based**: Flexible SSE transport for real-time communication

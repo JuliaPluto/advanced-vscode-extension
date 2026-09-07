@@ -17,6 +17,7 @@ import {
   stopMCPServer,
   cleanupMCPServer,
 } from "./mcp-server-http.ts";
+import { registerMcpServerDefinitionProvider } from "./mcpServerDefinitionProvider.ts";
 import { PlutoTerminalProvider } from "./plutoTerminal.ts";
 import { PlutoStatusBar } from "./statusBar.ts";
 import { registerNotebooksTreeView } from "./treeView/notebooksTreeView.ts";
@@ -51,6 +52,7 @@ export async function activate(
 
   // Initialize HTTP MCP Server using the shared PlutoManager (singleton)
   initializeMCPServer(plutoManager, mcpPort, controllerOutputChannel);
+  registerMcpServerDefinitionProvider(context, controllerOutputChannel);
 
   // Auto-start MCP server if configured. A failure (e.g. port in use by
   // another VSCode window) must not prevent the extension from activating.

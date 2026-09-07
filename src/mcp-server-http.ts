@@ -88,6 +88,7 @@ export class PlutoMCPHttpServer {
   private readonly host: "vscode" | "cli";
   private readonly version: string | undefined;
   private readonly dynamicPort: boolean;
+  private readonly stateListeners = new Set<() => void>();
 
   /**
    * @param dynamicPort - when the configured port is busy, move to the next
@@ -1615,10 +1616,32 @@ export class PlutoMCPHttpServer {
             10 * 60 * 1000
           );
           this.sessionSweeper.unref?.();
+          this.notifyStateChange();
           resolve();
         }
       });
     });
+  }
+
+  /**
+   * Subscribe to start/stop transitions (the port may change on start).
+   * Returns an unsubscribe function.
+   */
+  public onDidChangeState(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private notifyStateChange(): void {
+    for (const listener of this.stateListeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.error("[MCP HTTP] State listener failed:", error);
+      }
+    }
   }
 
   private sweepIdleSessions(): void {
@@ -1687,6 +1710,7 @@ export class PlutoMCPHttpServer {
       this.httpServer.closeIdleConnections();
     });
     this.httpServer = undefined;
+    this.notifyStateChange();
   }
 
   public getPort(): number {

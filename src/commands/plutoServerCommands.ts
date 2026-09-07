@@ -96,6 +96,28 @@ export function registerRestartServerCommand(
 }
 
 /**
+ * Open a URL in VS Code's Simple Browser beside the editor, or in the
+ * system browser when configured so or when the built-in browser is
+ * unavailable (e.g. disabled or not shipped by a VS Code fork).
+ */
+export async function openUrl(url: string): Promise<void> {
+  const browser = vscode.workspace
+    .getConfiguration("pluto-notebook")
+    .get<string>("notebookBrowser", "embedded");
+  if (browser === "embedded") {
+    try {
+      await vscode.commands.executeCommand("simpleBrowser.show", url, {
+        viewColumn: vscode.ViewColumn.Beside,
+      });
+      return;
+    } catch {
+      // Fall through to the system browser
+    }
+  }
+  await vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+/**
  * Command: Open notebook in browser
  */
 export function registerOpenInBrowserCommand(
@@ -135,7 +157,7 @@ export function registerOpenInBrowserCommand(
           }
 
           const url = `${plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
-          await vscode.env.openExternal(vscode.Uri.parse(url));
+          await openUrl(url);
         } catch (error) {
           vscode.window.showErrorMessage(
             `Failed to open notebook in browser: ${

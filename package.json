@@ -19,7 +19,7 @@
     "packages/*"
   ],
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Notebooks"
@@ -33,6 +33,12 @@
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "pluto-notebook.mcpServers",
+        "label": "Pluto Notebook"
+      }
+    ],
     "configuration": {
       "title": "Pluto Notebook",
       "properties": {
@@ -55,6 +61,19 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start the MCP HTTP server when the extension activates"
+        },
+        "pluto-notebook.notebookBrowser": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "external"
+          ],
+          "enumDescriptions": [
+            "Open the notebook in VS Code's built-in Simple Browser, beside the editor",
+            "Open the notebook in the system's default web browser"
+          ],
+          "default": "embedded",
+          "description": "Where 'Pluto: Open Notebook in Browser' opens the Pluto editor."
         },
         "pluto-notebook.foldHiddenCells": {
           "type": "boolean",
@@ -160,7 +179,7 @@
       },
       {
         "command": "pluto-notebook.createProjectMCPConfig",
-        "title": "⚙️ Pluto: Create MCP Config (Claude or Copilot)",
+        "title": "⚙️ Pluto: Create Claude Code MCP Config (.mcp.json)",
         "icon": "$(gear)"
       },
       {
