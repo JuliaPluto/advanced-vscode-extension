@@ -444,3 +444,72 @@ md"""
     expect(out).not.toContain("outputCollapsed");
   });
 });
+
+describe("package environment cells", () => {
+  const withEnv = `### A Pluto.jl notebook ###
+# v0.20.0
+
+using Markdown
+using InteractiveUtils
+
+# ╔═╡ b2d79330-7f73-11ea-0d1c-a9aad1efaae1
+x = 42
+
+# ╔═╡ 00000000-0000-0000-0000-000000000001
+PLUTO_PROJECT_TOML_CONTENTS = """
+[deps]
+"""
+
+# ╔═╡ 00000000-0000-0000-0000-000000000002
+PLUTO_MANIFEST_TOML_CONTENTS = """
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.6"
+manifest_format = "2.0"
+project_hash = "71853c6197a6a7f222db0f1978c7cb232b87c5ee"
+
+[deps]
+"""
+
+# ╔═╡ Cell order:
+# ╠═b2d79330-7f73-11ea-0d1c-a9aad1efaae1
+# ╟─00000000-0000-0000-0000-000000000001
+# ╟─00000000-0000-0000-0000-000000000002
+`;
+
+  it("are parsed out of the cell list but kept", () => {
+    const parsed = parsePlutoNotebook(withEnv);
+    expect(parsed.cells).toHaveLength(1);
+    expect(Object.keys(parsed.package_cells ?? {})).toEqual([
+      "00000000-0000-0000-0000-000000000001",
+      "00000000-0000-0000-0000-000000000002",
+    ]);
+  });
+
+  it("round-trip byte-for-byte when passed back to the serializer", () => {
+    const parsed = parsePlutoNotebook(withEnv);
+    const out = serializePlutoNotebook(
+      parsed.cells,
+      parsed.notebook_id,
+      parsed.pluto_version,
+      parsed.package_cells
+    );
+    expect(out).toBe(withEnv);
+  });
+
+  it("are absent for a notebook without an embedded environment", () => {
+    const parsed = parsePlutoNotebook(
+      withEnv
+        .replace(/# ╔═╡ 00000000[\s\S]*?# ╔═╡ Cell order:/, "# ╔═╡ Cell order:")
+        .replace(/# ╟─00000000.*\n/g, "")
+    );
+    expect(parsed.package_cells).toBeUndefined();
+    const out = serializePlutoNotebook(
+      parsed.cells,
+      parsed.notebook_id,
+      parsed.pluto_version,
+      parsed.package_cells
+    );
+    expect(out).not.toContain("PLUTO_PROJECT_TOML_CONTENTS");
+  });
+});

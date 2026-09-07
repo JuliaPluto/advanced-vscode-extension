@@ -183,6 +183,7 @@ export class PlutoServerTaskManager {
       JULIA_PLUTO_VSCODE_WORKSPACE: workspacePath,
       JULIA_DEPOT_PATH: resolveJuliaDepotPath(),
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
+      ...resolveJuliaupEnv(),
     };
     if (juliaHubToken) {
       env.JULIAHUB_TOKEN = juliaHubToken;
@@ -191,9 +192,15 @@ export class PlutoServerTaskManager {
       env.JULIA_PKG_SERVER = packageServer;
     }
 
+    warnIfDyadChannelLost(command, channelArgs);
+
     // --- Step 5: Start the Pluto server task (setup + run in one process) ---
     // Setup steps run first in the same Julia session, then Pluto.run() blocks.
+    const autoReloadFromFile = vscode.workspace
+      .getConfiguration("pluto-notebook")
+      .get<boolean>("autoReloadFromFile", false);
     const serverCode = [
+      `println("Julia ", VERSION, " at ", Sys.BINDIR)`,
       `import Pkg`,
       `s = string`,
       `Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))))`,
@@ -203,7 +210,7 @@ export class PlutoServerTaskManager {
       `Pkg.instantiate()`,
       `Pkg.precompile()`,
       `using Pluto`,
-      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
+      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, auto_reload_from_file=${autoReloadFromFile})`,
     ].join(";");
     const juliaArgs = [...channelArgs, "-e", serverCode];
 
@@ -373,5 +380,46 @@ export class PlutoServerTaskManager {
     if (this.serverReadyPromise) {
       await this.serverReadyPromise;
     }
+  }
+}
+
+/**
+ * juliaup settings the server process needs to resolve a `+channel`
+ * executable: Dyad Studio installs its channel from JuliaHub's juliaup
+ * server, so the task must see the same server and depot the REPL uses.
+ */
+function resolveJuliaupEnv(): { [key: string]: string } {
+  const env: { [key: string]: string } = {};
+  const configuredServer = vscode.workspace
+    .getConfiguration("julia")
+    .get<string>("juliaup.server");
+  const server = configuredServer?.trim() || process.env.JULIAUP_SERVER;
+  if (server) {
+    env.JULIAUP_SERVER = server;
+  }
+  if (process.env.JULIAUP_DEPOT_PATH) {
+    env.JULIAUP_DEPOT_PATH = process.env.JULIAUP_DEPOT_PATH;
+  }
+  return env;
+}
+
+/**
+ * Dyad Studio points `julia.executablePath` at a `+dyad-<version>` channel.
+ * When the Julia extension resolved something else (fallback binary, user
+ * override), a Dyad notebook would run on a Julia without the Dyad stack.
+ */
+function warnIfDyadChannelLost(command: string, args: string[]): void {
+  const configured =
+    vscode.workspace.getConfiguration("julia").get<string>("executablePath") ??
+    "";
+  const wanted = configured.match(/\+(dyad-\S+)/)?.[1];
+  if (!wanted) {
+    return;
+  }
+  const resolved = [command, ...args].join(" ");
+  if (!resolved.includes(wanted)) {
+    vscode.window.showWarningMessage(
+      `Pluto: this workspace uses Julia channel ${wanted}, but the Pluto server is starting with "${resolved}". Dyad notebooks may fail to load their packages.`
+    );
   }
 }

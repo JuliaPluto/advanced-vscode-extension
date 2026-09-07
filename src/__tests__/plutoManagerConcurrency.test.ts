@@ -58,7 +58,7 @@ function createFakeWorker(overrides: Partial<Worker> = {}): Worker {
   return {
     notebook_id: "fake-notebook-id",
     connected: true,
-    connect: jest.fn(async () => undefined),
+    connect: jest.fn(async () => true),
     shutdown: jest.fn(async () => undefined),
     moveTo: jest.fn(async () => undefined),
     ...overrides,

@@ -20,7 +20,19 @@ export interface ParsedNotebook {
   cells: vscode.NotebookCellData[];
   notebook_id: string;
   pluto_version?: string;
+  /**
+   * Pluto's embedded package environment (the PLUTO_PROJECT_TOML_CONTENTS
+   * and PLUTO_MANIFEST_TOML_CONTENTS cells), keyed by their fixed cell ids.
+   * Not shown as cells; carried through so a save keeps the notebook
+   * self-contained.
+   */
+  package_cells?: Record<string, string>;
 }
+
+/** rainbow's NotebookData keeps the package cells in a private field. */
+type NotebookDataWithPackageCells = PlutoNotebookData & {
+  _package_cells?: Record<string, string>;
+};
 const fakeRegexTest = new RegExp(
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-7][0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 );
@@ -119,10 +131,16 @@ export function parsePlutoNotebook(content: string): ParsedNotebook {
     cells.push(cell);
   }
 
+  const packageCells = (notebookData as NotebookDataWithPackageCells)
+    ._package_cells;
   return {
     cells,
     notebook_id: notebookData.notebook_id,
     pluto_version: notebookData.pluto_version,
+    package_cells:
+      packageCells && Object.keys(packageCells).length > 0
+        ? packageCells
+        : undefined,
   };
 }
 
@@ -132,7 +150,8 @@ export function parsePlutoNotebook(content: string): ParsedNotebook {
 export function serializePlutoNotebook(
   cells: vscode.NotebookCellData[],
   notebookId?: string,
-  plutoVersion?: string
+  plutoVersion?: string,
+  packageCells?: Record<string, string>
 ): string {
   const cellInputs: Record<string, PlutoCellData> = {};
   const cellOrder: string[] = [];
@@ -178,7 +197,8 @@ export function serializePlutoNotebook(
     cellOrder.push(cellId);
   }
 
-  const notebookData: PlutoNotebookData = {
+  const notebookData: NotebookDataWithPackageCells = {
+    _package_cells: packageCells,
     notebook_id: notebookId ?? generateNotebookId(),
     pluto_version: plutoVersion,
     path: "",

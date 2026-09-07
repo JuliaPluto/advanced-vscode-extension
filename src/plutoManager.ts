@@ -3,7 +3,6 @@ import { Host, serialize } from "@plutojl/rainbow";
 import * as path from "path";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
-import { unlink } from "fs/promises";
 import { resolve as resolvePath } from "path";
 import { v4 as uuidv4 } from "uuid";
 
@@ -322,7 +321,7 @@ export class PlutoManager {
   /**
    * Get or create a worker for a notebook
    * @param notebookPath - File system path to the notebook
-   * @param documentContent - Optional notebook content from VSCode document (overrides file read)
+   * @param documentContent - Notebook content to upload instead of reading the file; only used for remote servers (a local server opens the file in place)
    * @returns Worker instance for the notebook
    */
   public async getWorker(
@@ -412,6 +411,50 @@ export class PlutoManager {
     }
   }
 
+  /**
+   * Ask Pluto to open a notebook file in place (POST /open) and return the
+   * notebook id. Pluto starts running it, and answers with the existing
+   * notebook when the path is already open on the server.
+   */
+  private async openByPath(notebookPath: string): Promise<string> {
+    const url = new URL("/open", this.serverUrl);
+    url.searchParams.set("path", notebookPath);
+    url.searchParams.set("execution_allowed", "true");
+
+    let response: Response;
+    try {
+      response = await fetch(url, { method: "POST" });
+    } catch (error) {
+      throw new Error(this.describeServerError(error));
+    }
+    const body = (await response.text()).trim();
+    if (!response.ok) {
+      // Pluto answers failures with an HTML page: title, advice, then the
+      // Julia error under "Error message:" — that line is the useful one
+      const text = body
+        .replace(/<!--[\s\S]*?-->|<(style|script)[\s\S]*?<\/\1>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const reason = (text.match(/Error message: (.*)$/)?.[1] ?? text)
+        .split(/ Stacktrace:| @ /)[0]
+        .slice(0, 300);
+      throw new Error(
+        this.describeServerError(
+          new Error(
+            `Pluto could not open ${notebookPath} (HTTP ${response.status}): ${reason}`
+          )
+        )
+      );
+    }
+    if (!/^[0-9a-f-]{36}$/i.test(body)) {
+      throw new Error(
+        `Pluto returned an unexpected answer when opening ${notebookPath}: ${body.slice(0, 120)}`
+      );
+    }
+    return body;
+  }
+
   private async createWorkerForPath(
     notebookPath: string,
     documentContent?: string
@@ -458,32 +501,35 @@ export class PlutoManager {
       }
     }
 
-    // Get notebook content - use provided content or read from file
-    let notebookContent: string;
-    try {
-      notebookContent =
-        documentContent ?? (await this.fileReader.readFile(notebookPath));
-    } catch (error) {
-      throw new Error(
-        `Cannot create worker: failed to read notebook file: ${error}`
-      );
-    }
-
     let worker: Worker;
-    try {
-      worker = await host.createWorker(notebookContent.trim());
-    } catch (error) {
-      throw new Error(this.describeServerError(error));
+    if (this.isLocalServer()) {
+      // Same filesystem: let Pluto load the file where it is. Nothing is
+      // copied or deleted, and the file stays a plain Pluto notebook that
+      // both Pluto and VS Code write to.
+      const notebookId = await this.openByPath(notebookPath);
+      worker = host.worker(notebookId);
+    } else {
+      // Remote server: the file has to travel — upload the content (the
+      // VS Code document when given, else the file) as a new notebook.
+      let notebookContent: string;
+      try {
+        notebookContent =
+          documentContent ?? (await this.fileReader.readFile(notebookPath));
+      } catch (error) {
+        throw new Error(
+          `Cannot create worker: failed to read notebook file: ${error}`
+        );
+      }
+      try {
+        worker = await host.createWorker(notebookContent.trim());
+      } catch (error) {
+        throw new Error(this.describeServerError(error));
+      }
     }
-    try {
-      await worker.connect();
 
-      // Tell Pluto which file this notebook lives at so it can track saves.
-      // Only works when the server shares the same filesystem (localhost).
-      // We must delete the file first — moveTo throws if the path already exists.
-      if (this.isLocalServer()) {
-        await unlink(notebookPath);
-        await worker.moveTo(notebookPath);
+    try {
+      if (!(await worker.connect())) {
+        throw new Error("could not connect to the notebook session");
       }
 
       // The server may have been stopped (or replaced) while we were
@@ -493,7 +539,7 @@ export class PlutoManager {
         throw new Error("Pluto server was stopped while opening the notebook");
       }
     } catch (error) {
-      // Don't leak the worker if connect/move failed
+      // Don't leak the worker if connect failed
       void worker.shutdown().catch(() => {});
       throw new Error(
         `Cannot create worker for ${notebookPath}: ${
