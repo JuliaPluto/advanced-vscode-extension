@@ -1,9 +1,8 @@
 # [0.8.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.7.2...v0.8.0) (2026-09-12)
 
-
 ### Features
 
-* **mcp:** expose the MCP server natively to VS Code and open notebooks in the Simple Browser ([#59](https://github.com/JuliaPluto/advanced-vscode-extension/issues/59)) ([f4c6424](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f4c64246a2782b5c456a0b019d068c40b163d54e)), closes [#57](https://github.com/JuliaPluto/advanced-vscode-extension/issues/57) [#58](https://github.com/JuliaPluto/advanced-vscode-extension/issues/58)
+- **mcp:** expose the MCP server natively to VS Code and open notebooks in the Simple Browser ([#59](https://github.com/JuliaPluto/advanced-vscode-extension/issues/59)) ([f4c6424](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f4c64246a2782b5c456a0b019d068c40b163d54e)), closes [#57](https://github.com/JuliaPluto/advanced-vscode-extension/issues/57) [#58](https://github.com/JuliaPluto/advanced-vscode-extension/issues/58)
 
 ## [0.7.2](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.7.1...v0.7.2) (2026-09-04)
 
