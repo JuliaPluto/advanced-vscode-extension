@@ -1,14 +1,12 @@
 # [0.10.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.9.0...mcp-v0.10.0) (2026-09-12)
 
-
 ### Bug Fixes
 
-* **notebook:** collapse folded cells through VS Code's own commands ([5955542](https://github.com/JuliaPluto/advanced-vscode-extension/commit/59555426dd5315a897e56dbed77e7383f3e33d4b))
-
+- **notebook:** collapse folded cells through VS Code's own commands ([5955542](https://github.com/JuliaPluto/advanced-vscode-extension/commit/59555426dd5315a897e56dbed77e7383f3e33d4b))
 
 ### Features
 
-* **mcp:** expose the MCP server natively to VS Code and open notebooks in the Simple Browser ([#59](https://github.com/JuliaPluto/advanced-vscode-extension/issues/59)) ([f4c6424](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f4c64246a2782b5c456a0b019d068c40b163d54e)), closes [#57](https://github.com/JuliaPluto/advanced-vscode-extension/issues/57) [#58](https://github.com/JuliaPluto/advanced-vscode-extension/issues/58)
+- **mcp:** expose the MCP server natively to VS Code and open notebooks in the Simple Browser ([#59](https://github.com/JuliaPluto/advanced-vscode-extension/issues/59)) ([f4c6424](https://github.com/JuliaPluto/advanced-vscode-extension/commit/f4c64246a2782b5c456a0b019d068c40b163d54e)), closes [#57](https://github.com/JuliaPluto/advanced-vscode-extension/issues/57) [#58](https://github.com/JuliaPluto/advanced-vscode-extension/issues/58)
 
 # [0.9.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-09-04)
 
