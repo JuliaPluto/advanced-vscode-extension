@@ -36,6 +36,7 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
       notebookData.metadata = {
         pluto_notebook_id: parsed.notebook_id,
         pluto_version: parsed.pluto_version,
+        pluto_package_cells: parsed.package_cells,
       };
       return notebookData;
     } catch (error) {
@@ -66,7 +67,8 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
     const serialized = serializePlutoNotebook(
       data.cells,
       data.metadata?.pluto_notebook_id as string,
-      data.metadata?.pluto_version as string
+      data.metadata?.pluto_version as string,
+      data.metadata?.pluto_package_cells as Record<string, string> | undefined
     );
 
     return new TextEncoder().encode(serialized);
