@@ -1,9 +1,8 @@
 ## [0.10.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.10.0...mcp-v0.10.1) (2026-09-12)
 
-
 ### Bug Fixes
 
-* **server:** open local notebooks in place and keep the embedded package env on save ([#61](https://github.com/JuliaPluto/advanced-vscode-extension/issues/61)) ([8348dbc](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8348dbc778c7c6fb060b4152aad6665370c421b5)), closes [#60](https://github.com/JuliaPluto/advanced-vscode-extension/issues/60) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39)
+- **server:** open local notebooks in place and keep the embedded package env on save ([#61](https://github.com/JuliaPluto/advanced-vscode-extension/issues/61)) ([8348dbc](https://github.com/JuliaPluto/advanced-vscode-extension/commit/8348dbc778c7c6fb060b4152aad6665370c421b5)), closes [#60](https://github.com/JuliaPluto/advanced-vscode-extension/issues/60) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39)
 
 # [0.10.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.9.0...mcp-v0.10.0) (2026-09-12)
 
