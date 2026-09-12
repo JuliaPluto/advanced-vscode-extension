@@ -4,7 +4,7 @@
  * This module exports all command registration functions grouped by their domain:
  * - Pluto Server: Commands for managing the Pluto Julia server
  * - MCP Server: Commands for managing the MCP HTTP server
- * - MCP Config: Commands for configuring MCP clients (Claude, Copilot)
+ * - MCP Config: Commands for configuring MCP clients that run outside VS Code (Claude Code)
  */
 
 import type * as vscode from "vscode";

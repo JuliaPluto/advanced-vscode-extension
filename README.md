@@ -13,7 +13,7 @@ so please don't raise issues about this in the official Pluto.jl channels or rep
 - **Notebook Interface**: Edit and run Pluto notebooks directly in VS Code
 - **Integrated Pluto Server**: Automatically manages Pluto server lifecycle
 - **Interactive Terminal**: Execute Julia code in an integrated terminal with rich output rendering
-- **MCP Server**: HTTP-based MCP server for AI assistants like Claude Code and GitHub Copilot
+- **MCP Server**: HTTP-based MCP server for AI assistants; registered with VS Code's native MCP support (Copilot Chat) and usable from Claude Code
 - **Shared State**: Extension and MCP clients share the same Pluto server connection
 - **Real-time Execution**: Execute Julia code and see results immediately
 - **Cell Management**: Create, edit, and execute notebook cells
@@ -39,6 +39,7 @@ This extension contributes the following settings:
 - `pluto-notebook.port`: Port number for the Pluto server (default: 1234)
 - `pluto-notebook.mcpPort`: Port number for the MCP HTTP server (default: 3100)
 - `pluto-notebook.autoStartMcpServer`: Automatically start the MCP HTTP server when the extension activates (default: true)
+- `pluto-notebook.notebookBrowser`: Where `Pluto: Open Notebook in Browser` opens the Pluto editor: `embedded` (VS Code's Simple Browser, beside the editor; default) or `external` (system browser)
 - `pluto-notebook.foldHiddenCells`: Show cells that Pluto marks as hidden (`╟─` in the file) with their code collapsed, as Pluto does (default: `true`). Folds made in Pluto or by `fold_cell` collapse the cell in the editor; collapsing a cell by hand in VS Code does not change the file.
 - `pluto-notebook.juliaVersion`: Fallback Julia version for juliaup when the Julia extension is unavailable. Normally the active Julia channel (e.g. `julia.executablePath` in workspace settings, or the juliaup default) comes from the Julia extension.
 
@@ -58,25 +59,25 @@ This extension contributes the following settings:
 
 ### Configuration Commands
 
-- `Pluto: Create MCP Config (Claude or Copilot)` - Create config file with interactive picker
-- `Pluto: Get MCP HTTP Server URL` - Get URL and config options
+- `Pluto: Create Claude Code MCP Config (.mcp.json)` - Write the workspace `.mcp.json` for Claude Code
+- `Pluto: Get MCP HTTP Server URL` - Show the endpoint, copy it, or open the health check
 
 ### Notebook Commands
 
-- `Pluto: Open Notebook in Browser` - Open the current notebook in browser
+- `Pluto: Open Notebook in Browser` - Open the current notebook in Pluto's own editor, inside VS Code's Simple Browser (see `pluto-notebook.notebookBrowser`)
 - `Pluto: Create Terminal` - Create an interactive Pluto terminal
 
 ## Using with AI Assistants
 
 The extension includes an MCP server that allows AI assistants to interact with your Pluto notebooks.
 
+### VS Code chat (GitHub Copilot and other in-editor agents)
+
+Nothing to configure. The extension registers a "Pluto Notebook" server with VS Code's built-in MCP support (VS Code 1.101 or newer), so it shows up in `MCP: List Servers` and in the chat tools picker as soon as a Pluto notebook has been opened. If the MCP server is not running yet, VS Code starts it when the tools are first used.
+
 ### Claude Code
 
-Run the command `Pluto: Create MCP Config (Claude or Copilot)`, select "Claude Code", and the workspace `.mcp.json` is written for you.
-
-### GitHub Copilot
-
-Run the command `Pluto: Create MCP Config (Claude or Copilot)`, select "GitHub Copilot", and reload VS Code.
+Run the command `Pluto: Create Claude Code MCP Config (.mcp.json)` and the workspace `.mcp.json` is written for you.
 
 For detailed setup instructions, see the [MCP documentation](docs/MCP.md).
 

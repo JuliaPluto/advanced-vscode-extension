@@ -10,6 +10,7 @@ export default {
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
     "^vscode$": "<rootDir>/src/__tests__/__mocks__/vscode.ts",
+    "\\.md$": "<rootDir>/src/__tests__/__mocks__/markdown.ts",
   },
   transform: {
     "^.+\\.tsx?$": [

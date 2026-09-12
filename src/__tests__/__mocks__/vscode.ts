@@ -180,3 +180,45 @@ export const Uri = {
     return { fsPath: joined, toString: () => joined };
   },
 };
+
+// Events
+export class EventEmitter<T> {
+  private readonly listeners = new Set<(value: T) => void>();
+  event = (listener: (value: T) => void): Disposable => {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  };
+  fire(value: T): void {
+    for (const listener of this.listeners) listener(value);
+  }
+  dispose(): void {
+    this.listeners.clear();
+  }
+}
+
+// MCP server definitions (for the provider tests)
+export class McpHttpServerDefinition {
+  constructor(
+    public readonly label: string,
+    public uri: { toString: () => string },
+    public headers: Record<string, string> = {},
+    public version?: string
+  ) {}
+}
+
+export const registeredMcpProviders: Array<{ id: string; provider: unknown }> =
+  [];
+
+export const lm = {
+  registerMcpServerDefinitionProvider: (id: string, provider: unknown) => {
+    registeredMcpProviders.push({ id, provider });
+    return {
+      dispose: () => {
+        const index = registeredMcpProviders.findIndex(
+          (entry) => entry.provider === provider
+        );
+        if (index >= 0) registeredMcpProviders.splice(index, 1);
+      },
+    };
+  },
+};
