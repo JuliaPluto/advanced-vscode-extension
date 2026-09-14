@@ -51,7 +51,12 @@ export async function activate(
   context.subscriptions.push({ dispose: () => clearSharedPlutoManager() });
 
   // Initialize HTTP MCP Server using the shared PlutoManager (singleton)
-  initializeMCPServer(plutoManager, mcpPort, controllerOutputChannel);
+  initializeMCPServer(
+    plutoManager,
+    mcpPort,
+    controllerOutputChannel,
+    context.extension.packageJSON.version
+  );
   registerMcpServerDefinitionProvider(context, controllerOutputChannel);
 
   // Auto-start MCP server if configured. A failure (e.g. port in use by

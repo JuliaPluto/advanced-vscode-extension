@@ -10,6 +10,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
+import { MCP_SERVER_INSTRUCTIONS } from "./mcpInstructions.ts";
 import {
   extensionFor,
   fullOutput,
@@ -66,7 +67,8 @@ export interface McpServerOptions {
   dynamicPort?: boolean;
   /** Which program runs this server; reported by /health. */
   host?: "vscode" | "cli";
-  version?: string;
+  /** Reported in the MCP handshake and by /health. */
+  version: string;
 }
 
 export class PlutoMCPHttpServer {
@@ -86,7 +88,7 @@ export class PlutoMCPHttpServer {
   private readonly plutoManager: PlutoManager;
   private port: number;
   private readonly host: "vscode" | "cli";
-  private readonly version: string | undefined;
+  private readonly version: string;
   private readonly dynamicPort: boolean;
   private readonly stateListeners = new Set<() => void>();
 
@@ -98,7 +100,7 @@ export class PlutoMCPHttpServer {
   constructor(
     plutoManager: PlutoManager,
     port = 3100,
-    options: McpServerOptions = {}
+    options: McpServerOptions
   ) {
     this.plutoManager = plutoManager;
     this.port = port;
@@ -114,12 +116,13 @@ export class PlutoMCPHttpServer {
     const server = new McpServer(
       {
         name: "pluto-notebook-mcp-server",
-        version: this.version ?? "0.0.1",
+        version: this.version,
       },
       {
         capabilities: {
           tools: {},
         },
+        instructions: MCP_SERVER_INSTRUCTIONS,
       }
     );
 
@@ -900,7 +903,7 @@ export class PlutoMCPHttpServer {
     // Save Notebook
     server.tool(
       "save_notebook",
-      "Save the running notebook to disk as a .pluto.jl file. Notebooks are NOT auto-saved — you must call this explicitly to persist changes made via create_cell, edit_cell, or delete_cell.",
+      "Force a write of the running notebook to disk as a .pluto.jl file. A local Pluto server already writes the file after every run; a remote one never does, and only this call brings changes back to the local file. open_notebook reports which of the two applies.",
       {
         path: z.string().describe("Path of the open notebook"),
         output_path: z
@@ -1727,13 +1730,15 @@ export class PlutoMCPHttpServer {
  * @param plutoManager - Shared PlutoManager instance
  * @param port - Port number for the MCP server
  * @param outputChannel - Output channel for logging
+ * @param version - Extension version, reported in the MCP handshake
  */
 export function initializeMCPServer(
   plutoManager: PlutoManager,
   port: number,
   outputChannel: {
     appendLine: (msg: string) => void;
-  }
+  },
+  version: string
 ): void {
   if (mcpServerInstance) {
     outputChannel.appendLine("MCP server already initialized");
@@ -1744,6 +1749,7 @@ export function initializeMCPServer(
   mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, {
     dynamicPort: true,
     host: "vscode",
+    version,
   });
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
