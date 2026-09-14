@@ -1,9 +1,8 @@
 # [0.9.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.8.1...v0.9.0) (2026-09-14)
 
-
 ### Features
 
-* **mcp:** send server instructions with the MCP handshake ([#79](https://github.com/JuliaPluto/advanced-vscode-extension/issues/79)) ([393d6c9](https://github.com/JuliaPluto/advanced-vscode-extension/commit/393d6c99f88b27a1bf3eeab75bef7b2ae7499149))
+- **mcp:** send server instructions with the MCP handshake ([#79](https://github.com/JuliaPluto/advanced-vscode-extension/issues/79)) ([393d6c9](https://github.com/JuliaPluto/advanced-vscode-extension/commit/393d6c99f88b27a1bf3eeab75bef7b2ae7499149))
 
 ## [0.8.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.8.0...v0.8.1) (2026-09-12)
 
