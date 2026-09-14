@@ -7,7 +7,7 @@ This guide explains how to work with Pluto.jl notebooks, including cell structur
 Starting a Pluto server involves installing Julia packages and precompiling them. **The first run can take several minutes** (2-10 minutes depending on the system). If `start_pluto_server` or `open_notebook` appears to hang or times out:
 
 1. **Do not retry immediately** — the server is likely still starting up.
-2. **Wait 30-60 seconds**, then call `get_notebook_status` to check progress.
+2. **Wait 30-60 seconds**, then call `get_notebook_status` again. It reports only whether the server is up, not how far a start has got, so "not running" during these minutes means "not yet".
 3. **Subsequent runs are much faster** since packages are cached.
 
 If a tool call times out, that does NOT mean it failed — the server may still be starting in the background. Check `get_notebook_status` before retrying.
@@ -18,9 +18,9 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 
 ### File Ownership
 
-- **Never edit the `.pluto.jl` file on disk while the notebook is open** — Pluto owns that file. Changes made outside the MCP API will be ignored or overwritten.
+- **Never edit the `.pluto.jl` file on disk while the notebook is open** — Pluto owns that file. An outside edit is lost at Pluto's next write, unless the `pluto-notebook.autoReloadFromFile` setting is on (it is off by default).
 - All cell mutations (create, edit, delete) must go through the MCP tools.
-- To persist changes to disk, call `save_notebook` explicitly. **Notebooks are NOT auto-saved.**
+- **Against a local server Pluto writes the file after every run**, so changes made through these tools reach disk on their own; `save_notebook` forces a write. **Against a remote server the file on disk is not synced at all** and only `save_notebook` brings changes back to it. `open_notebook` reports which of the two applies.
 - **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — Pluto manages file writes and the issue may be on the server side.
 
 ### Notebooks inside a Julia project (local packages, environments, paths)

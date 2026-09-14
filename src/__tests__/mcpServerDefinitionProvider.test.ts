@@ -69,7 +69,7 @@ describe("registerMcpServerDefinitionProvider", () => {
 
   it("follows the port the server actually listens on and reports changes", async () => {
     const port = await findAvailablePort(3300);
-    initializeMCPServer(plutoManager, port, outputChannel);
+    initializeMCPServer(plutoManager, port, outputChannel, "1.2.3");
     const context = makeContext();
     registerMcpServerDefinitionProvider(context, outputChannel);
     const { provider } = registeredMcpProviders[0];

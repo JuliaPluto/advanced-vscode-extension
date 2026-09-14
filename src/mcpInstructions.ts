@@ -2,16 +2,13 @@
  * What the server tells a client about itself, before any tool is called.
  *
  * A tool description reaches a model only once it is already reading that
- * tool, and `learn_pluto_basics` reaches one only if it chooses to call it.
- * These lines arrive with the handshake, while the client is still deciding
- * what to do — so they carry the rules whose cost is paid before any tool
- * description could have been read: that nothing is saved unless asked, that
- * a timeout is not a failure, and that retrying a timed-out create_cell
- * defines the same variable twice.
+ * tool, and learn_pluto_basics reaches one only if it chooses to call it.
+ * These lines arrive with the handshake instead, so they carry the rules that
+ * are most expensive to have guessed wrong.
  *
- * Everything else stays in PLUTO_GUIDE.md behind `learn_pluto_basics`; this
- * text is sent on every session and is kept to what a client cannot afford
- * to learn by trying.
+ * A summary of PLUTO_GUIDE.md, which stays the full text behind
+ * learn_pluto_basics. Both state these rules, so a correction to one of them
+ * belongs in the other.
  */
 export const MCP_SERVER_INSTRUCTIONS = `Julia notebooks running in Pluto, driving the same Pluto server the editor is
 attached to — a notebook opened here is the one the user has in front of them,
@@ -23,16 +20,22 @@ notebook. What follows is only what is expensive to discover by trying.
 
 Starting up:
 - The first start_pluto_server of a session installs and precompiles Julia
-  packages, which takes minutes. A tool call that times out during it has not
-  failed; get_notebook_status says whether the server is still coming up.
+  packages, which takes minutes. A tool call that times out while that happens
+  has not failed.
+- get_notebook_status reports only whether the server is up, not how far along
+  a start has got, so a "not running" answer during those minutes means "not
+  yet". Wait and ask again rather than starting the server a second time.
 
 Saving:
-- Nothing is auto-saved. Every mutation lives in the running notebook until
-  save_notebook writes it out, so a notebook built entirely through these
-  tools is still whatever was last written to disk.
-- Pluto owns the .pluto.jl file while the notebook is open. Edits made to it
-  on disk are ignored or overwritten; go through create_cell, edit_cell and
-  delete_cell instead.
+- Against a local server Pluto owns the file and writes it after every run, so
+  edits made through these tools reach disk on their own. open_notebook says
+  which regime a notebook is in.
+- Against a remote server the file on disk is not synced at all, and only
+  save_notebook brings changes back to it.
+- Either way Pluto is the writer. An edit made to the file underneath an open
+  notebook is lost at Pluto's next write unless the extension's
+  autoReloadFromFile setting is on, which it is not by default. Go through
+  create_cell, edit_cell and delete_cell instead.
 
 Reactivity:
 - A variable may be defined in exactly one cell, notebook-wide. Several
@@ -47,6 +50,9 @@ Waiting:
   in a loop.
 - A create_cell that timed out still created its cell. Retrying it defines the
   same variable twice; list_cells finds the cell and delete_cell removes it.
+- execute_code runs in a temporary cell that is deleted as soon as it
+  finishes, so a result that lands after the timeout cannot be read back. Use
+  create_cell for anything long enough to time out.
 
 Package environments:
 - Plain \`using Foo\` is enough — Pluto installs and pins it.
