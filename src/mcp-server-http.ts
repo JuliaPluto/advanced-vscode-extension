@@ -10,6 +10,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
+import { MCP_SERVER_INSTRUCTIONS } from "./mcpInstructions.ts";
 import {
   extensionFor,
   fullOutput,
@@ -120,6 +121,7 @@ export class PlutoMCPHttpServer {
         capabilities: {
           tools: {},
         },
+        instructions: MCP_SERVER_INSTRUCTIONS,
       }
     );
 
@@ -1733,7 +1735,8 @@ export function initializeMCPServer(
   port: number,
   outputChannel: {
     appendLine: (msg: string) => void;
-  }
+  },
+  version?: string
 ): void {
   if (mcpServerInstance) {
     outputChannel.appendLine("MCP server already initialized");
@@ -1744,6 +1747,7 @@ export function initializeMCPServer(
   mcpServerInstance = new PlutoMCPHttpServer(plutoManager, port, {
     dynamicPort: true,
     host: "vscode",
+    version,
   });
   outputChannel.appendLine(`MCP server initialized on port ${port}`);
 }
