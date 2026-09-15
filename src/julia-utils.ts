@@ -76,12 +76,14 @@ export async function activateJulia(): Promise<vscode.Extension<JuliaExtAPI>> {
 export async function getJuliaExecutable(): Promise<{
   command: string;
   args: string[];
+  /** Julia version reported by the extension, e.g. `1.12.7`; unknown on fallback. */
+  version?: string;
 }> {
   try {
     const api = await activateJulia();
     const exe = await api.exports.getJuliaExecutable();
     const command = exe?.command ?? exe?.file ?? getFallbackJuliaCommand();
-    return { command, args: exe?.args ?? [] };
+    return { command, args: exe?.args ?? [], version: exe?.version };
   } catch (err) {
     console.warn(
       "[julia-utils] Could not get Julia executable from extension, falling back:",
