@@ -74,3 +74,19 @@ export function escapeJuliaCode(code: string): string {
   // On Unix-like systems, the shell handles quotes correctly
   return code;
 }
+
+/**
+ * Whether a resolved Julia command line runs the given juliaup channel.
+ * juliaup names install directories with the channel's dots replaced by
+ * `x` (`dyad-3.3.0` lives in `julia-1.12.7+dyad-3x3x0.…`), so the channel
+ * matches either as a `+channel` argument or under its directory spelling.
+ */
+export function commandUsesJuliaupChannel(
+  channel: string,
+  command: string
+): boolean {
+  const directoryForm = channel.replace(/\./g, "x");
+  return (
+    command.includes(`+${channel}`) || command.includes(`+${directoryForm}.`)
+  );
+}

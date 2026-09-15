@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
-import { isWindows, resolveJuliaDepotPath } from "./platformUtils.ts";
+import {
+  isWindows,
+  resolveJuliaDepotPath,
+  commandUsesJuliaupChannel,
+} from "./platformUtils.ts";
 import {
   getJuliaExecutable,
   getPackageServer,
@@ -417,7 +421,7 @@ function warnIfDyadChannelLost(command: string, args: string[]): void {
     return;
   }
   const resolved = [command, ...args].join(" ");
-  if (!resolved.includes(wanted)) {
+  if (!commandUsesJuliaupChannel(wanted, resolved)) {
     vscode.window.showWarningMessage(
       `Pluto: this workspace uses Julia channel ${wanted}, but the Pluto server is starting with "${resolved}". Dyad notebooks may fail to load their packages.`
     );
