@@ -1,9 +1,8 @@
 ## [0.9.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.9.0...v0.9.1) (2026-09-15)
 
-
 ### Bug Fixes
 
-* **server:** stop false Dyad channel warning when juliaup resolves the channel path ([#80](https://github.com/JuliaPluto/advanced-vscode-extension/issues/80)) ([96b2a7a](https://github.com/JuliaPluto/advanced-vscode-extension/commit/96b2a7a971b89a7cb6ca36d3b37a4348b1185158))
+- **server:** stop false Dyad channel warning when juliaup resolves the channel path ([#80](https://github.com/JuliaPluto/advanced-vscode-extension/issues/80)) ([96b2a7a](https://github.com/JuliaPluto/advanced-vscode-extension/commit/96b2a7a971b89a7cb6ca36d3b37a4348b1185158))
 
 # [0.9.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.8.1...v0.9.0) (2026-09-14)
 
