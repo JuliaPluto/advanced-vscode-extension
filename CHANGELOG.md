@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.9.1...v0.10.0) (2026-09-15)
+
+
+### Features
+
+* **server:** single writer for notebook files, warn on unsupported Julia ([#81](https://github.com/JuliaPluto/advanced-vscode-extension/issues/81)) ([fcaaf11](https://github.com/JuliaPluto/advanced-vscode-extension/commit/fcaaf1169616718f47e6d4124ce873244a2c42ed)), closes [#60](https://github.com/JuliaPluto/advanced-vscode-extension/issues/60) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39)
+
 ## [0.9.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.9.0...v0.9.1) (2026-09-15)
 
 ### Bug Fixes
