@@ -3,6 +3,7 @@ import {
   serializePlutoNotebook,
   isMarkdownCell,
 } from "../plutoSerializer.ts";
+import { PlutoNotebookSerializer } from "../serializer.ts";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -511,5 +512,68 @@ project_hash = "71853c6197a6a7f222db0f1978c7cb232b87c5ee"
       parsed.package_cells
     );
     expect(out).not.toContain("PLUTO_PROJECT_TOML_CONTENTS");
+  });
+});
+
+describe("PlutoNotebookSerializer package cells", () => {
+  const notebookId = "0f9e8d7c-1234-4abc-9def-0123456789ab";
+  const cellId = "11111111-2222-4333-8444-555555555555";
+  const stored = {
+    "00000000-0000-0000-0000-000000000001": `PLUTO_PROJECT_TOML_CONTENTS = """\n[deps]\n"""\n`,
+  };
+  const fresh = {
+    "00000000-0000-0000-0000-000000000001": `PLUTO_PROJECT_TOML_CONTENTS = """\n[deps]\nPlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"\n"""\n`,
+  };
+
+  const notebookData = () => {
+    const cell: NotebookCellData = {
+      kind: NotebookCellKind.Code,
+      value: "1 + 1",
+      languageId: "julia",
+      metadata: { pluto_cell_id: cellId },
+    };
+    return {
+      cells: [cell],
+      metadata: {
+        pluto_notebook_id: notebookId,
+        pluto_version: "v0.20.0",
+        pluto_package_cells: stored,
+      },
+    } as unknown as import("vscode").NotebookData;
+  };
+
+  const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+  it("writes the package cells Pluto holds now, not the ones read from the file", async () => {
+    const askedFor: string[] = [];
+    const serializer = new PlutoNotebookSerializer(async (id) => {
+      askedFor.push(id);
+      return fresh;
+    });
+    const text = decode(await serializer.serializeNotebook(notebookData()));
+    expect(askedFor).toEqual([notebookId]);
+    expect(text).toContain('PlutoUI = "7f904dfe');
+  });
+
+  it("falls back to the stored package cells when the notebook is not open", async () => {
+    const serializer = new PlutoNotebookSerializer(async () => undefined);
+    const text = decode(await serializer.serializeNotebook(notebookData()));
+    expect(text).toContain("PLUTO_PROJECT_TOML_CONTENTS");
+    expect(text).not.toContain("PlutoUI");
+  });
+
+  it("falls back to the stored package cells when the lookup fails", async () => {
+    const serializer = new PlutoNotebookSerializer(async () => {
+      throw new Error("server gone");
+    });
+    const text = decode(await serializer.serializeNotebook(notebookData()));
+    expect(text).toContain("PLUTO_PROJECT_TOML_CONTENTS");
+    expect(text).not.toContain("PlutoUI");
+  });
+
+  it("works without a provider", async () => {
+    const serializer = new PlutoNotebookSerializer();
+    const text = decode(await serializer.serializeNotebook(notebookData()));
+    expect(text).toContain("PLUTO_PROJECT_TOML_CONTENTS");
   });
 });

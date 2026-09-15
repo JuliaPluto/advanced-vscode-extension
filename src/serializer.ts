@@ -21,7 +21,19 @@ export function formatCellOutput(
   ]);
 }
 
+/** Looks up the embedded package environment of an open notebook by its id. */
+export type PackageCellsProvider = (
+  notebookId: string
+) => Promise<Record<string, string> | undefined>;
+
 export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
+  /**
+   * The package environment can change while a notebook runs and only Pluto
+   * has the current text, so a save asks the provider first and falls back
+   * to the cells read from the file.
+   */
+  constructor(private readonly packageCells?: PackageCellsProvider) {}
+
   public async deserializeNotebook(
     content: Uint8Array
     // __token: vscode.CancellationToken
@@ -62,13 +74,21 @@ export class PlutoNotebookSerializer implements vscode.NotebookSerializer {
     data: vscode.NotebookData
     // __token: vscode.CancellationToken
   ): Promise<Uint8Array> {
+    const notebookId = data.metadata?.pluto_notebook_id as string;
+    const storedPackageCells = data.metadata?.pluto_package_cells as
+      Record<string, string> | undefined;
+    const packageCells =
+      (notebookId && this.packageCells
+        ? await this.packageCells(notebookId).catch(() => undefined)
+        : undefined) ?? storedPackageCells;
+
     // No fallback on failure: writing anything but the real Pluto format
     // would corrupt the .pluto.jl file on disk. Let the save fail instead.
     const serialized = serializePlutoNotebook(
       data.cells,
-      data.metadata?.pluto_notebook_id as string,
+      notebookId,
       data.metadata?.pluto_version as string,
-      data.metadata?.pluto_package_cells as Record<string, string> | undefined
+      packageCells
     );
 
     return new TextEncoder().encode(serialized);

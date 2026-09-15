@@ -75,11 +75,6 @@
           "default": "embedded",
           "description": "Where 'Pluto: Open Notebook in Browser' opens the Pluto editor."
         },
-        "pluto-notebook.autoReloadFromFile": {
-          "type": "boolean",
-          "default": false,
-          "description": "Start the Pluto server with auto_reload_from_file: Pluto watches each open notebook file and applies outside edits (a formatter, git, an AI agent editing the file) to the running notebook, re-running the changed cells. Takes effect on the next server start."
-        },
         "pluto-notebook.foldHiddenCells": {
           "type": "boolean",
           "default": true,

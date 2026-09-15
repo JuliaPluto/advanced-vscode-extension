@@ -40,7 +40,6 @@ This extension contributes the following settings:
 - `pluto-notebook.mcpPort`: Port number for the MCP HTTP server (default: 3100)
 - `pluto-notebook.autoStartMcpServer`: Automatically start the MCP HTTP server when the extension activates (default: true)
 - `pluto-notebook.notebookBrowser`: Where `Pluto: Open Notebook in Browser` opens the Pluto editor: `embedded` (VS Code's Simple Browser, beside the editor; default) or `external` (system browser)
-- `pluto-notebook.autoReloadFromFile`: Start the Pluto server with `auto_reload_from_file=true`, so edits made to a notebook file outside the notebook editor are applied to the running notebook (default: `false`; takes effect on the next server start)
 - `pluto-notebook.foldHiddenCells`: Show cells that Pluto marks as hidden (`╟─` in the file) with their code collapsed, as Pluto does (default: `true`). Folds made in Pluto or by `fold_cell` collapse the cell in the editor; collapsing a cell by hand in VS Code does not change the file.
 
 ## Available Commands

@@ -209,9 +209,6 @@ export class PlutoServerTaskManager {
 
     // --- Step 5: Start the Pluto server task (setup + run in one process) ---
     // Setup steps run first in the same Julia session, then Pluto.run() blocks.
-    const autoReloadFromFile = vscode.workspace
-      .getConfiguration("pluto-notebook")
-      .get<boolean>("autoReloadFromFile", false);
     const serverCode = [
       `println("Julia ", VERSION, " at ", Sys.BINDIR)`,
       `import Pkg`,
@@ -223,7 +220,7 @@ export class PlutoServerTaskManager {
       `Pkg.instantiate()`,
       `Pkg.precompile()`,
       `using Pluto`,
-      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, auto_reload_from_file=${autoReloadFromFile})`,
+      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, disable_writing_notebook_files=true)`,
     ].join(";");
     const juliaArgs = [...channelArgs, "-e", serverCode];
 
@@ -377,6 +374,15 @@ export class PlutoServerTaskManager {
     }
 
     this.setActualPort(this.port);
+  }
+
+  /**
+   * The editor is the only writer of notebook files: the server runs with
+   * disable_writing_notebook_files, so a save in VS Code never races a
+   * write from Pluto.
+   */
+  public writesNotebookFiles(): boolean {
+    return false;
   }
 
   /**

@@ -87,7 +87,9 @@ export async function activate(
   context.subscriptions.push(
     vscode.workspace.registerNotebookSerializer(
       "pluto-notebook",
-      new PlutoNotebookSerializer()
+      new PlutoNotebookSerializer((id) => plutoManager.getPackageCells(id)),
+      // Outputs are never written to the file, so they must not dirty it
+      { transientOutputs: true }
     )
   );
 
