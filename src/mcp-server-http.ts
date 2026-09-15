@@ -310,9 +310,11 @@ export class PlutoMCPHttpServer {
         }
 
         const isLocal = this.plutoManager.isLocalServer();
-        const syncNote = isLocal
-          ? "Pluto is tracking this file path and will save changes to it."
-          : "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file.";
+        const syncNote = !isLocal
+          ? "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file."
+          : this.plutoManager.serverWritesNotebookFiles()
+            ? "Pluto is tracking this file path and will save changes to it."
+            : "The server does not write this file: changes reach disk when the notebook is saved in the editor, or through save_notebook.";
 
         return {
           content: [
@@ -328,7 +330,7 @@ export class PlutoMCPHttpServer {
     // Move Notebook
     server.tool(
       "move_notebook",
-      "Move a notebook to a new file path. Pluto will save to the new path, delete the old file, and move any associated .assets directory. Only works when the server is on localhost.",
+      "Move a notebook to a new file path: the file is written at the new path, the old file is deleted, and any associated .assets directory moves with it. Only works when the server is on localhost.",
       {
         path: z.string().describe("Current path of the open notebook"),
         new_path: z
@@ -903,7 +905,7 @@ export class PlutoMCPHttpServer {
     // Save Notebook
     server.tool(
       "save_notebook",
-      "Force a write of the running notebook to disk as a .pluto.jl file. A local Pluto server already writes the file after every run; a remote one never does, and only this call brings changes back to the local file. open_notebook reports which of the two applies.",
+      "Write the running notebook to disk as a .pluto.jl file, exactly as Pluto would save it (embedded package environment included). Needed whenever the server does not write the file itself: a remote server never does, and the VS Code extension's server leaves writing to the editor. open_notebook reports which applies.",
       {
         path: z.string().describe("Path of the open notebook"),
         output_path: z
@@ -924,7 +926,7 @@ export class PlutoMCPHttpServer {
           throw new Error(`Notebook ${path} is not open`);
         }
 
-        const content = this.plutoManager.getNotebookContent(worker);
+        const content = await this.plutoManager.getNotebookContent(worker);
         const savePath = output_path ?? path;
         await writeFile(savePath, content, "utf-8");
 

@@ -18,10 +18,10 @@ These rules are critical when interacting with Pluto notebooks through the MCP A
 
 ### File Ownership
 
-- **Never edit the `.pluto.jl` file on disk while the notebook is open** — Pluto owns that file. An outside edit is lost at Pluto's next write, unless the `pluto-notebook.autoReloadFromFile` setting is on (it is off by default).
+- **Never edit the `.pluto.jl` file on disk while the notebook is open** — the running notebook does not see the edit, and the next save overwrites it.
 - All cell mutations (create, edit, delete) must go through the MCP tools.
-- **Against a local server Pluto writes the file after every run**, so changes made through these tools reach disk on their own; `save_notebook` forces a write. **Against a remote server the file on disk is not synced at all** and only `save_notebook` brings changes back to it. `open_notebook` reports which of the two applies.
-- **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — Pluto manages file writes and the issue may be on the server side.
+- **Who writes the file depends on the server**, and `open_notebook` reports which applies. The CLI's own server writes the file after every run, so changes made through these tools reach disk on their own. The VS Code extension's server never writes notebook files: the notebook editor saves them (the document shows as dirty until then), and `save_notebook` writes from here. Against a remote server the file on disk is not synced at all and only `save_notebook` brings changes back to it.
+- **If a change (folding, reordering, etc.) does not appear to have persisted on disk, do not attempt to fix it yourself.** Just inform the user — the issue may be on the server side.
 
 ### Notebooks inside a Julia project (local packages, environments, paths)
 

@@ -27,14 +27,12 @@ Starting up:
   yet". Wait and ask again rather than starting the server a second time.
 
 Saving:
-- Against a local server Pluto owns the file and writes it after every run, so
-  edits made through these tools reach disk on their own. open_notebook says
-  which regime a notebook is in.
-- Against a remote server the file on disk is not synced at all, and only
-  save_notebook brings changes back to it.
-- Either way Pluto is the writer. An edit made to the file underneath an open
-  notebook is lost at Pluto's next write unless the extension's
-  autoReloadFromFile setting is on, which it is not by default. Go through
+- open_notebook says whether the server writes the file itself. The CLI's own
+  server does, after every run. The VS Code extension's server never does:
+  there the notebook editor saves the file, and save_notebook is the way to
+  write it from here. A remote server never writes the local file either.
+- An edit made to the file underneath an open notebook is not seen by the
+  running notebook and is overwritten at the next save. Go through
   create_cell, edit_cell and delete_cell instead.
 
 Reactivity:

@@ -1,6 +1,7 @@
 import type { CellResultData, Worker } from "@plutojl/rainbow";
-import { Host, serialize } from "@plutojl/rainbow";
+import { Host, parse } from "@plutojl/rainbow";
 import * as path from "path";
+import { rm, writeFile } from "fs/promises";
 import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { resolve as resolvePath } from "path";
@@ -726,11 +727,73 @@ export class PlutoManager {
   }
 
   /**
-   * Move a notebook to a new file path via Pluto (updates Pluto's tracked path,
-   * moves the file and .assets directory on the server side).
+   * Move a notebook to a new file path via Pluto (updates Pluto's tracked path
+   * and moves the .assets directory). A server that does not write notebook
+   * files leaves the file itself to us: write the new path, remove the old.
    */
   public async moveNotebook(worker: Worker, newPath: string): Promise<void> {
+    const oldPath = worker.getState()?.path;
     await worker.moveTo(newPath);
+    if (this.serverWritesNotebookFiles()) {
+      return;
+    }
+    await writeFile(newPath, await this.fetchNotebookFile(worker), "utf-8");
+    if (oldPath && resolvePath(oldPath) !== resolvePath(newPath)) {
+      await rm(oldPath, { force: true });
+    }
+  }
+
+  /**
+   * Whether the Pluto server writes notebook files after every run. When it
+   * does not, only the editor's save and save_notebook reach the disk.
+   */
+  public serverWritesNotebookFiles(): boolean {
+    return this.serverManager.writesNotebookFiles?.() ?? true;
+  }
+
+  /**
+   * The notebook as Pluto would write it (GET /notebookfile): cells, order,
+   * folds and the embedded package environment, straight from the server's
+   * memory. The only source of the current Project/Manifest text.
+   */
+  public async fetchNotebookFile(worker: Worker): Promise<string> {
+    const url = new URL("/notebookfile", this.serverUrl);
+    url.searchParams.set("id", worker.notebook_id);
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      throw new Error(this.describeServerError(error));
+    }
+    if (!response.ok) {
+      throw new Error(
+        this.describeServerError(
+          new Error(
+            `Pluto could not serialize notebook ${worker.notebook_id} (HTTP ${response.status})`
+          )
+        )
+      );
+    }
+    return await response.text();
+  }
+
+  /**
+   * The embedded package environment cells of an open notebook, as Pluto
+   * holds them now; undefined when the notebook is not open on this server.
+   */
+  public async getPackageCells(
+    notebookId: string
+  ): Promise<Record<string, string> | undefined> {
+    const worker = [...this.workers.values()].find(
+      (w) => w.notebook_id === notebookId
+    );
+    if (!worker || !this.host) {
+      return undefined;
+    }
+    const parsed = parse(await this.fetchNotebookFile(worker)) as
+      { _package_cells?: Record<string, string> } | undefined;
+    const cells = parsed?._package_cells;
+    return cells && Object.keys(cells).length > 0 ? cells : undefined;
   }
 
   /**
@@ -882,12 +945,8 @@ export class PlutoManager {
   /**
    * Get the serialized notebook content (.jl format) for saving to disk
    */
-  public getNotebookContent(worker: Worker): string {
-    const state = worker.getState();
-    if (!state) {
-      throw new Error("Notebook state not available");
-    }
-    return serialize(state);
+  public async getNotebookContent(worker: Worker): Promise<string> {
+    return await this.fetchNotebookFile(worker);
   }
 
   /**

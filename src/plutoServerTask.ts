@@ -5,6 +5,8 @@ import {
   isWindows,
   resolveJuliaDepotPath,
   commandUsesJuliaupChannel,
+  isJuliaVersionSupportedByPluto,
+  NEWEST_SUPPORTED_JULIA,
 } from "./platformUtils.ts";
 import {
   getJuliaExecutable,
@@ -157,10 +159,17 @@ export class PlutoServerTaskManager {
 
     // --- Step 1: Get Julia executable from the Julia extension ---
     // Julia is guaranteed installed because julialang.language-julia is an extensionDependency.
-    const { command, args: channelArgs } = await getJuliaExecutable();
+    const {
+      command,
+      args: channelArgs,
+      version: juliaVersion,
+    } = await getJuliaExecutable();
     console.log(
-      `[PlutoServerTask] Julia executable: ${command} ${channelArgs.join(" ")}`
+      `[PlutoServerTask] Julia executable: ${command} ${channelArgs.join(" ")} (${juliaVersion ?? "unknown version"})`
     );
+    if (juliaVersion && !isJuliaVersionSupportedByPluto(juliaVersion)) {
+      void offerSupportedJuliaChannel(juliaVersion);
+    }
 
     // --- Step 3: Get package server and optional JuliaHub token ---
     const packageServer = await getPackageServer();
@@ -200,9 +209,6 @@ export class PlutoServerTaskManager {
 
     // --- Step 5: Start the Pluto server task (setup + run in one process) ---
     // Setup steps run first in the same Julia session, then Pluto.run() blocks.
-    const autoReloadFromFile = vscode.workspace
-      .getConfiguration("pluto-notebook")
-      .get<boolean>("autoReloadFromFile", false);
     const serverCode = [
       `println("Julia ", VERSION, " at ", Sys.BINDIR)`,
       `import Pkg`,
@@ -214,7 +220,7 @@ export class PlutoServerTaskManager {
       `Pkg.instantiate()`,
       `Pkg.precompile()`,
       `using Pluto`,
-      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, auto_reload_from_file=${autoReloadFromFile})`,
+      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, disable_writing_notebook_files=true)`,
     ].join(";");
     const juliaArgs = [...channelArgs, "-e", serverCode];
 
@@ -371,6 +377,15 @@ export class PlutoServerTaskManager {
   }
 
   /**
+   * The editor is the only writer of notebook files: the server runs with
+   * disable_writing_notebook_files, so a save in VS Code never races a
+   * write from Pluto.
+   */
+  public writesNotebookFiles(): boolean {
+    return false;
+  }
+
+  /**
    * Get the server URL
    */
   public getServerUrl(): string {
@@ -405,6 +420,38 @@ function resolveJuliaupEnv(): { [key: string]: string } {
     env.JULIAUP_DEPOT_PATH = process.env.JULIAUP_DEPOT_PATH;
   }
   return env;
+}
+
+/**
+ * Pluto does not run on Julia minors newer than the newest supported one.
+ * Offers to pin the Julia extension to the supported juliaup channel; the
+ * server keeps starting on the current Julia so the user can still decline.
+ */
+async function offerSupportedJuliaChannel(version: string): Promise<void> {
+  const channel = NEWEST_SUPPORTED_JULIA.channel;
+  const useSupported = `Use Julia ${channel}`;
+  const choice = await vscode.window.showWarningMessage(
+    `Pluto: the Julia extension is using Julia ${version}, which Pluto does not support yet. Set julia.executablePath to "julia +${channel}"?`,
+    useSupported,
+    "Ignore"
+  );
+  if (choice !== useSupported) {
+    return;
+  }
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("julia")
+    .update("executablePath", `julia +${channel}`, target);
+  const restart = "Restart Pluto Server";
+  const next = await vscode.window.showInformationMessage(
+    `Pluto: julia.executablePath set to "julia +${channel}". Install the channel with "juliaup add ${channel}" if it is missing, then restart the Pluto server.`,
+    restart
+  );
+  if (next === restart) {
+    await vscode.commands.executeCommand("pluto-notebook.restartServer");
+  }
 }
 
 /**

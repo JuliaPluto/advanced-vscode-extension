@@ -12,6 +12,11 @@ export interface IPlutoServerManager {
   onPortChanged(callback: (newPort: number) => void): void;
   getActualPort(): number;
   getServerUrl(): string;
+  /**
+   * Whether the server writes notebook files itself after every run.
+   * Absent means Pluto's default, which is to write them.
+   */
+  writesNotebookFiles?(): boolean;
 }
 
 /**
