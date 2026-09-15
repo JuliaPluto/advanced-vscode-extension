@@ -5,6 +5,8 @@ import {
   isWindows,
   resolveJuliaDepotPath,
   commandUsesJuliaupChannel,
+  isJuliaVersionSupportedByPluto,
+  NEWEST_SUPPORTED_JULIA,
 } from "./platformUtils.ts";
 import {
   getJuliaExecutable,
@@ -157,10 +159,17 @@ export class PlutoServerTaskManager {
 
     // --- Step 1: Get Julia executable from the Julia extension ---
     // Julia is guaranteed installed because julialang.language-julia is an extensionDependency.
-    const { command, args: channelArgs } = await getJuliaExecutable();
+    const {
+      command,
+      args: channelArgs,
+      version: juliaVersion,
+    } = await getJuliaExecutable();
     console.log(
-      `[PlutoServerTask] Julia executable: ${command} ${channelArgs.join(" ")}`
+      `[PlutoServerTask] Julia executable: ${command} ${channelArgs.join(" ")} (${juliaVersion ?? "unknown version"})`
     );
+    if (juliaVersion && !isJuliaVersionSupportedByPluto(juliaVersion)) {
+      void offerSupportedJuliaChannel(juliaVersion);
+    }
 
     // --- Step 3: Get package server and optional JuliaHub token ---
     const packageServer = await getPackageServer();
@@ -405,6 +414,38 @@ function resolveJuliaupEnv(): { [key: string]: string } {
     env.JULIAUP_DEPOT_PATH = process.env.JULIAUP_DEPOT_PATH;
   }
   return env;
+}
+
+/**
+ * Pluto does not run on Julia minors newer than the newest supported one.
+ * Offers to pin the Julia extension to the supported juliaup channel; the
+ * server keeps starting on the current Julia so the user can still decline.
+ */
+async function offerSupportedJuliaChannel(version: string): Promise<void> {
+  const channel = NEWEST_SUPPORTED_JULIA.channel;
+  const useSupported = `Use Julia ${channel}`;
+  const choice = await vscode.window.showWarningMessage(
+    `Pluto: the Julia extension is using Julia ${version}, which Pluto does not support yet. Set julia.executablePath to "julia +${channel}"?`,
+    useSupported,
+    "Ignore"
+  );
+  if (choice !== useSupported) {
+    return;
+  }
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("julia")
+    .update("executablePath", `julia +${channel}`, target);
+  const restart = "Restart Pluto Server";
+  const next = await vscode.window.showInformationMessage(
+    `Pluto: julia.executablePath set to "julia +${channel}". Install the channel with "juliaup add ${channel}" if it is missing, then restart the Pluto server.`,
+    restart
+  );
+  if (next === restart) {
+    await vscode.commands.executeCommand("pluto-notebook.restartServer");
+  }
 }
 
 /**

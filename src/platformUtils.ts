@@ -90,3 +90,29 @@ export function commandUsesJuliaupChannel(
     command.includes(`+${channel}`) || command.includes(`+${directoryForm}.`)
   );
 }
+
+/** Newest Julia minor release Pluto runs on; juliaup channel of that release. */
+export const NEWEST_SUPPORTED_JULIA = {
+  major: 1,
+  minor: 12,
+  channel: "1.12.7",
+};
+
+/**
+ * Whether Pluto runs on this Julia version. Pluto lags new Julia minors,
+ * so anything newer than the newest supported minor is unsupported;
+ * unparsable versions are assumed supported.
+ */
+export function isJuliaVersionSupportedByPluto(version: string): boolean {
+  const match = version.match(/^v?(\d+)\.(\d+)/);
+  if (!match) {
+    return true;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (
+    major < NEWEST_SUPPORTED_JULIA.major ||
+    (major === NEWEST_SUPPORTED_JULIA.major &&
+      minor <= NEWEST_SUPPORTED_JULIA.minor)
+  );
+}
