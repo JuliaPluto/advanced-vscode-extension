@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.11.1...mcp-v0.12.0) (2026-09-15)
+
+
+### Features
+
+* **server:** single writer for notebook files, warn on unsupported Julia ([#81](https://github.com/JuliaPluto/advanced-vscode-extension/issues/81)) ([fcaaf11](https://github.com/JuliaPluto/advanced-vscode-extension/commit/fcaaf1169616718f47e6d4124ce873244a2c42ed)), closes [#60](https://github.com/JuliaPluto/advanced-vscode-extension/issues/60) [#39](https://github.com/JuliaPluto/advanced-vscode-extension/issues/39)
+
 ## [0.11.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.11.0...mcp-v0.11.1) (2026-09-15)
 
 ### Bug Fixes
