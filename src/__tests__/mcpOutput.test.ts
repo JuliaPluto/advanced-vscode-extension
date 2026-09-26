@@ -119,6 +119,7 @@ describe("newNotebookSource", () => {
     expect(cells).toHaveLength(1);
     expect(cells[0].kind).toBe(NotebookCellKind.Code);
     expect(cells[0].value).toBe("");
+    expect(cells[0].metadata?.code_folded).toBe(false);
   });
 
   it("parses back to one folded title cell", () => {
@@ -126,6 +127,6 @@ describe("newNotebookSource", () => {
     const { cells } = parsePlutoNotebook(src);
     expect(cells).toHaveLength(1);
     expect(cells[0].value).toContain("# Hello 'world'");
-    expect(src).toContain(`# ╟─${cells[0].metadata?.pluto_cell_id}`);
+    expect(cells[0].metadata?.code_folded).toBe(true);
   });
 });

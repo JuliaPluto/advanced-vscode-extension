@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import { newNotebookSource } from "../notebookOutput.ts";
-import { isPlutoNotebookFileName } from "../plutoFileName.ts";
+import {
+  PLUTO_NOTEBOOK_EXTENSIONS,
+  isPlutoNotebookFileName,
+} from "../plutoFileName.ts";
 
 /**
  * Command: Create New Pluto Notebook
@@ -32,7 +35,7 @@ export function registerCreateNewNotebookCommand(
                 return "Filename cannot be empty";
               }
               if (!isPlutoNotebookFileName(value)) {
-                return "Filename must end with .pluto.jl or .dyad.jl";
+                return `Filename must end with ${PLUTO_NOTEBOOK_EXTENSIONS.map((ext) => `.${ext}`).join(" or ")}`;
               }
               return null;
             },
