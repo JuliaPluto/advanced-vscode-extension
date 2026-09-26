@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
-import { dirname } from "path";
+import { dirname, isAbsolute } from "path";
 import { z } from "zod";
 import { newNotebookSource } from "../notebookOutput.ts";
 import { otherPlutoServerMessage, sameUrl } from "../plutoServerUrl.ts";
@@ -140,6 +140,11 @@ export function serverTools(manager: PlutoToolsManager): PlutoTool[] {
           `Opening ${args.path} is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. The file was created — use list_notebooks to see when it is open. Do NOT retry create_notebook; use open_notebook.`
       ),
       run: async ({ path, title }) => {
+        if (!isAbsolute(path)) {
+          throw new Error(
+            `Notebook paths must be absolute — '${path}' would be created relative to the tool server's directory. Pass the full path.`
+          );
+        }
         if (existsSync(path)) {
           throw new Error(
             `${path} already exists — use open_notebook to open it`

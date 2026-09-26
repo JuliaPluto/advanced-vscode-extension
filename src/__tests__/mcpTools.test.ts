@@ -149,6 +149,23 @@ describe("the tool set", () => {
     expect(textOf(again)).toContain("already exists");
   });
 
+  it("refuses a relative notebook path before writing anything", async () => {
+    const manager = fakePlutoManager();
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const result = await createPlutoTools(manager).call("create_notebook", {
+        path: "rel/new.pluto.jl",
+      });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toContain("must be absolute");
+      expect(existsSync(join(dir, "rel"))).toBe(false);
+      expect(manager.getWorker).not.toHaveBeenCalled();
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   it("moves cells and folds a cell through the manager", async () => {
     const manager = fakePlutoManager();
     const tools = createPlutoTools(manager);
