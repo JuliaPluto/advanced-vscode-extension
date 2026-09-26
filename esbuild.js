@@ -1,10 +1,16 @@
 import esbuild from "esbuild";
 
-import { copyFileSync, mkdirSync } from "fs";
+import { copyFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
+const { version: rainbowVersion } = JSON.parse(
+  readFileSync(
+    join("node_modules", "@plutojl", "rainbow", "package.json"),
+    "utf-8"
+  )
+);
 
 /**
  * @type {import('esbuild').Plugin}
@@ -53,6 +59,9 @@ async function main() {
     platform: "node",
     outfile: "dist/extension.cjs",
     external: ["vscode"],
+    define: {
+      __RAINBOW_VERSION__: JSON.stringify(rainbowVersion),
+    },
     logLevel: "silent",
     loader: {
       ".md": "text", // Load markdown files as text
