@@ -45,7 +45,7 @@ npx @plutojl/cli call list_cells '{"path": "/abs/path/nb.pluto.jl"}'
 ## Rules that save you from confusing failures
 
 - **One definition per variable across the whole notebook** (Pluto reactivity). "Multiple definitions" → `list_cells`, find the duplicate, `delete_cell`.
-- Execution tools (`create_cell`, `execute_cell`, `execute_code`) return after 5 minutes with `timed_out: true` if the cell is still computing — the computation continues; follow with `wait_for_notebook_idle`. **Never retry a timed-out `create_cell`** — the cell exists.
+- Execution tools (`create_cell`, `execute_cell`, `execute_code`, `edit_cell` with `run: true`, and `read_cell_output` when it renders a PNG) return after 5 minutes with `timed_out: true` if the work is still computing — the computation continues; follow with `wait_for_notebook_idle`. **Never retry a timed-out `create_cell` or `edit_cell`** — the cell exists and the new code was sent; poll instead.
 - Notebooks are **not auto-saved**: call `save_notebook` to persist. Never edit the `.pluto.jl` on disk while it's open — Pluto owns the file.
 - Prefer plain `using PackageName` — Pluto installs packages automatically.
 - Long/slow cells: `edit_cell` with `run: false`, then `execute_cell`, then `wait_for_notebook_idle`.
