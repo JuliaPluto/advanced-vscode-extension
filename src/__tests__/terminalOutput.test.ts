@@ -1,12 +1,15 @@
 import type { CellResultData } from "@plutojl/rainbow";
-import { terminalPresentation } from "../terminalPresentation.ts";
+import {
+  TERMINAL_TEXT_LIMIT,
+  terminalPresentation,
+} from "../terminalPresentation.ts";
 import {
   htmlEscape,
   scriptJson,
   terminalOutputHtml,
   TRANSPORT_DECODER_JS,
 } from "../terminalOutputHtml.ts";
-import { toTransport } from "../outputKind.ts";
+import { fromTransport, toTransport } from "../outputKind.ts";
 
 const utf8 = (text: string) => new TextEncoder().encode(text);
 const png = new Uint8Array([
@@ -30,8 +33,8 @@ describe("terminalPresentation", () => {
     );
     expect(shown).toEqual({
       kind: "text",
-      label: "Output: application/octet-stream",
-      text: "(9 bytes, not shown in the terminal)",
+      label: "Output: application/octet-stream, 9 B",
+      text: "(not shown in the terminal)",
     });
   });
 
@@ -40,8 +43,8 @@ describe("terminalPresentation", () => {
       terminalPresentation({ mime: "application/pdf", body: "%PDF-1.4" }, true)
     ).toEqual({
       kind: "text",
-      label: "Output: application/pdf",
-      text: "(8 bytes, not shown in the terminal)",
+      label: "Output: application/pdf, 8 chars",
+      text: "(not shown in the terminal)",
     });
   });
 
@@ -59,14 +62,49 @@ describe("terminalPresentation", () => {
     expect(
       terminalPresentation({ mime: "image/png", body: png }, false)
     ).toMatchObject({
-      label: "Image: image/png",
-      text: "(9 bytes, not shown in the terminal)",
+      label: "Image: image/png, 9 B",
+      text: "(not shown in the terminal)",
     });
+    expect(
+      terminalPresentation(
+        { mime: "image/png", body: new Uint8Array(2_345_678) },
+        false
+      )
+    ).toMatchObject({ label: "Image: image/png, 2.3 MB" });
+    expect(
+      terminalPresentation(
+        { mime: "image/png", body: new Uint8Array(12_345) },
+        false
+      )
+    ).toMatchObject({ label: "Image: image/png, 12.3 kB" });
     expect(
       terminalPresentation({ mime: "image/webp", body: png }, true)
     ).toMatchObject({
       kind: "text",
-      label: "Image: image/webp",
+      label: "Image: image/webp, 9 B",
+    });
+  });
+
+  it("prints bytes nested in a tree object as their size", () => {
+    const shown = terminalPresentation(
+      {
+        mime: "application/vnd.pluto.tree+object",
+        body: { type: "Array", elements: [[1, [png, "image/png"]]] },
+      },
+      true
+    );
+    expect(shown?.kind === "text" && shown.text).toContain('"<9 B>"');
+    expect(shown?.kind === "text" && shown.text).not.toContain('"0":');
+  });
+
+  it("cuts long text with a count of what is left", () => {
+    const shown = terminalPresentation(
+      { mime: "text/plain", body: "x".repeat(TERMINAL_TEXT_LIMIT + 5) },
+      true
+    );
+    expect(shown).toEqual({
+      kind: "text",
+      text: `${"x".repeat(TERMINAL_TEXT_LIMIT)}\n… 5 more chars`,
     });
   });
 
@@ -170,6 +208,16 @@ describe("terminal output webview page", () => {
     expect(sentIn(page).output.body).toBe(attack);
   });
 
+  it("imports the pinned rainbow build", () => {
+    const page = terminalOutputHtml(result({ mime: "text/plain", body: "x" }), {
+      ...options,
+      rainbowVersion: "0.6.21'</script>",
+    });
+    expect(page).toContain(
+      'from "https://cdn.jsdelivr.net/npm/@plutojl/rainbow@0.6.21\'%3C%2Fscript%3E/ui/+esm";'
+    );
+  });
+
   it("escapes the mime and the stylesheet URI into the HTML", () => {
     const page = terminalOutputHtml(
       result({ mime: '<b onmouseover="x">', body: "x" }),
@@ -200,6 +248,24 @@ describe("terminal output webview page", () => {
     });
     const back = fromTransport(JSON.parse(scriptJson(tree)));
     expect(Array.from(back.body.elements[0][1][0])).toEqual(Array.from(png));
+  });
+
+  it("decodes exactly what fromTransport decodes", () => {
+    const inline = new Function(`return ${TRANSPORT_DECODER_JS}`)();
+    const inputs = [
+      { mime: "image/png", body: { $bytes: "not base64!" } },
+      { mime: "image/png", body: { $bytes: "abc" } },
+      toTransport({ mime: "image/png", body: png }),
+      toTransport({
+        mime: "application/vnd.pluto.tree+object",
+        body: { type: "Array", elements: [[1, [png, "image/png"]]] },
+      }),
+    ];
+    for (const input of inputs) {
+      expect(inline(JSON.parse(JSON.stringify(input)))).toEqual(
+        fromTransport(JSON.parse(JSON.stringify(input)))
+      );
+    }
   });
 
   it("produces script JSON that parses back to the value", () => {

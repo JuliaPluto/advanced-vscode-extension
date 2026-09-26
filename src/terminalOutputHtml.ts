@@ -13,8 +13,13 @@ export interface TerminalOutputHtmlOptions {
  */
 export const TRANSPORT_DECODER_JS = `function fromTransport(value) {
   if (value === null || typeof value !== "object") return value;
-  if (typeof value.$bytes === "string") {
-    return Uint8Array.from(atob(value.$bytes), (c) => c.charCodeAt(0));
+  const base64 = value.$bytes;
+  if (
+    typeof base64 === "string" &&
+    base64.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]*={0,2}$/.test(base64)
+  ) {
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   }
   for (const key of Object.keys(value)) value[key] = fromTransport(value[key]);
   return value;
@@ -94,7 +99,7 @@ export function terminalOutputHtml(
 
     <script type="module">
         // Import from @plutojl/rainbow directly
-        import { html, render, OutputBody, setup_mathjax } from 'https://cdn.jsdelivr.net/npm/@plutojl/rainbow@${encodeURIComponent(options.rainbowVersion)}/ui/+esm';
+        import { html, render, OutputBody, setup_mathjax } from ${scriptJson(`https://cdn.jsdelivr.net/npm/@plutojl/rainbow@${encodeURIComponent(options.rainbowVersion)}/ui/+esm`)};
 
         // Parse the result data
         const fromTransport = ${TRANSPORT_DECODER_JS};

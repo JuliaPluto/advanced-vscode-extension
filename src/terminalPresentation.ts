@@ -32,39 +32,59 @@ export function terminalPresentation(
   if (kind.mime === "application/vnd.pluto.stacktrace+object") {
     return { kind: "text", label: "Error", text: stacktraceText(body) };
   }
+  const notShown = (label: string): TerminalPresentation => ({
+    kind: "text",
+    label: `${label}, ${sizeText(kind.size, kind.body)}`,
+    text: "(not shown in the terminal)",
+  });
   if (kind.family === "image") {
-    return {
-      kind: "text",
-      label: `Image: ${kind.mime}`,
-      text: `(${kind.size} bytes, not shown in the terminal)`,
-    };
+    return notShown(`Image: ${kind.mime}`);
   }
   if (kind.family === "html") {
     return {
       kind: "text",
       label: "HTML Output",
-      text: htmlAsText(outputText(output) ?? ""),
+      text: truncated(htmlAsText(outputText(output) ?? "")),
     };
   }
   if (kind.body === "structured") {
     return {
       kind: "text",
       label: `Output: ${kind.mime}`,
-      text: JSON.stringify(body, null, 2),
+      text: truncated(JSON.stringify(body, bytesAsSize, 2)),
     };
   }
   const text = kind.mimeTextual ? outputText(output) : undefined;
   if (text === undefined) {
-    return {
-      kind: "text",
-      label: `Output: ${kind.mime}`,
-      text: `(${kind.size} bytes, not shown in the terminal)`,
-    };
+    return notShown(`Output: ${kind.mime}`);
   }
   if (kind.mime === "text/plain") {
-    return { kind: "text", text };
+    return { kind: "text", text: truncated(text) };
   }
-  return { kind: "text", label: `Output: ${kind.mime}`, text };
+  return { kind: "text", label: `Output: ${kind.mime}`, text: truncated(text) };
+}
+
+/** Longest text printed for one output. */
+export const TERMINAL_TEXT_LIMIT = 20_000;
+
+function truncated(text: string): string {
+  if (text.length <= TERMINAL_TEXT_LIMIT) return text;
+  const more = text.length - TERMINAL_TEXT_LIMIT;
+  return `${text.slice(0, TERMINAL_TEXT_LIMIT)}\n… ${more} more chars`;
+}
+
+function bytesAsSize(_key: string, value: unknown): unknown {
+  if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+    return `<${sizeText(value.byteLength, "bytes")}>`;
+  }
+  return value;
+}
+
+function sizeText(size: number, shape: string): string {
+  if (shape === "text") return `${size} chars`;
+  if (size < 1000) return `${size} B`;
+  if (size < 1_000_000) return `${(size / 1000).toFixed(1)} kB`;
+  return `${(size / 1_000_000).toFixed(1)} MB`;
 }
 
 function stacktraceText(body: unknown): string {
