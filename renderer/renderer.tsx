@@ -6,6 +6,7 @@ import type {
 import { PlutoOutput } from "./components/PlutoOutput";
 import { html, PlutoActionsContext, render } from "@plutojl/rainbow/ui";
 import { CellResultData } from "@plutojl/rainbow";
+import { OutputHostPool } from "./outputHosts";
 import plutoOutputStyles from "./styles/pluto-output.css";
 import treeStyles from "./styles/tree.css";
 
@@ -37,6 +38,8 @@ function injectStyles() {
   }
 }
 
+const PARKED_OUTPUT_GRACE_MS = 10_000;
+
 export const activate: ActivationFunction = (
   context: RendererContext<void>
 ) => {
@@ -45,31 +48,47 @@ export const activate: ActivationFunction = (
 
   // Store messaging API for use in components
   messagingApi = context.postMessage;
+  const pool = new OutputHostPool(PARKED_OUTPUT_GRACE_MS, (host) =>
+    render(null, host)
+  );
+  const actionsByHost = new WeakMap<HTMLElement, object>();
+
   return {
     renderOutputItem(outputItem, element) {
       const state: CellResultData = outputItem.json();
-      // Render directly into the provided element
-      // This ensures VS Code can properly clear/replace outputs
-      const actions = {
-        // TODO: Make get notebook actually get the notebook
-        get_notebook: () => ({ cell_inputs: {} }),
-        request_js_link_response: () => {},
-        update_notebook: () => {},
-        set_bond: (name: string, value: any) => {
-          postMessageToController({
-            type: "bond",
-            name,
-            value,
-            cell_id: state.cell_id,
-          });
-        },
-      };
+      const { host } = pool.acquire(
+        outputItem.id,
+        state.cell_id,
+        state.output?.body,
+        element
+      );
+      let actions = actionsByHost.get(host);
+      if (!actions) {
+        actions = {
+          // TODO: Make get notebook actually get the notebook
+          get_notebook: () => ({ cell_inputs: {} }),
+          request_js_link_response: () => {},
+          update_notebook: () => {},
+          set_bond: (name: string, value: any) => {
+            postMessageToController({
+              type: "bond",
+              name,
+              value,
+              cell_id: state.cell_id,
+            });
+          },
+        };
+        actionsByHost.set(host, actions);
+      }
       render(
         html`<${PlutoActionsContext.Provider} value=${actions}>
           <${PlutoOutput} state="${state}"  context=${context} />
         </${PlutoActionsContext.Provider}>`,
-        element
+        host
       );
+    },
+    disposeOutputItem(id) {
+      pool.release(id);
     },
   };
 };
