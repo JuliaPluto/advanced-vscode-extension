@@ -96,6 +96,17 @@ describe("OutputHostPool", () => {
     );
   });
 
+  it("keeps the host identity for an update without an output", () => {
+    const first = outputElement();
+    const { host } = pool.acquire("out-1", "cell", out("A", 1), first);
+    pool.noteDisplayed("cell", undefined);
+    vscodeClear(pool, "out-1", first);
+
+    expect(pool.acquire("out-2", "cell", out("A", 1), outputElement())).toEqual(
+      { host, reused: true }
+    );
+  });
+
   it("does not update parked hosts in place", () => {
     const first = outputElement();
     pool.acquire("out-1", "cell", out("A", 1), first);

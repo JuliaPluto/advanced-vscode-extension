@@ -97,8 +97,14 @@ export class OutputHostPool<T> {
     return { host, reused };
   }
 
-  /** Records that the cell's live hosts now display `output`, updated in place. */
+  /**
+   * Records that the cell's live hosts now display `output`, updated in place.
+   * An update without an output leaves what they display unchanged.
+   */
   noteDisplayed(cellId: string, output: DisplayedOutput | undefined): void {
+    if (output === undefined) {
+      return;
+    }
     for (const host of this.live.values()) {
       if (host.cellId === cellId) {
         host.shown = output;

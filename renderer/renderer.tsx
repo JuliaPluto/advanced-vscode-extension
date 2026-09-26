@@ -73,19 +73,20 @@ export const activate: ActivationFunction = (
           });
         },
       },
-      context: {
-        ...context,
-        onDidReceiveMessage: (listener, thisArg, disposables) =>
-          context.onDidReceiveMessage!(
-            (message) => {
-              if (!isParked()) {
-                listener.call(thisArg, message);
-              }
-            },
-            undefined,
-            disposables
-          ),
-      },
+      context: Object.create(context, {
+        onDidReceiveMessage: {
+          value: ((listener, thisArg, disposables) =>
+            context.onDidReceiveMessage!(
+              (message) => {
+                if (!isParked()) {
+                  listener.call(thisArg, message);
+                }
+              },
+              undefined,
+              disposables
+            )) satisfies RendererContext<void>["onDidReceiveMessage"],
+        },
+      }),
     }),
     (host) => render("", host.element)
   );
