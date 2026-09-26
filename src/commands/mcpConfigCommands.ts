@@ -84,50 +84,26 @@ async function createClaudeCodeMCPConfig(mcpUrl: string): Promise<void> {
   }
 }
 
-/**
- * Command: Create Claude Code MCP config for current project
- */
-export function registerCreateProjectMCPConfigCommand(
-  context: vscode.ExtensionContext
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.createProjectMCPConfig",
-      async () => {
-        await createClaudeCodeMCPConfig(getMcpEndpoint().toString());
-      }
-    )
-  );
+export async function createProjectMcpConfig(): Promise<void> {
+  await createClaudeCodeMCPConfig(getMcpEndpoint().toString());
 }
 
-/**
- * Command: Get MCP HTTP Server URL
- */
-export function registerGetMCPHttpUrlCommand(
-  context: vscode.ExtensionContext
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.getMCPHttpUrl",
-      async () => {
-        const mcpUrl = getMcpEndpoint().toString();
+export async function showMcpHttpUrl(): Promise<void> {
+  const mcpUrl = getMcpEndpoint().toString();
 
-        const action = await vscode.window.showInformationMessage(
-          `MCP HTTP Server URL: ${mcpUrl}. VS Code chat finds this server on its own; the config file is for Claude Code.`,
-          "Copy URL",
-          "Create Claude Code Config",
-          "Open Health Check"
-        );
-
-        if (action === "Copy URL") {
-          await vscode.env.clipboard.writeText(mcpUrl);
-          vscode.window.showInformationMessage("URL copied to clipboard!");
-        } else if (action === "Create Claude Code Config") {
-          await createClaudeCodeMCPConfig(mcpUrl);
-        } else if (action === "Open Health Check") {
-          await openUrl(mcpUrl.replace(/\/mcp$/, "/health"));
-        }
-      }
-    )
+  const action = await vscode.window.showInformationMessage(
+    `MCP HTTP Server URL: ${mcpUrl}. VS Code chat finds this server on its own; the config file is for Claude Code.`,
+    "Copy URL",
+    "Create Claude Code Config",
+    "Open Health Check"
   );
+
+  if (action === "Copy URL") {
+    await vscode.env.clipboard.writeText(mcpUrl);
+    vscode.window.showInformationMessage("URL copied to clipboard!");
+  } else if (action === "Create Claude Code Config") {
+    await createClaudeCodeMCPConfig(mcpUrl);
+  } else if (action === "Open Health Check") {
+    await openUrl(mcpUrl.replace(/\/mcp$/, "/health"));
+  }
 }

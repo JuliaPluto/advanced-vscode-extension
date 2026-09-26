@@ -12,95 +12,59 @@ async function revealNotebook(
   });
   return notebookDocument;
 }
-/**
- * Register command to open notebook from tree
- */
-export function registerRevealNotebookCommand(
-  context: vscode.ExtensionContext
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.openNotebookFromTree",
-      async (notebookPath: string) => {
-        try {
-          await revealNotebook(notebookPath);
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to open notebook: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      }
-    )
-  );
+
+export async function openNotebookFromTree(
+  notebookPath: string
+): Promise<void> {
+  try {
+    await revealNotebook(notebookPath);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to open notebook: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }
 
-/**
- * Register command to focus cell from tree
- */
-export function registerFocusCellCommand(
-  context: vscode.ExtensionContext
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.focusCellFromTree",
-      async (notebookPath: string, cellId: string) => {
-        try {
-          // Open the notebook document
-          const document = await revealNotebook(notebookPath);
+export async function focusCellFromTree(
+  notebookPath: string,
+  cellId: string
+): Promise<void> {
+  try {
+    // Open the notebook document
+    const document = await revealNotebook(notebookPath);
 
-          // Find the cell with matching pluto_cell_id
-          const cells = document.getCells();
-          const cellIndex = cells.findIndex(
-            (cell) => cell.metadata?.pluto_cell_id === cellId
-          );
+    // Find the cell with matching pluto_cell_id
+    const cells = document.getCells();
+    const cellIndex = cells.findIndex(
+      (cell) => cell.metadata?.pluto_cell_id === cellId
+    );
 
-          if (cellIndex !== -1) {
-            // Focus the cell by selecting it
-            const editor = vscode.window.activeNotebookEditor;
-            if (editor) {
-              editor.selection = new vscode.NotebookRange(
-                cellIndex,
-                cellIndex + 1
-              );
-              // Reveal the cell
-              editor.revealRange(
-                new vscode.NotebookRange(cellIndex, cellIndex + 1),
-                vscode.NotebookEditorRevealType.InCenter
-              );
-            }
-          }
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to focus cell: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
+    if (cellIndex !== -1) {
+      // Focus the cell by selecting it
+      const editor = vscode.window.activeNotebookEditor;
+      if (editor) {
+        editor.selection = new vscode.NotebookRange(cellIndex, cellIndex + 1);
+        // Reveal the cell
+        editor.revealRange(
+          new vscode.NotebookRange(cellIndex, cellIndex + 1),
+          vscode.NotebookEditorRevealType.InCenter
+        );
       }
-    )
-  );
+    }
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to focus cell: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }
 
-/**
- * Register refresh command
- */
-
-/**
- * Register reconnect notebook command
- */
-export function registerReconnectCommand(
-  context: vscode.ExtensionContext,
-
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.reconnectNotebook",
-      async (notebook: PlutoNotebookTreeItem) => {
-        await plutoManager.restartNotebook(notebook.notebookPath);
-      }
-    )
-  );
+export async function reconnectNotebook(
+  plutoManager: PlutoManager,
+  notebook: PlutoNotebookTreeItem
+): Promise<void> {
+  await plutoManager.restartNotebook(notebook.notebookPath);
 }

@@ -1,9 +1,8 @@
 import { jest } from "@jest/globals";
 import * as vscode from "vscode";
-import { registeredCommands } from "./__mocks__/vscode.ts";
 import { PlutoManager, PlutoManagerLogger } from "../plutoManager.js";
 import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
-import { registerToggleServerCommand } from "../commands/plutoServerCommands.js";
+import { toggleServer } from "../commands/plutoServerCommands.js";
 import { PlutoStatusBar } from "../statusBar.js";
 
 const logger: PlutoManagerLogger = {
@@ -72,13 +71,7 @@ describe("server toggle and status bar", () => {
     jest.spyOn(vscode.window, "createStatusBarItem").mockReturnValue(created);
     item = created;
     statusBar = new PlutoStatusBar(manager);
-    registerToggleServerCommand(
-      { subscriptions: [] } as unknown as vscode.ExtensionContext,
-      manager
-    );
-    toggle = registeredCommands.get(
-      "pluto-notebook.toggleServer"
-    ) as () => Promise<void>;
+    toggle = () => toggleServer(manager);
   });
 
   afterEach(() => {

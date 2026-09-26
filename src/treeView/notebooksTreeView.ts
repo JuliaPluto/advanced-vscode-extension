@@ -2,13 +2,10 @@ import * as vscode from "vscode";
 import type { PlutoManager } from "../plutoManager.ts";
 import { NotebooksTreeDataProvider } from "./notebooksTreeDataProvider.ts";
 
-/**
- * Register notebooks tree view with commands
- */
 export function registerNotebooksTreeView(
   context: vscode.ExtensionContext,
   plutoManager: PlutoManager
-): void {
+): NotebooksTreeDataProvider {
   // Create tree data provider
   const treeDataProvider = new NotebooksTreeDataProvider(plutoManager);
 
@@ -18,15 +15,8 @@ export function registerNotebooksTreeView(
     showCollapseAll: true,
   });
 
-  // Register commands
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("pluto-notebook.refreshNotebooks", () => {
-      treeDataProvider.refresh();
-    })
-  );
-
   // Add to subscriptions
   context.subscriptions.push(treeView);
   context.subscriptions.push(treeDataProvider);
+  return treeDataProvider;
 }

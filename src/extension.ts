@@ -141,8 +141,12 @@ export async function activate(
     vscode.window.createOutputChannel("Pluto Terminal");
   context.subscriptions.push(terminalOutputChannel);
 
-  // Register all commands
-  registerAllCommands(context, plutoManager, terminalOutputChannel);
+  const notebooksTree = registerNotebooksTreeView(context, plutoManager);
+  registerAllCommands(context, {
+    plutoManager,
+    terminalOutputChannel,
+    notebooksTree,
+  });
 
   // Start Pluto server in the background — activation must not block on
   // (potentially minutes of) first-run Julia setup. Once the server is up,
@@ -167,9 +171,6 @@ export async function activate(
   // Create and register status bar
   const statusBar = new PlutoStatusBar(plutoManager);
   context.subscriptions.push(statusBar);
-
-  // Register notebooks tree view
-  registerNotebooksTreeView(context, plutoManager);
 
   // Register terminal profile provider
   context.subscriptions.push(
