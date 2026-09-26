@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   extensionFor,
   fullOutput,
-  isRasterMime,
+  isImageBlockMime,
   renderCellToPngCode,
 } from "../notebookOutput.ts";
 import { cellId, pathArg } from "./args.ts";
@@ -105,12 +105,12 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
           let mime = output.mime;
           if (wantedExt && wantedExt !== nativeExt) {
             // The caller named a format: render to it when possible, refuse otherwise
-            if (wantedExt === "png" && !isRasterMime(output.mime)) {
+            if (wantedExt === "png" && !isImageBlockMime(output.mime)) {
               bytes = await renderPng(manager, worker, cell_id, output.mime);
               mime = "image/png";
             } else if (!(wantedExt === "jpg" && nativeExt === "jpg")) {
               throw new Error(
-                `The cell's output is ${output.mime}, which is written as .${nativeExt}; name the file that way, or use .png to have it rendered${isRasterMime(output.mime) ? "" : " inside the notebook"}.`
+                `The cell's output is ${output.mime}, which is written as .${nativeExt}; name the file that way, or use .png to have it rendered${isImageBlockMime(output.mime) ? "" : " inside the notebook"}.`
               );
             }
           }
@@ -120,7 +120,7 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
           return `Wrote ${bytes.length} bytes of ${mime} to ${dest}`;
         }
 
-        if (isRasterMime(output.mime)) {
+        if (isImageBlockMime(output.mime)) {
           return content([
             {
               type: "image",
