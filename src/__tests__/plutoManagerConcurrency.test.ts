@@ -778,16 +778,25 @@ describe("PlutoManager.getWorker", () => {
     );
   }
 
-  it("refuses to open a notebook when the running-notebooks listing fails", async () => {
+  it("refuses to open a notebook when the running-notebooks listing times out", async () => {
     jest
       .spyOn(Host.prototype, "workers")
-      .mockRejectedValue(new Error("HTTP 500"));
+      .mockImplementation(() => new Promise(() => {}));
     const attach = jest.spyOn(Host.prototype, "worker");
     const manager = localManager();
+    await manager.start();
 
-    await expect(manager.getWorker(NOTEBOOK)).rejects.toThrow(
-      `Could not list the notebooks running on the Pluto server at http://localhost:1234 (HTTP 500), so ${NOTEBOOK} was not opened`
-    );
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate"] });
+    try {
+      const opening = manager.getWorker(NOTEBOOK);
+      const refused = expect(opening).rejects.toThrow(
+        `Could not list the notebooks running on the Pluto server at http://localhost:1234 (Listing running notebooks timed out), so ${NOTEBOOK} was not opened`
+      );
+      await jest.advanceTimersByTimeAsync(30_000);
+      await refused;
+    } finally {
+      jest.useRealTimers();
+    }
     expect(opensByPath()).toEqual([]);
     expect(attach).not.toHaveBeenCalled();
     expect(manager.getOpenNotebooks()).toEqual([]);
@@ -848,20 +857,91 @@ describe("PlutoManager.getWorker", () => {
     expect(manager.getOpenNotebooks()).toEqual([]);
   });
 
-  it("throws instead of returning a worker it cannot reconnect", async () => {
+  it("reopens a notebook whose cached connection is gone, telling listeners", async () => {
     jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
-    const worker = createFakeWorker({ notebook_id: NOTEBOOK_ID });
-    jest.spyOn(Host.prototype, "worker").mockReturnValue(worker);
+    const first = createFakeWorker({
+      notebook_id: NOTEBOOK_ID,
+      close: jest.fn(),
+    } as Partial<Worker>);
+    const second = createFakeWorker({ notebook_id: NOTEBOOK_ID });
+    jest
+      .spyOn(Host.prototype, "worker")
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
     const manager = localManager();
     await manager.getWorker(NOTEBOOK);
+    const recreated: Worker[] = [];
+    manager.on("workerRecreated", (_path, worker) => recreated.push(worker));
 
-    Object.assign(worker, {
+    Object.assign(first, {
       connected: false,
       connect: jest.fn(async () => false),
     });
-    await expect(manager.getWorker(NOTEBOOK)).rejects.toThrow(
-      `Lost the connection to ${NOTEBOOK}`
+    await expect(manager.getWorker(NOTEBOOK)).resolves.toBe(second);
+    expect(first.close).toHaveBeenCalled();
+    expect(recreated).toEqual([second]);
+  });
+
+  it("never starts the server for a notebook operation", async () => {
+    const serverManager = createMockServerManager(1);
+    const manager = new PlutoManager(
+      1234,
+      createMockLogger(),
+      serverManager,
+      stubFileReader
     );
+
+    await expect(manager.deleteCell(NOTEBOOK, "c1")).rejects.toThrow(
+      `Pluto server is not running, so ${NOTEBOOK} is not available; start the Pluto server first.`
+    );
+    expect(serverManager.startCalls).toBe(0);
+  });
+
+  it("runs executeCell on one worker, without starting a server stopped mid-run", async () => {
+    jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+    let lastRun = 0;
+    const cells: Record<string, { code: string; code_folded: boolean }> = {
+      c1: { code: "x = 1", code_folded: false },
+    };
+    const serverManager = createMockServerManager(1);
+    const manager = new PlutoManager(
+      1234,
+      createMockLogger(),
+      serverManager,
+      stubFileReader
+    );
+    const worker = createFakeWorker({
+      notebook_id: NOTEBOOK_ID,
+      notebook_state: { cell_inputs: cells },
+      client: {
+        send: jest.fn(async () => {
+          lastRun = 1;
+        }),
+      },
+      _update_notebook_state: async (
+        mutate: (nb: { cell_inputs: typeof cells }) => void
+      ) => {
+        mutate({ cell_inputs: cells });
+        await manager.stop();
+      },
+      getSnippet: () => ({
+        result: {
+          running: false,
+          queued: false,
+          output: { last_run_timestamp: lastRun },
+        },
+      }),
+    } as unknown as Partial<Worker>);
+    jest.spyOn(Host.prototype, "worker").mockReturnValue(worker);
+    await manager.start();
+    const lookups = jest.spyOn(manager, "liveWorker");
+
+    await manager.executeCell(NOTEBOOK, "c1", "x = 2");
+
+    expect(cells.c1.code).toBe("x = 2");
+    expect(lookups).toHaveBeenCalledTimes(1);
+    expect(serverManager.startCalls).toBe(1);
+    expect(manager.getState().status).toBe("stopped");
   });
 
   it("addresses cell operations by path", async () => {
@@ -877,6 +957,7 @@ describe("PlutoManager.getWorker", () => {
     );
     const manager = localManager();
 
+    await manager.start();
     await manager.deleteCell(NOTEBOOK, "c1");
     await manager.moveCells(NOTEBOOK, ["c2"], 0);
 

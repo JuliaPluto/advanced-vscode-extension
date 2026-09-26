@@ -191,7 +191,7 @@ describe("tool", () => {
     });
 
     it("bounds opening a notebook on its own, apart from the body", async () => {
-      const manager = fakePlutoManager({ overrides: { getWorker: never } });
+      const manager = fakePlutoManager({ overrides: { liveWorker: never } });
       const t = notebookTool(manager, {
         name: "t",
         description: "",
@@ -294,7 +294,7 @@ describe("notebookTool", () => {
       path: "/nb.jl",
       cell_id: "c1",
     });
-    expect(manager.getWorker).toHaveBeenCalledWith("/nb.jl");
+    expect(manager.liveWorker).toHaveBeenCalledWith("/nb.jl");
   });
 
   it("checks its precondition before opening the notebook", async () => {
@@ -310,13 +310,13 @@ describe("notebookTool", () => {
     });
     const result = await t.call({ path: "/nb.jl" });
     expect(textOf(result)).toBe("refused");
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
   });
 
   it("answers a notebook the manager cannot reach with the manager's error", async () => {
     const manager = fakePlutoManager({
       overrides: {
-        getWorker: async () => {
+        liveWorker: async () => {
           throw new Error(
             "Pluto server is stopping, so /nb.jl cannot be opened."
           );

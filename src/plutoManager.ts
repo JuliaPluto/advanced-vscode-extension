@@ -37,6 +37,14 @@ export function describeServerState(state: ServerState): string {
   }
 }
 
+function requireAbsolute(notebookPath: string): void {
+  if (!path.isAbsolute(notebookPath)) {
+    throw new Error(
+      `Notebook paths must be absolute — Pluto identifies a notebook by its absolute path and cannot resolve '${notebookPath}' against your working directory. Pass the full path.`
+    );
+  }
+}
+
 /** What a running-notebooks listing found for one path. */
 type RunningNotebook =
   { found: true; notebookId: string } | { found: false; failure?: string };
@@ -329,8 +337,7 @@ export class PlutoManager {
     this.notebooksToRecreate.clear();
 
     for (const [index, notebookPath] of notebookPaths.entries()) {
-      // Once the server has left ready, getWorker() would await the very
-      // start that runs this loop; the rest waits for the next start
+      // Once the server has left ready, the rest waits for the next start
       if (this.state.status !== "ready") {
         for (const rest of notebookPaths.slice(index)) {
           this.notebooksToRecreate.add(rest);
@@ -338,8 +345,7 @@ export class PlutoManager {
         return;
       }
       try {
-        // Use getWorker to recreate the worker
-        const worker = await this.getWorker(notebookPath);
+        const worker = await this.liveWorker(notebookPath);
         this.emit("workerRecreated", notebookPath, worker);
       } catch (error) {
         if (this.state.status !== "ready") {
@@ -430,8 +436,8 @@ export class PlutoManager {
 
   /**
    * The live worker for a notebook, starting the server and opening the
-   * notebook when needed. Throws an error naming the server state when
-   * the notebook cannot be reached.
+   * notebook when needed. For entry points a user drives; operations on a
+   * notebook never start the server.
    * @param notebookPath - File system path to the notebook
    * @param documentContent - Notebook content to upload instead of reading the file; only used for remote servers (a local server opens the file in place)
    */
@@ -439,41 +445,67 @@ export class PlutoManager {
     notebookPath: string,
     documentContent?: string
   ): Promise<Worker> {
-    if (!path.isAbsolute(notebookPath)) {
-      throw new Error(
-        `Notebook paths must be absolute — Pluto identifies a notebook by its absolute path and cannot resolve '${notebookPath}' against your working directory. Pass the full path.`
-      );
-    }
+    requireAbsolute(notebookPath);
     if (!this.isConnected()) {
       await this.start();
     }
+    return this.liveWorker(notebookPath, documentContent);
+  }
 
-    // Check if we already have a worker for this notebook
-    const worker = this.workers.get(notebookPath);
-    if (worker) {
-      if (!worker.connected && !(await worker.connect())) {
-        throw new Error(
-          `Lost the connection to ${notebookPath} on the Pluto server at ${this.serverUrl}; close and reopen the notebook.`
-        );
-      }
-      return worker;
-    }
-
-    if (!this.host) {
+  /**
+   * The live worker for a notebook on a ready server, opening the notebook
+   * when needed and reopening it when its connection is gone. Never starts
+   * the server: throws an error naming its state when it is not ready.
+   */
+  public async liveWorker(
+    notebookPath: string,
+    documentContent?: string
+  ): Promise<Worker> {
+    requireAbsolute(notebookPath);
+    if (this.state.status !== "ready" || !this.host) {
       throw new Error(
-        `${describeServerState(this.state)}, so ${notebookPath} cannot be opened. Start the Pluto server and try again.`
+        this.state.status === "starting"
+          ? `${describeServerState(this.state)}, so ${notebookPath} is not available yet; try again once it is ready.`
+          : `${describeServerState(this.state)}, so ${notebookPath} is not available; start the Pluto server first.`
       );
     }
 
-    // Share one in-flight creation per path so concurrent callers
-    // don't create duplicate workers for the same notebook
+    const cached = this.workers.get(notebookPath);
+    if (cached) {
+      if (cached.connected || (await cached.connect().catch(() => false))) {
+        return cached;
+      }
+      // The connection is gone: drop it and open the notebook afresh
+      if (this.workers.get(notebookPath) === cached) {
+        this.workers.delete(notebookPath);
+      }
+      try {
+        cached.close();
+      } catch {
+        // Already closed
+      }
+      const reopened = await this.openWorker(notebookPath, documentContent);
+      this.emit("workerRecreated", notebookPath, reopened);
+      return reopened;
+    }
+    return this.openWorker(notebookPath, documentContent);
+  }
+
+  /**
+   * Share one in-flight creation per path so concurrent callers don't
+   * create duplicate workers for the same notebook.
+   */
+  private openWorker(
+    notebookPath: string,
+    documentContent?: string
+  ): Promise<Worker> {
     let pending = this.pendingWorkers.get(notebookPath);
     if (!pending) {
       pending = this.createWorkerForPath(notebookPath, documentContent);
       this.pendingWorkers.set(notebookPath, pending);
       void pending
         .catch(() => {
-          // Rejection is delivered to getWorker callers awaiting `pending`
+          // Rejection is delivered to callers awaiting `pending`
         })
         .finally(() => {
           this.pendingWorkers.delete(notebookPath);
@@ -505,7 +537,9 @@ export class PlutoManager {
 
   /**
    * Find a notebook already running on the server for this file path. A
-   * failed listing is reported as such, never as "none running".
+   * listing that fails is reported as such, never as "none running".
+   * rainbow's Host.workers() answers its own connection errors with an
+   * empty list, so only a listing that times out is seen as failed.
    */
   private async findRunningNotebook(
     host: Host,
@@ -709,7 +743,14 @@ export class PlutoManager {
     cellId: string,
     code: string
   ): Promise<void> {
-    const worker = await this.getWorker(notebookPath);
+    await this.setCellCodeOn(await this.liveWorker(notebookPath), cellId, code);
+  }
+
+  private async setCellCodeOn(
+    worker: Worker,
+    cellId: string,
+    code: string
+  ): Promise<void> {
     await this.updateNotebookState(worker, (nb) => {
       const input = nb.cell_inputs[cellId];
       if (!input) {
@@ -724,7 +765,13 @@ export class PlutoManager {
     notebookPath: string,
     cellId: string
   ): Promise<CellResultData | null> {
-    const worker = await this.getWorker(notebookPath);
+    return await this.runCellOn(await this.liveWorker(notebookPath), cellId);
+  }
+
+  private async runCellOn(
+    worker: Worker,
+    cellId: string
+  ): Promise<CellResultData | null> {
     if (!worker.client) {
       throw new Error("Not connected to notebook");
     }
@@ -744,8 +791,9 @@ export class PlutoManager {
     cellId: string,
     code: string
   ): Promise<CellResultData | null> {
-    await this.setCellCode(notebookPath, cellId, code);
-    return await this.runCell(notebookPath, cellId);
+    const worker = await this.liveWorker(notebookPath);
+    await this.setCellCodeOn(worker, cellId, code);
+    return await this.runCellOn(worker, cellId);
   }
 
   /**
@@ -820,7 +868,7 @@ export class PlutoManager {
     code: string,
     cellId?: string
   ): Promise<string> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     return await worker.addSnippet(index, code, {}, cellId);
   }
 
@@ -828,7 +876,7 @@ export class PlutoManager {
    * Delete a cell from the notebook
    */
   public async deleteCell(notebookPath: string, cellId: string): Promise<void> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     await worker.deleteSnippets([cellId]);
   }
 
@@ -840,7 +888,7 @@ export class PlutoManager {
     cellIds: string[],
     index: number
   ): Promise<void> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     await worker.moveSnippets(cellIds, index);
   }
 
@@ -852,7 +900,7 @@ export class PlutoManager {
     cellId: string,
     folded: boolean
   ): Promise<void> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     if (!worker.client || !worker.notebook_state) {
       throw new Error("Not connected to notebook");
     }
@@ -880,7 +928,7 @@ export class PlutoManager {
     notebookPath: string,
     newPath: string
   ): Promise<void> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     const oldPath = worker.getState()?.path;
     await worker.moveTo(newPath);
     if (this.capabilities().fileSync !== "editor-writes-file") {
@@ -1019,7 +1067,7 @@ export class PlutoManager {
     code: string
   ): Promise<CellResultData> {
     return await this.runSnippetOn(
-      await this.getWorker(notebookPath),
+      await this.liveWorker(notebookPath),
       index,
       code
     );
@@ -1071,7 +1119,7 @@ export class PlutoManager {
     notebookPath: string,
     code: string
   ): Promise<CellResultData> {
-    const worker = await this.getWorker(notebookPath);
+    const worker = await this.liveWorker(notebookPath);
     // Execute code at index 0 (creates a temporary cell)
     const result = await this.runSnippetOn(worker, 0, code);
 
@@ -1090,7 +1138,7 @@ export class PlutoManager {
    * Get the serialized notebook content (.jl format) for saving to disk
    */
   public async getNotebookContent(notebookPath: string): Promise<string> {
-    return await this.fetchNotebookFile(await this.getWorker(notebookPath));
+    return await this.fetchNotebookFile(await this.liveWorker(notebookPath));
   }
 
   /**

@@ -216,19 +216,32 @@ export class PlutoNotebookController {
     // Placeholder: Handle different message types from renderer
     switch (message.type) {
       case "bond": {
-        const worker = await this.plutoManager.getWorker(
-          editor.notebook.uri.fsPath
-        );
-        await worker.setBond(message.name, message.value);
-        this.outputChannel.appendLine(
-          `[RENDERER MESSAGE] Bond set${message.name}=${message.value} for ${editor.notebook.uri}!`
-        );
-
-        this.sendMessageToRenderer(editor.notebook, {
-          type: "bond",
-          content: "ok",
-          cell_id: message.cell_id,
-        });
+        try {
+          const worker = await this.plutoManager.getWorker(
+            editor.notebook.uri.fsPath
+          );
+          await worker.setBond(message.name, message.value);
+          this.outputChannel.appendLine(
+            `[RENDERER MESSAGE] Bond set${message.name}=${message.value} for ${editor.notebook.uri}!`
+          );
+          this.sendMessageToRenderer(editor.notebook, {
+            type: "bond",
+            content: "ok",
+            cell_id: message.cell_id,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.outputChannel.appendLine(
+            `[RENDERER MESSAGE] Bond ${message.name} not set: ${errorMessage}`
+          );
+          this.sendMessageToRenderer(editor.notebook, {
+            type: "bond",
+            content: "error",
+            error: errorMessage,
+            cell_id: message.cell_id,
+          });
+        }
         break;
       }
       default:
@@ -1218,6 +1231,7 @@ export class PlutoNotebookController {
         this.ledger.fail(notebook.uri.fsPath, cellId, { cell: removedCell });
       }
     }
+    const failures: string[] = [];
     for (const removedCell of removedCells) {
       try {
         const cellId = removedCell.metadata?.pluto_cell_id as string;
@@ -1250,10 +1264,15 @@ export class PlutoNotebookController {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         this.outputChannel.appendLine(`Failed to delete cell: ${errorMessage}`);
-        vscode.window.showErrorMessage(
-          `Failed to delete cell from Pluto notebook: ${errorMessage}`
-        );
+        failures.push(errorMessage);
       }
+    }
+    if (failures.length > 0) {
+      vscode.window.showErrorMessage(
+        failures.length === 1
+          ? `Failed to delete cell from Pluto notebook: ${failures[0]}`
+          : `Failed to delete ${failures.length} cells from Pluto notebook: ${failures[0]}`
+      );
     }
   }
 

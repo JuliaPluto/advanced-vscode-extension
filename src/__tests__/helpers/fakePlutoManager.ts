@@ -83,7 +83,7 @@ export function fakePlutoManager(
     capabilities: () =>
       serverCapabilities({ sharesFilesystem: true, writesNotebookFiles: true }),
     getOpenNotebooks: () => [{ path: "/nb.jl", notebookId: "nb-1" }],
-    getWorker: jest.fn<(path: string) => Promise<Worker>>(async () => worker),
+    liveWorker: jest.fn<(path: string) => Promise<Worker>>(async () => worker),
     runCell: jest.fn(async () => worker.getSnippet("c1")!.result),
     runSnippet: jest.fn(async () => ({
       ...worker.getSnippet("c1")!.result,

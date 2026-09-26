@@ -21,7 +21,7 @@ export type PlutoToolsManager = Pick<
   | "getServerUrl"
   | "capabilities"
   | "getOpenNotebooks"
-  | "getWorker"
+  | "liveWorker"
   | "runCell"
   | "runSnippet"
   | "executeCell"
@@ -305,7 +305,7 @@ export async function resolveNotebook(
   manager: PlutoToolsManager,
   path: string
 ): Promise<Worker> {
-  return bounded(manager.getWorker(path), EXECUTION_TIMEOUT_MS, () =>
+  return bounded(manager.liveWorker(path), EXECUTION_TIMEOUT_MS, () =>
     timedOut(
       {},
       `Pluto is still opening ${path} after ${EXECUTION_TIMEOUT_MS / 1000}s — retry the call or poll get_notebook_status.`

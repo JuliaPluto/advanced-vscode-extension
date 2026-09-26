@@ -31,7 +31,7 @@ describe("the tool set", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("start_pluto_server");
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
     expect(manager.start).not.toHaveBeenCalled();
   });
 
@@ -134,7 +134,7 @@ describe("the tool set", () => {
     expect(await readFile(file, "utf-8")).toContain(
       "### A Pluto.jl notebook ###"
     );
-    expect(manager.getWorker).toHaveBeenCalledWith(file);
+    expect(manager.liveWorker).toHaveBeenCalledWith(file);
 
     const again = await tools.call("create_notebook", { path: file });
     expect(again.isError).toBe(true);
@@ -152,7 +152,7 @@ describe("the tool set", () => {
       expect(result.isError).toBe(true);
       expect(textOf(result)).toContain("must be absolute");
       expect(existsSync(join(dir, "rel"))).toBe(false);
-      expect(manager.getWorker).not.toHaveBeenCalled();
+      expect(manager.liveWorker).not.toHaveBeenCalled();
     } finally {
       process.chdir(cwd);
     }
@@ -195,7 +195,7 @@ describe("the tool set", () => {
     expect(textOf(result)).toBe(
       "Moving a notebook only works when the Pluto server is on localhost (it shares this machine's filesystem). Use save_notebook to write a copy instead."
     );
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
     expect(manager.moveNotebook).not.toHaveBeenCalled();
   });
 
