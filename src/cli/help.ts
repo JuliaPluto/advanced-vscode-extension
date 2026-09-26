@@ -73,6 +73,10 @@ export function helpText(): string {
       opt("--raw", "Print the raw JSON-RPC result"),
       opt("--out <file>", "Where to save an image returned by the tool"),
       opt(
+        "--code-file <file>",
+        `Take the ${dim("code")} argument from a file (${dim("-")} for stdin)`
+      ),
+      opt(
         "",
         `Relative ${dim("path")}/${dim("output_path")} arguments are resolved against the current directory`
       ),

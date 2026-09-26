@@ -109,6 +109,7 @@ async function main() {
         raw: args.raw ?? false,
         timeoutMs: (args.timeoutSeconds ?? 120) * 1000,
         out: args.out,
+        codeFile: args.codeFile,
       });
       break;
     }
