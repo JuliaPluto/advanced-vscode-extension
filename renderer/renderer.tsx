@@ -7,6 +7,7 @@ import { PlutoOutput } from "./components/PlutoOutput";
 import { html, PlutoActionsContext, render } from "@plutojl/rainbow/ui";
 import { CellResultData } from "@plutojl/rainbow";
 import { OutputHostPool } from "./outputHosts";
+import { fromTransport } from "../src/outputKind";
 import plutoOutputStyles from "./styles/pluto-output.css";
 import treeStyles from "./styles/tree.css";
 
@@ -98,13 +99,14 @@ export const activate: ActivationFunction = (
 
   return {
     renderOutputItem(outputItem, element) {
-      const state: CellResultData = outputItem.json();
+      const sent: CellResultData = outputItem.json();
       const { host } = pool.acquire(
         outputItem.id,
-        state.cell_id,
-        state.output,
+        sent.cell_id,
+        sent.output,
         element
       );
+      const state = { ...sent, output: fromTransport(sent.output) };
       render(
         html`<${PlutoActionsContext.Provider} value=${host.data.actions}>
           <${PlutoOutput} state="${state}"  context=${host.data.context} />

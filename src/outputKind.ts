@@ -241,12 +241,33 @@ export function toTransport<T>(output: T): T {
   return body === record.body ? output : ({ ...record, body } as T);
 }
 
-/** Undoes toTransport's byte stand-ins; other outputs come back unchanged. */
+/**
+ * Undoes toTransport's byte stand-ins; other outputs come back unchanged.
+ * The same stand-in yields the same array while it stays among the most
+ * recent ones, so a re-sent image keeps its identity.
+ */
 export function fromTransport<T>(output: T): T {
   const record = asRecord(output);
   if (!record) return output;
-  const body = mapBytes(record.body, (b) => b);
+  const body = mapBytes(record.body, (b) => b, cachedFromBase64);
   return body === record.body ? output : ({ ...record, body } as T);
+}
+
+const RECENT_DECODES = 32;
+const recentDecodes = new Map<string, Uint8Array>();
+
+function cachedFromBase64(base64: string): Uint8Array {
+  let bytes = recentDecodes.get(base64);
+  if (bytes) {
+    recentDecodes.delete(base64);
+  } else {
+    bytes = fromBase64(base64);
+    if (recentDecodes.size >= RECENT_DECODES) {
+      recentDecodes.delete(recentDecodes.keys().next().value!);
+    }
+  }
+  recentDecodes.set(base64, bytes);
+  return bytes;
 }
 
 /**
@@ -255,15 +276,16 @@ export function fromTransport<T>(output: T): T {
  */
 function mapBytes(
   value: unknown,
-  convert: (bytes: Uint8Array) => unknown
+  convert: (bytes: Uint8Array) => unknown,
+  decode: (base64: string) => Uint8Array = fromBase64
 ): unknown {
   const bytes = bytesOf(value);
   if (bytes) return convert(bytes);
-  if (isTransportBody(value)) return convert(fromBase64(value[TRANSPORT_KEY]));
+  if (isTransportBody(value)) return convert(decode(value[TRANSPORT_KEY]));
   if (value === null || typeof value !== "object") return value;
   let changed = false;
   const entries = Object.entries(value).map(([key, item]) => {
-    const next: unknown = mapBytes(item, convert);
+    const next: unknown = mapBytes(item, convert, decode);
     changed ||= next !== item;
     return [key, next] as const;
   });
