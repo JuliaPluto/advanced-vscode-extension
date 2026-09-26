@@ -9,6 +9,7 @@ import { type McpProbe, describeHost, probeMcp } from "./discover.ts";
 import { hasMcpConfig } from "./install.ts";
 import { mcpRequest } from "./call.ts";
 import { bold, dim, err, green, yellow } from "./ui.ts";
+import { otherPlutoServerMessage, sameUrl } from "../plutoServerUrl.ts";
 
 const CMD = "npx @plutojl/cli";
 
@@ -39,6 +40,16 @@ async function runThroughVSCode(
 
   if (config.noPluto) {
     return;
+  }
+  if (
+    config.plutoUrl &&
+    existing.plutoUrl &&
+    !sameUrl(config.plutoUrl, existing.plutoUrl)
+  ) {
+    console.error(
+      `${err.red("✗")} ${otherPlutoServerMessage(existing.plutoUrl, config.plutoUrl)}`
+    );
+    process.exit(1);
   }
   if (existing.plutoRunning) {
     console.log(
