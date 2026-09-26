@@ -8,7 +8,7 @@ import { consoleLogger } from "./logger.ts";
 import { type CliConfig, VERSION } from "./config.ts";
 import { type McpProbe, describeHost, probeMcp } from "./discover.ts";
 import { hasMcpConfig } from "./install.ts";
-import { mcpRequest } from "./call.ts";
+import { withToolClient } from "./toolClient.ts";
 import { bold, dim, err, green, yellow } from "./ui.ts";
 import { otherPlutoServerMessage, sameUrl } from "../plutoServerUrl.ts";
 
@@ -65,17 +65,14 @@ async function runThroughVSCode(
   console.log(
     `[cli] ${verb} Pluto through the VS Code extension${config.plutoUrl ? ` (${config.plutoUrl})` : ""}...`
   );
-  const result = await mcpRequest(
-    existing.port,
-    "tools/call",
-    { name: tool, arguments: args },
-    10 * 60 * 1000
+  const result = await withToolClient(existing.port, (client) =>
+    client.callTool(tool, args, 10 * 60 * 1000)
   );
-  const text = (result?.content ?? [])
+  const text = (result.content ?? [])
     .filter((c) => c.type === "text" && c.text)
     .map((c) => c.text)
     .join("\n");
-  if (result?.isError) {
+  if (result.isError) {
     console.error(`${err.red("✗")} ${text || "Pluto did not start."}`);
     process.exit(1);
   }
