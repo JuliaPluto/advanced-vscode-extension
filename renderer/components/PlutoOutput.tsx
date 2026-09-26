@@ -60,7 +60,8 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
       switch (message.type) {
         case "setState": {
           const state = restoreCellResult(message.state as CellResultData);
-          setLocalState({ ...state });
+          // A message without output leaves the mounted output in place
+          setLocalState((previous) => ({ ...previous, ...state }));
 
           const logs = state.logs.filter((log) => {
             return (
