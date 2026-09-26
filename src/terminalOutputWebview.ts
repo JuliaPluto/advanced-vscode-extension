@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { CellResultData } from "@plutojl/rainbow";
+import { terminalOutputHtml } from "./terminalOutputHtml.ts";
 
 /** Injected by esbuild from node_modules/@plutojl/rainbow/package.json. */
 declare const __RAINBOW_VERSION__: string;
@@ -107,88 +108,15 @@ export class TerminalOutputWebviewProvider {
     context: vscode.ExtensionContext,
     result: CellResultData
   ): string {
-    const rendererCssUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(context.extensionUri, "dist", "renderer.css")
-    );
-
-    // Serialize the result data
-    const resultJson = JSON.stringify(result);
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="
-        default-src 'none';
-        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net;
-        style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
-        img-src ${webview.cspSource} data: https: blob:;
-        font-src ${webview.cspSource} data: https://cdn.jsdelivr.net;
-        connect-src https: data:;
-    ">
-    <title>Pluto Terminal Output</title>
-    <link rel="stylesheet" href="${rendererCssUri}">
-    <style>
-        body {
-            padding: 20px;
-            background-color: var(--vscode-editor-background);
-            color: var(--vscode-editor-foreground);
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
-        }
-        .output-container {
-            max-width: 100%;
-            overflow-x: auto;
-        }
-        .output-header {
-            margin-bottom: 10px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-        }
-        .mime-type {
-            font-family: var(--vscode-editor-font-family);
-            font-size: 0.9em;
-            color: var(--vscode-descriptionForeground);
-        }
-    </style>
-</head>
-<body>
-    <div class="output-header">
-        <h3>Terminal Output</h3>
-        <div class="mime-type">MIME: ${result.output?.mime ?? "unknown"}</div>
-    </div>
-    <div class="output-container" id="output-root"></div>
-
-    <script type="module">
-        // Import from @plutojl/rainbow directly
-        import { html, render, OutputBody, setup_mathjax } from 'https://cdn.jsdelivr.net/npm/@plutojl/rainbow@${__RAINBOW_VERSION__}/ui/+esm';
-
-        // Parse the result data
-        const result = ${resultJson};
-
-        // Initialize MathJax if needed
-        setup_mathjax();
-
-        // Render the output using OutputBody from rainbow
-        const root = document.getElementById('output-root');
-
-        if (result.output?.body !== undefined) {
-            render(
-                html\`<\${OutputBody}
-                    persist_js_state=\${true}
-                    body=\${result.output.body}
-                    mime=\${result.output.mime}
-                    sanitize_html=\${false}
-                />\`,
-                root
-            );
-        } else {
-            root.innerHTML = '<p style="color: #999;">No output</p>';
-        }
-    </script>
-</body>
-</html>`;
+    return terminalOutputHtml(result, {
+      cspSource: webview.cspSource,
+      cssUri: webview
+        .asWebviewUri(
+          vscode.Uri.joinPath(context.extensionUri, "dist", "renderer.css")
+        )
+        .toString(),
+      rainbowVersion: __RAINBOW_VERSION__,
+    });
   }
 
   /**
