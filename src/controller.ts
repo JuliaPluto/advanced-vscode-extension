@@ -7,7 +7,8 @@ import type {
   NotebookData,
   UpdateEvent,
 } from "@plutojl/rainbow";
-import { formatCellOutput, foldHiddenCellsEnabled } from "./serializer.ts";
+import { formatCellOutput } from "./cellOutput.ts";
+import { foldHiddenCellsEnabled } from "./settings.ts";
 import { createVsCodeCellFromPlutoCell } from "./plutoSerializer.ts";
 import {
   decodeMarkdown,

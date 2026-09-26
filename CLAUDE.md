@@ -46,7 +46,7 @@ Press `F5` in VSCode to launch Extension Development Host window for testing.
 - Registers `PlutoNotebookController` for cell execution
 - All components added to context subscriptions for proper disposal
 
-**Notebook Serializer** (`src/serializer.ts`)
+**Notebook Serializer** (`src/plutoSerializer.ts`)
 
 - Implements `vscode.NotebookSerializer` interface
 - Parses Pluto .jl format with cell markers (`# ╔═╡`), metadata, and reactive dependencies
