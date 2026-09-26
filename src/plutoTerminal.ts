@@ -6,8 +6,9 @@ import {
   isExampleCommand,
   getExampleCommandsHelp,
 } from "./terminalExamples.ts";
-import { isDefined, isNotDefined } from "./helpers.ts";
+import { isDefined } from "./helpers.ts";
 import { newNotebookSource } from "./notebookOutput.ts";
+import { terminalPresentation } from "./terminalPresentation.ts";
 import { PLUTO_NOTEBOOK_FILTERS } from "./plutoFileName.ts";
 import type { Worker } from "@plutojl/rainbow";
 
@@ -579,97 +580,38 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
     }
   }
 
-  /**
-   * Render cell output with support for various MIME types
-   */
   private async renderOutput(result: any): Promise<void> {
-    if (result?.output === null) {
+    const presentation = terminalPresentation(
+      result?.output,
+      isDefined(this.context)
+    );
+    if (!presentation) {
       return;
     }
 
-    const { mime, body } = result.output;
-
-    if (isNotDefined(mime) || isNotDefined(body)) {
-      return;
-    }
-
-    // Check if this should be shown in webview (rich content)
-    const shouldUseWebview = this.shouldUseWebview(mime);
-
-    if (shouldUseWebview && this.context) {
-      // Show in webview using existing renderer
-      this.write(`\x1b[36m[Rich Output: ${mime}]\x1b[0m\r\n`);
+    if (presentation.kind === "webview" && this.context) {
+      this.write(`\x1b[36m[Rich Output: ${result.output.mime}]\x1b[0m\r\n`);
       this.write(`\x1b[2mOpening in webview...\x1b[0m\r\n`);
-
       try {
         TerminalOutputWebviewProvider.showLatestOutput(this.context, result);
         this.write(`\x1b[32m✓ Output displayed in webview\x1b[0m\r\n`);
+        return;
       } catch (error) {
         this.write(`\x1b[31mError opening webview: ${error}\x1b[0m\r\n`);
-        // Fallback to terminal rendering
-        await this.renderInTerminal(mime, body);
       }
+    }
+
+    const text =
+      presentation.kind === "text"
+        ? presentation
+        : terminalPresentation(result.output, false);
+    if (text?.kind !== "text") {
       return;
     }
-
-    // Render in terminal
-    await this.renderInTerminal(mime, body);
-  }
-
-  /**
-   * Determine if output should be shown in webview
-   */
-  private shouldUseWebview(mime: string): boolean {
-    const richMimeTypes = [
-      "text/html",
-      "image/png",
-      "image/jpeg",
-      "image/gif",
-      "image/svg+xml",
-      "application/vnd.plotly.v1+json",
-      "application/vnd.vegalite.v4+json",
-    ];
-    return richMimeTypes.includes(mime);
-  }
-
-  /**
-   * Render output in the terminal (text-based)
-   */
-  private async renderInTerminal(mime: string, body: any): Promise<void> {
-    try {
-      switch (mime) {
-        case "text/plain":
-          this.renderTextOutput(body);
-          break;
-
-        case "text/html":
-          this.renderHtmlAsText(body);
-          break;
-
-        case "image/png":
-        case "image/jpeg":
-        case "image/gif":
-        case "image/svg+xml":
-          this.write(`\x1b[36m[Image: ${mime}]\x1b[0m\r\n`);
-          this.write(`\x1b[2m(Image content not shown in terminal)\x1b[0m\r\n`);
-          break;
-
-        case "application/json":
-          this.renderJsonOutput(body);
-          break;
-
-        default:
-          // Fallback to text representation
-          this.write(`\x1b[33m[Output: ${mime}]\x1b[0m\r\n`);
-          if (typeof body === "string") {
-            this.renderTextOutput(body);
-          } else {
-            this.renderTextOutput(JSON.stringify(body, null, 2));
-          }
-      }
-    } catch (error) {
-      this.write(`\x1b[31mError rendering output: ${error}\x1b[0m\r\n`);
+    if (text.label) {
+      this.write(`\x1b[36m[${text.label}]\x1b[0m\r\n`);
     }
+    this.renderTextOutput(text.text);
   }
 
   /**
@@ -680,41 +622,6 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
     for (const line of lines) {
       this.write(line + "\r\n");
     }
-  }
-
-  /**
-   * Render HTML output as text (simplified - extract text)
-   */
-  private renderHtmlAsText(html: string): void {
-    // Strip HTML tags for terminal display
-    const text = html
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<p[^>]*>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&amp;/g, "&")
-      .trim();
-
-    this.write(`\x1b[36m[HTML Output]\x1b[0m\r\n`);
-    this.renderTextOutput(text);
-
-    // Offer to open in external viewer
-    this.write(
-      `\x1b[2m(Use .view to open HTML output in external viewer)\x1b[0m\r\n`
-    );
-  }
-
-  /**
-   * Render JSON output
-   */
-  private renderJsonOutput(json: any): void {
-    this.write(`\x1b[36m[JSON Output]\x1b[0m\r\n`);
-    const formatted =
-      typeof json === "string" ? json : JSON.stringify(json, null, 2);
-    this.renderTextOutput(formatted);
   }
 
   /**
