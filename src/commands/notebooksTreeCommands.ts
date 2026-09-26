@@ -13,11 +13,21 @@ async function revealNotebook(
   return notebookDocument;
 }
 
+/**
+ * A tree item's click passes the notebook path; its context menu passes the
+ * tree item itself.
+ */
+export function notebookPathOf(
+  target: string | Pick<PlutoNotebookTreeItem, "notebookPath">
+): string {
+  return typeof target === "string" ? target : target.notebookPath;
+}
+
 export async function openNotebookFromTree(
-  notebookPath: string
+  target: string | PlutoNotebookTreeItem
 ): Promise<void> {
   try {
-    await revealNotebook(notebookPath);
+    await revealNotebook(notebookPathOf(target));
   } catch (error) {
     vscode.window.showErrorMessage(
       `Failed to open notebook: ${
