@@ -1,9 +1,9 @@
 import {
   decodeMarkdown,
   DEFAULT_MARKDOWN_WRAPPER,
+  decodeMarkdownCell,
   encodeMarkdown,
   isMarkdownCell,
-  markdownTextFromCode,
 } from "../markdownCodec.ts";
 
 const texts = [
@@ -16,6 +16,8 @@ const texts = [
   "has $(x) interpolation",
   'contains " a quote',
   "   indented",
+  'a"""b',
+  "ends in a backslash\\",
 ];
 
 const historicalForms = {
@@ -86,18 +88,30 @@ describe("markdown codec", () => {
     expect(isMarkdownCell(`md"""# Title""" |> display`)).toBe(false);
     expect(isMarkdownCell(`x = md"""# Title"""`)).toBe(false);
     expect(isMarkdownCell(`#VSCODE-MARKDOWN\nx = 1`)).toBe(false);
+    expect(isMarkdownCell(`md"""a""" * md"""b"""`)).toBe(false);
   });
 
-  describe("echo of a local edit", () => {
+  it("keeps a backslash before the closing quotes out of the wrapper", () => {
+    const { wrapper } = decodeMarkdown(`md"""# Title"""`)!;
+    expect(encodeMarkdown("path\\", wrapper)).toBe(encodeMarkdown("path\\"));
+  });
+
+  describe("code from Pluto for a markdown cell", () => {
     it.each(texts)(
       "reads the code sent for %j back as the same text",
       (text) => {
-        expect(markdownTextFromCode(encodeMarkdown(text))).toBe(text);
+        expect(decodeMarkdown(encodeMarkdown(text))?.text).toBe(text);
       }
     );
 
-    it("reads code that is not markdown as itself", () => {
-      expect(markdownTextFromCode("x = 1")).toBe("x = 1");
+    it("reads an interpolating edit to an unmarked cell as its text", () => {
+      const imported = decodeMarkdownCell(`md"""\n# Title\n"""`)!;
+      const remote = decodeMarkdown(`md"""\nx is $(x)\n"""`)!;
+      expect(remote.text).toBe("x is $(x)");
+
+      const saved = encodeMarkdown(remote.text, imported.wrapper);
+      expect(saved).toBe(`#VSCODE-MARKDOWN\nmd"""\nx is $(x)\n"""`);
+      expect(decodeMarkdownCell(saved)?.text).toBe("x is $(x)");
     });
   });
 });

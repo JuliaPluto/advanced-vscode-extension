@@ -10,8 +10,8 @@ import type {
 import { formatCellOutput, foldHiddenCellsEnabled } from "./serializer.ts";
 import { createVsCodeCellFromPlutoCell } from "./plutoSerializer.ts";
 import {
+  decodeMarkdown,
   encodeMarkdown,
-  markdownTextFromCode,
   MARKDOWN_WRAPPER_KEY,
 } from "./markdownCodec.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
@@ -966,10 +966,12 @@ export class PlutoNotebookController {
     if (!cell) {
       return;
     }
-    const newText =
+    const code = rawCode ?? "";
+    const markdown =
       cell.kind === vscode.NotebookCellKind.Markup
-        ? markdownTextFromCode(rawCode ?? "")
-        : (rawCode ?? "");
+        ? decodeMarkdown(code)
+        : undefined;
+    const newText = markdown?.text ?? code;
     if (cell.document.getText() === newText) {
       return;
     }
@@ -982,6 +984,14 @@ export class PlutoNotebookController {
         new vscode.Range(0, 0, cell.document.lineCount, 0),
         newText
       );
+      if (markdown) {
+        edit.set(notebook.uri, [
+          vscode.NotebookEdit.updateCellMetadata(cell.index, {
+            ...cell.metadata,
+            [MARKDOWN_WRAPPER_KEY]: markdown.wrapper,
+          }),
+        ]);
+      }
       await vscode.workspace.applyEdit(edit);
       this.outputChannel.appendLine(
         `[CodeSync] Cell ${cellId} code updated from Pluto`

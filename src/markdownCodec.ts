@@ -30,31 +30,41 @@ const TRIPLE_QUOTED =
 const SINGLE_QUOTED = /^(\s*(?:#VSCODE-MARKDOWN\s*)?md")([^"\n]*)("\s*)$/;
 const MARKER_PREFIX = /^\s*#VSCODE-MARKDOWN/;
 
-/**
- * Splits cell code into markdown text and its wrapper. A cell without the
- * marker is markdown only when its string has no `$`, since Julia
- * interpolates there and the cell needs to run as code.
- */
+/** Splits the code of a markdown cell into its text and wrapper. */
 export function decodeMarkdown(code: string): DecodedMarkdown | undefined {
   const match = TRIPLE_QUOTED.exec(code) ?? SINGLE_QUOTED.exec(code);
   if (!match) {
     return undefined;
   }
   const [, open, text, close] = match;
-  if (!MARKER_PREFIX.test(open) && text.includes("$")) {
-    return undefined;
-  }
   return { text, wrapper: { open, close } };
 }
 
 /**
- * Wraps markdown text as Pluto cell code, in the given wrapper when it
- * decodes back to the same text, otherwise in the default one.
+ * Decodes code that should open as a markdown cell. Without the marker, the
+ * md string must be plain prose: `$` makes Julia interpolate, and a `"""`
+ * inside means more than one string.
+ */
+export function decodeMarkdownCell(code: string): DecodedMarkdown | undefined {
+  const markdown = decodeMarkdown(code);
+  if (
+    markdown &&
+    !MARKER_PREFIX.test(markdown.wrapper.open) &&
+    /\$|"""/.test(markdown.text)
+  ) {
+    return undefined;
+  }
+  return markdown;
+}
+
+/**
+ * Wraps markdown text as Pluto cell code, in the given wrapper when the
+ * result opens as the same markdown cell, otherwise in the default one.
  */
 export function encodeMarkdown(text: string, wrapper?: unknown): string {
-  if (isMarkdownWrapper(wrapper)) {
+  if (isMarkdownWrapper(wrapper) && !endsInEscape(text, wrapper)) {
     const code = wrapper.open + text + wrapper.close;
-    if (decodeMarkdown(code)?.text === text) {
+    if (decodeMarkdownCell(code)?.text === text) {
       return code;
     }
   }
@@ -62,12 +72,11 @@ export function encodeMarkdown(text: string, wrapper?: unknown): string {
 }
 
 export function isMarkdownCell(code: string): boolean {
-  return decodeMarkdown(code) !== undefined;
+  return decodeMarkdownCell(code) !== undefined;
 }
 
-/** The text a markdown cell shows for code received from Pluto. */
-export function markdownTextFromCode(code: string): string {
-  return decodeMarkdown(code)?.text ?? code;
+function endsInEscape(text: string, wrapper: MarkdownWrapper): boolean {
+  return text.endsWith("\\") && wrapper.close.startsWith('"');
 }
 
 function isMarkdownWrapper(value: unknown): value is MarkdownWrapper {

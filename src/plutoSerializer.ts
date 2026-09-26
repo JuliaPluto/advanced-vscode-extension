@@ -6,7 +6,7 @@ import { parse, serialize } from "@plutojl/rainbow";
 import { formatCellOutput } from "./serializer.ts";
 import { v4 as uuidv4 } from "uuid";
 import {
-  decodeMarkdown,
+  decodeMarkdownCell,
   encodeMarkdown,
   MARKDOWN_WRAPPER_KEY,
 } from "./markdownCodec.ts";
@@ -62,7 +62,7 @@ export function createVsCodeCellFromPlutoCell(
 
   let code = cellInput.code ?? "";
 
-  const markdown = decodeMarkdown(code);
+  const markdown = decodeMarkdownCell(code);
   const isMarkdown = isDefined(markdown);
   if (isMarkdown) {
     code = markdown.text;
