@@ -11,12 +11,25 @@ export class PlutoStatusBar {
    * Update the status bar item based on server state
    */
   private readonly update = (): void => {
-    if (this.plutoManager.isRunning()) {
-      this.setRunning();
-    } else if (this.plutoManager.isStarting()) {
-      this.setStarting();
-    } else {
-      this.setStopped();
+    const state = this.plutoManager.getState();
+    switch (state.status) {
+      case "ready":
+        this.setRunning(state.url);
+        break;
+      case "starting":
+        this.setBusy(
+          "Pluto server is starting...\nClick to stop once it is ready"
+        );
+        break;
+      case "stopping":
+        this.setBusy("Pluto server is stopping...");
+        break;
+      case "failed":
+        this.setFailed(state.reason);
+        break;
+      case "stopped":
+        this.setStopped();
+        break;
     }
   };
 
@@ -39,26 +52,31 @@ export class PlutoStatusBar {
     this.statusBarItem.show();
   }
 
-  private setRunning(): void {
-    // Server is running and connected
+  private setRunning(url: string): void {
     this.statusBarItem.text = "$(check) Pluto";
-    this.statusBarItem.tooltip = `Pluto server is running on ${this.plutoManager.getServerUrl()}\nClick to stop`;
+    this.statusBarItem.tooltip = `Pluto server is running on ${url}\nClick to stop`;
     this.statusBarItem.backgroundColor = undefined;
     this.statusBarItem.color = new vscode.ThemeColor(
       "statusBarItem.prominentForeground"
     );
   }
-  private setStarting(): void {
-    // Server task is running but not connected yet (starting)
+  private setBusy(tooltip: string): void {
     this.statusBarItem.text = "$(sync~spin) Pluto";
-    this.statusBarItem.tooltip = "Pluto server is starting...\nClick to stop";
+    this.statusBarItem.tooltip = tooltip;
     this.statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground"
     );
     this.statusBarItem.color = undefined;
   }
+  private setFailed(reason: string): void {
+    this.statusBarItem.text = "$(error) Pluto";
+    this.statusBarItem.tooltip = `Pluto server failed: ${reason}\nClick to start`;
+    this.statusBarItem.backgroundColor = new vscode.ThemeColor(
+      "statusBarItem.errorBackground"
+    );
+    this.statusBarItem.color = undefined;
+  }
   private setStopped(): void {
-    // Server is stopped
     this.statusBarItem.text = "$(debug-stop) Pluto";
     this.statusBarItem.tooltip = "Pluto server is stopped\nClick to start";
     this.statusBarItem.backgroundColor = undefined;

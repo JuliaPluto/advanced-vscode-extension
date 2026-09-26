@@ -222,3 +222,57 @@ export const lm = {
     };
   },
 };
+
+// Commands (for the server command tests)
+export const registeredCommands = new Map<
+  string,
+  (...args: unknown[]) => unknown
+>();
+
+export const commands = {
+  registerCommand: (id: string, handler: (...args: unknown[]) => unknown) => {
+    registeredCommands.set(id, handler);
+    return { dispose: () => registeredCommands.delete(id) };
+  },
+};
+
+// Window (for the status bar and server command tests)
+export enum StatusBarAlignment {
+  Left = 1,
+  Right = 2,
+}
+
+export enum ProgressLocation {
+  SourceControl = 1,
+  Window = 10,
+  Notification = 15,
+}
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
+
+export interface StatusBarItem {
+  text: string;
+  tooltip?: string;
+  command?: string;
+  color?: ThemeColor;
+  backgroundColor?: ThemeColor;
+  show(): void;
+  dispose(): void;
+}
+
+export const window = {
+  showInformationMessage: async () => undefined,
+  showWarningMessage: async () => undefined,
+  showErrorMessage: async () => undefined,
+  withProgress: async <R>(
+    _options: unknown,
+    task: (progress: { report: (value: unknown) => void }) => Promise<R>
+  ): Promise<R> => await task({ report: () => {} }),
+  createStatusBarItem: (): StatusBarItem => ({
+    text: "",
+    show: () => {},
+    dispose: () => {},
+  }),
+};

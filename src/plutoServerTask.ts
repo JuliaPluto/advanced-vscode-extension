@@ -35,13 +35,6 @@ export class PlutoServerTaskManager {
   }
 
   /**
-   * Check if server task is running
-   */
-  public isRunning(): boolean {
-    return !!this.taskExecution || this.isStarting;
-  }
-
-  /**
    * Set callback to be called when server stops
    */
   public onStop(callback: () => void): void {
@@ -76,11 +69,15 @@ export class PlutoServerTaskManager {
   }
 
   /**
-   * Start Pluto server as a VSCode task
+   * Start Pluto server as a VSCode task, or wait for the one already running
    */
   public async start(): Promise<void> {
-    if (this.taskExecution || this.isStarting) {
-      throw new Error("Pluto server task is already running");
+    if (this.taskExecution) {
+      await this.waitForReady();
+      return;
+    }
+    if (this.isStarting) {
+      throw new Error("Pluto server task is already starting");
     }
 
     // Check if there's already a Pluto server task running from a previous session
@@ -286,7 +283,7 @@ export class PlutoServerTaskManager {
         this.serverReadyResolve();
       }
     } catch (error) {
-      this.taskExecution.terminate();
+      this.taskExecution?.terminate();
       this.taskExecution = undefined;
       this.isStarting = false;
 
@@ -309,6 +306,10 @@ export class PlutoServerTaskManager {
     const pollInterval = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (!this.taskExecution) {
+        throw new Error("Pluto server task ended before the server was ready");
+      }
+
       try {
         const response = await fetch(this.getServerUrl(), {
           method: "GET",
