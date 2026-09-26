@@ -1,74 +1,115 @@
 /**
  * Keeps a cell's rendered output DOM alive across VS Code output re-mounts:
  * a released host is parked inside the document and adopted by the next
- * render of the same cell with the same body, or dropped after `graceMs`.
+ * render of the same cell showing the same result, or dropped after `graceMs`.
  * `release` must run while the output element is still in the document.
  */
-interface LiveHost {
+
+/** The part of a Pluto cell output that decides whether a host can be reused */
+export interface DisplayedOutput {
+  body?: unknown;
+  last_run_timestamp?: number;
+  persist_js_state?: boolean | string;
+}
+
+export interface OutputHost<T> {
   cellId: string;
-  body: unknown;
-  host: HTMLElement;
+  element: HTMLElement;
+  data: T;
+  shown: DisplayedOutput | undefined;
+  parked: boolean;
 }
 
-interface ParkedHost {
-  body: unknown;
-  host: HTMLElement;
-  timer: ReturnType<typeof setTimeout>;
+/**
+ * Same body, and same run unless the output asks to persist its JS state
+ * (Pluto re-mounts HTML on every run otherwise, e.g. to reset `@bind`s).
+ */
+export function canAdopt(
+  shown: DisplayedOutput | undefined,
+  next: DisplayedOutput | undefined
+): boolean {
+  if (typeof next?.body !== "string" || shown?.body !== next.body) {
+    return false;
+  }
+  const persist =
+    next.persist_js_state === true || next.persist_js_state === "true";
+  return persist || shown.last_run_timestamp === next.last_run_timestamp;
 }
 
-export class OutputHostPool {
-  private readonly live = new Map<string, LiveHost>();
-  private readonly parked = new Map<string, ParkedHost>();
+export class OutputHostPool<T> {
+  private readonly live = new Map<string, OutputHost<T>>();
+  private readonly parked = new Map<
+    string,
+    { host: OutputHost<T>; timer: ReturnType<typeof setTimeout> }
+  >();
   private parking: HTMLElement | undefined;
 
   constructor(
     private readonly graceMs: number,
-    private readonly onDrop: (host: HTMLElement) => void,
+    private readonly create: (cellId: string, isParked: () => boolean) => T,
+    private readonly onDrop: (host: OutputHost<T>) => void,
     private readonly doc: Document = document
   ) {}
 
-  /**
-   * Returns the host to render `outputId` into, appended to `element`.
-   * `reused` is true when the host already holds this cell's rendered body.
-   */
+  /** Returns the host to render `outputId` into, appended to `element`. */
   acquire(
     outputId: string,
     cellId: string,
-    body: unknown,
+    output: DisplayedOutput | undefined,
     element: HTMLElement
-  ): { host: HTMLElement; reused: boolean } {
+  ): { host: OutputHost<T>; reused: boolean } {
     const current = this.live.get(outputId);
     if (current) {
-      current.body = body;
-      if (current.host.parentElement !== element) {
-        element.appendChild(current.host);
+      current.shown = output;
+      if (current.element.parentElement !== element) {
+        element.appendChild(current.element);
       }
-      return { host: current.host, reused: true };
+      return { host: current, reused: true };
     }
 
+    let host: OutputHost<T> | undefined;
     const parked = this.parked.get(cellId);
-    let host: HTMLElement | undefined;
     if (parked) {
       clearTimeout(parked.timer);
       this.parked.delete(cellId);
-      if (typeof body === "string" && parked.body === body) {
+      if (canAdopt(parked.host.shown, output)) {
         host = parked.host;
-        host.style.width = "";
+        host.parked = false;
+        host.element.style.width = "";
       } else {
         this.drop(parked.host);
       }
     }
     const reused = host !== undefined;
-    host ??= this.doc.createElement("div");
-    element.appendChild(host);
-    this.live.set(outputId, { cellId, body, host });
+    if (!host) {
+      const fresh = {
+        cellId,
+        element: this.doc.createElement("div"),
+        shown: output,
+        parked: false,
+      };
+      host = Object.assign(fresh, {
+        data: this.create(cellId, () => fresh.parked),
+      });
+    }
+    element.appendChild(host.element);
+    this.live.set(outputId, host);
     return { host, reused };
+  }
+
+  /** Records that the cell's live hosts now display `output`, updated in place. */
+  noteDisplayed(cellId: string, output: DisplayedOutput | undefined): void {
+    for (const host of this.live.values()) {
+      if (host.cellId === cellId) {
+        host.shown = output;
+      }
+    }
   }
 
   /** Parks the host of `outputId`; without an id, drops every host. */
   release(outputId?: string): void {
     if (outputId === undefined) {
-      for (const { host } of this.live.values()) {
+      for (const host of this.live.values()) {
         this.drop(host);
       }
       this.live.clear();
@@ -80,38 +121,36 @@ export class OutputHostPool {
       return;
     }
 
-    const current = this.live.get(outputId);
-    if (!current) {
+    const host = this.live.get(outputId);
+    if (!host) {
       return;
     }
     this.live.delete(outputId);
-    const previous = this.parked.get(current.cellId);
+    const previous = this.parked.get(host.cellId);
     if (previous) {
       clearTimeout(previous.timer);
       this.drop(previous.host);
     }
-    if (!current.host.isConnected) {
-      this.drop(current.host);
+    if (!host.element.isConnected) {
+      this.drop(host);
       return;
     }
-    current.host.style.width = `${current.host.offsetWidth}px`;
-    this.parkingLot().appendChild(current.host);
+    host.parked = true;
+    host.element.style.width = `${host.element.offsetWidth}px`;
+    this.parkingLot().appendChild(host.element);
     const timer = setTimeout(() => {
-      if (this.parked.get(current.cellId)?.host === current.host) {
-        this.parked.delete(current.cellId);
-        this.drop(current.host);
+      if (this.parked.get(host.cellId)?.host === host) {
+        this.parked.delete(host.cellId);
+        this.drop(host);
       }
     }, this.graceMs);
-    this.parked.set(current.cellId, {
-      body: current.body,
-      host: current.host,
-      timer,
-    });
+    this.parked.set(host.cellId, { host, timer });
   }
 
-  private drop(host: HTMLElement): void {
+  private drop(host: OutputHost<T>): void {
+    host.parked = true;
     this.onDrop(host);
-    host.remove();
+    host.element.remove();
   }
 
   private parkingLot(): HTMLElement {
