@@ -108,12 +108,17 @@ export async function run(config: CliConfig): Promise<void> {
 
   const plutoServer = new PlutoServer(
     new SpawnLauncher(),
-    () =>
-      resolveCliToolchain({
+    () => {
+      console.log(
+        config.update
+          ? "[pluto] Installing and precompiling Pluto (--update), then starting the server..."
+          : "[pluto] Starting Pluto (first run installs Pluto and may take a few minutes)..."
+      );
+      return resolveCliToolchain({
         juliaVersion: config.juliaVersion,
         workDir: config.workDir,
-        update: config.update,
-      }),
+      });
+    },
     { port: config.plutoPort, writeNotebookFiles: true, update: config.update },
     { warn: (message) => console.warn(`[pluto] ${message}`) }
   );

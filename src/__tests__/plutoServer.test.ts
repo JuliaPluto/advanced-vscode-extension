@@ -201,6 +201,40 @@ describe("PlutoServer", () => {
       expect(spec.env.JULIA_DEPOT_PATH).toBeTruthy();
     });
 
+    it("passes the load path, token, host extras and workspace through", async () => {
+      resolveToolchain.mockResolvedValue({
+        ...toolchain,
+        juliaHubToken: "secret",
+        env: { JULIAUP_SERVER: "https://juliaup.example" },
+      });
+      const launcher = track(new FakeLauncher({ readyAfterMs: 0 }));
+
+      await serverWith(launcher).start();
+
+      expect(launcher.launched[0].spec.env).toMatchObject({
+        JULIA_LOAD_PATH: process.platform === "win32" ? ";" : ":",
+        JULIAHUB_TOKEN: "secret",
+        JULIAUP_SERVER: "https://juliaup.example",
+        JULIA_PLUTO_VSCODE_WORKSPACE: "/work",
+      });
+    });
+
+    it("sets an empty workspace but leaves an absent one unset", async () => {
+      const envFor = async (workspaceDir: string | undefined) => {
+        resolveToolchain.mockResolvedValue({ ...toolchain, workspaceDir });
+        const launcher = track(new FakeLauncher({ readyAfterMs: 0 }));
+        const server = serverWith(launcher);
+        await server.start();
+        await server.stop();
+        return launcher.launched[0].spec.env;
+      };
+
+      expect((await envFor("")).JULIA_PLUTO_VSCODE_WORKSPACE).toBe("");
+      expect(await envFor(undefined)).not.toHaveProperty(
+        "JULIA_PLUTO_VSCODE_WORKSPACE"
+      );
+    });
+
     it("answers writesNotebookFiles from the same option", () => {
       expect(
         serverWith(new FakeLauncher(), { writeNotebookFiles: true })

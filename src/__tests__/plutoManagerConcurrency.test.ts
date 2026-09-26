@@ -356,6 +356,30 @@ describe("PlutoManager concurrency", () => {
       expect(manager.getServerUrl()).toBe("http://localhost:1234");
     });
 
+    it("returns to the configured URL when an owned server on a fallback port dies", async () => {
+      const serverManager = createMockServerManager(1);
+      serverManager.start = async () => {
+        serverManager.running = true;
+        return "http://localhost:1235";
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      await manager.start();
+      expect(manager.getServerUrl()).toBe("http://localhost:1235");
+
+      serverManager.triggerStop();
+
+      expect(manager.getState()).toMatchObject({
+        status: "failed",
+        url: "http://localhost:1235",
+      });
+      expect(manager.getServerUrl()).toBe("http://localhost:1234");
+    });
+
     it("moves to failed with the reason when the start fails", async () => {
       const serverManager = createMockServerManager(1);
       serverManager.start = async () => {

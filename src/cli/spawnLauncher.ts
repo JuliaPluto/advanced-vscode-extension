@@ -67,9 +67,13 @@ class ChildHandle implements LaunchedProcess {
       console.log(`[pluto] Julia process exited with code ${code}`);
       this.end(code ?? undefined);
     });
+    // "error" also reports a failed kill of a live process; only a process
+    // that never spawned has ended
     child.on("error", (error) => {
       console.error(`[pluto] Julia process error: ${error.message}`);
-      this.end(undefined);
+      if (child.pid === undefined) {
+        this.end(undefined);
+      }
     });
   }
 
@@ -100,7 +104,6 @@ export interface CliToolchainOptions {
   /** juliaup channel; "default", "system" or "" use whatever `julia` is. */
   juliaVersion: string;
   workDir: string;
-  update: boolean;
 }
 
 /**
@@ -127,12 +130,6 @@ export async function resolveCliToolchain(
     ? [`+${options.juliaVersion}`]
     : [];
   const packageServer = await juliaHubPackageServer(command, args);
-
-  console.log(
-    options.update
-      ? "[pluto] Installing and precompiling Pluto (--update), then starting the server..."
-      : "[pluto] Starting Pluto (first run installs Pluto and may take a few minutes)..."
-  );
   return {
     command,
     args,

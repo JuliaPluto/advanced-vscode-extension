@@ -134,9 +134,11 @@ export class PlutoManager {
     }
     this.workers.clear();
 
+    const url = this.state.url;
+    this.serverUrl = this.configuredUrl;
     this.setState({
       status: "failed",
-      url: this.state.url,
+      url,
       reason: "Pluto server stopped unexpectedly",
     });
 

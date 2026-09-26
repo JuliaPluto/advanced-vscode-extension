@@ -23,7 +23,13 @@ const TASK_TYPE = "pluto-server";
  * terminal panel and the task survives a reload of the extension host.
  */
 export class VscodeTaskLauncher implements ProcessLauncher {
+  /** Executions this launcher already owns, launched or adopted. */
+  private readonly known = new WeakSet<vscode.TaskExecution>();
+
   public async launch(spec: LaunchSpec): Promise<LaunchedProcess> {
+    console.log(
+      `[PlutoServerTask] Resolved command: ${spec.command} ${spec.args.join(" ")}`
+    );
     const task = new vscode.Task(
       { type: TASK_TYPE, port: spec.port },
       vscode.TaskScope.Workspace,
@@ -49,23 +55,29 @@ export class VscodeTaskLauncher implements ProcessLauncher {
     );
     try {
       const execution = await vscode.tasks.executeTask(task);
+      this.known.add(execution);
       return new TaskProcess(execution, ended);
     } finally {
       early.dispose();
     }
   }
 
-  /** A Pluto server task left running by an earlier extension host. */
+  /**
+   * A Pluto server task left running by an earlier extension host. One this
+   * launcher already owned is never taken again: VS Code lists a task for a
+   * while after its process ended, and one that outlived a stop is dying.
+   */
   public async adopt(): Promise<
     { process: LaunchedProcess; port: number } | undefined
   > {
     const execution = vscode.tasks.taskExecutions.find(
-      (e) => e.task.definition.type === TASK_TYPE
+      (e) => e.task.definition.type === TASK_TYPE && !this.known.has(e)
     );
     const port = execution?.task.definition.port as number | undefined;
     if (!execution || !port) {
       return undefined;
     }
+    this.known.add(execution);
     return { process: new TaskProcess(execution), port };
   }
 }
@@ -128,6 +140,11 @@ export async function resolveExtensionToolchain(): Promise<JuliaToolchain> {
   }
 
   const packageServer = await getPackageServer();
+  if (packageServer) {
+    console.log(
+      `[PlutoServerTask] Package server from Julia extension: ${packageServer}`
+    );
+  }
 
   // The JuliaHub token is optional — a declined/failed authentication
   // must not prevent the local Pluto server from starting

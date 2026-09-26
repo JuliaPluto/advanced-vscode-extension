@@ -108,6 +108,14 @@ export class TaskExecution {
   terminate() {}
 }
 
+export class ProcessExecution {
+  constructor(
+    public process: string,
+    public args: string[],
+    public options?: Record<string, unknown>
+  ) {}
+}
+
 export class ShellExecution {
   constructor(
     public command: string,
@@ -139,20 +147,29 @@ export class Task {
     public scope: TaskScope | { uri: unknown; name?: string },
     public name: string,
     public source: string,
-    public execution: ShellExecution,
+    public execution: ShellExecution | ProcessExecution,
     public problemMatchers?: string[]
   ) {}
 }
 
 // Tasks namespace (used by VscodeTaskLauncher)
-const taskEndListeners: Array<(e: { execution: TaskExecution }) => void> = [];
+type TaskProcessEnd = { execution: TaskExecution; exitCode?: number };
+const taskEndListeners: Array<(e: TaskProcessEnd) => void> = [];
+
+/** Test helper: report that a task's process ended. */
+export function endTaskProcess(
+  execution: TaskExecution,
+  exitCode?: number
+): void {
+  for (const listener of [...taskEndListeners]) {
+    listener({ execution, exitCode });
+  }
+}
 
 export const tasks = {
   executeTask: async (task: Task): Promise<TaskExecution> =>
     await Promise.resolve(new TaskExecution(task)),
-  onDidEndTaskProcess: (
-    listener: (e: { execution: TaskExecution }) => void
-  ) => {
+  onDidEndTaskProcess: (listener: (e: TaskProcessEnd) => void) => {
     taskEndListeners.push(listener);
     return {
       dispose: () => {
