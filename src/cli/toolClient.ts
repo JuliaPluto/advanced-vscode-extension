@@ -49,6 +49,7 @@ export interface ToolClient {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const SESSION_END_TIMEOUT_MS = 2_000;
 
 function describeConnectError(url: URL, e: unknown): Error {
   if (e instanceof StreamableHTTPError && (e.code === 404 || e.code === 405)) {
@@ -75,7 +76,9 @@ function describeRequestError(what: string, timeoutMs: number, e: unknown) {
 
 /**
  * Run `use` with a client connected to the tool server on `port`. The
- * session is terminated afterwards, whether `use` succeeds or throws.
+ * session is terminated afterwards, whether `use` succeeds or throws, and
+ * on SIGINT before the process exits; neither waits more than
+ * SESSION_END_TIMEOUT_MS for the server.
  */
 export async function withToolClient<T>(
   port: number,
@@ -113,10 +116,31 @@ export async function withToolClient<T>(
     },
   };
 
+  const endSession = async () => {
+    await Promise.race([
+      transport.terminateSession().catch(() => {}),
+      new Promise((resolve) =>
+        setTimeout(resolve, SESSION_END_TIMEOUT_MS).unref()
+      ),
+    ]);
+    await client.close().catch(() => {});
+  };
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+    void endSession().finally(() => process.exit(130));
+  };
+  process.once("SIGINT", onInterrupt);
+
   try {
     return await use(toolClient);
   } finally {
-    await transport.terminateSession().catch(() => {});
-    await client.close().catch(() => {});
+    process.off("SIGINT", onInterrupt);
+    if (interrupted) {
+      // The interrupt handler owns the exit; the failed request must not
+      // reach the caller's error reporting first.
+      await new Promise<never>(() => {});
+    }
+    await endSession();
   }
 }

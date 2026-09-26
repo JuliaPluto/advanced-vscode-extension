@@ -3,6 +3,7 @@ import type { AddressInfo } from "net";
 import { randomUUID } from "crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { jest } from "@jest/globals";
 import { z } from "zod";
 import { withToolClient } from "../cli/toolClient.ts";
 
@@ -50,9 +51,14 @@ function toolServer(): McpServer {
   return server;
 }
 
-async function streamableServer(): Promise<FakeServer> {
+async function streamableServer(
+  opts: { ignoreDelete?: boolean } = {}
+): Promise<FakeServer> {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const httpServer = http.createServer(async (req, res) => {
+    if (opts.ignoreDelete && req.method === "DELETE") {
+      return;
+    }
     const id = req.headers["mcp-session-id"] as string | undefined;
     let transport = id ? sessions.get(id) : undefined;
     if (!transport) {
@@ -139,6 +145,48 @@ describe("withToolClient", () => {
     await expect(
       withToolClient(server.port, (c) => c.callTool("slow", {}, 1000))
     ).rejects.toThrow(/Timed out after 1s waiting for slow.*--timeout/);
+  });
+});
+
+describe("withToolClient ending the session", () => {
+  it("does not wait long for a server that never answers the DELETE", async () => {
+    const server = await streamableServer({ ignoreDelete: true });
+    try {
+      const started = Date.now();
+      const tools = await withToolClient(server.port, (c) => c.listTools());
+      expect(tools).toHaveLength(3);
+      expect(Date.now() - started).toBeLessThan(4000);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("ends the session on SIGINT and exits with 130", async () => {
+    const server = await streamableServer();
+    let exited: (code: number | undefined) => void = () => {};
+    const exitCode = new Promise<number | undefined>((r) => (exited = r));
+    const exit = jest
+      .spyOn(process, "exit")
+      .mockImplementation((code?: string | number | null) => {
+        exited(code === null ? undefined : Number(code));
+        return undefined as never;
+      });
+    try {
+      let sessionsDuringCall = 0;
+      void withToolClient(server.port, async (c) => {
+        const call = c.callTool("slow", {}, 5000);
+        sessionsDuringCall = server.sessions.size;
+        process.emit("SIGINT");
+        return call;
+      });
+      expect(await exitCode).toBe(130);
+      expect(sessionsDuringCall).toBe(1);
+      expect(server.sessions.size).toBe(0);
+      expect(process.listenerCount("SIGINT")).toBe(0);
+    } finally {
+      exit.mockRestore();
+      await server.close();
+    }
   });
 });
 
