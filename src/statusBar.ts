@@ -17,9 +17,7 @@ export class PlutoStatusBar {
         this.setRunning(state.url);
         break;
       case "starting":
-        this.setBusy(
-          "Pluto server is starting...\nClick to stop once it is ready"
-        );
+        this.setBusy("Pluto server is starting...\nClick to cancel");
         break;
       case "stopping":
         this.setBusy("Pluto server is stopping...");
