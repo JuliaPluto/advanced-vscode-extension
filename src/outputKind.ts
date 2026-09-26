@@ -237,55 +237,93 @@ export function toTransport<T>(output: T): T {
   const body =
     bytes && classifyOutput(record).textual
       ? decodeText(record.body as object, () => bytes)
-      : mapBytes(record.body, (b) => ({ [TRANSPORT_KEY]: toBase64(b) }));
+      : mapBytes(record.body, encodeStandIn, (standIn) => standIn);
   return body === record.body ? output : ({ ...record, body } as T);
 }
 
 /**
  * Undoes toTransport's byte stand-ins; other outputs come back unchanged.
  * The same stand-in yields the same array while it stays among the most
- * recent ones, so a re-sent image keeps its identity.
+ * recent decodes, so a re-sent image keeps its identity.
  */
 export function fromTransport<T>(output: T): T {
   const record = asRecord(output);
   if (!record) return output;
-  const body = mapBytes(record.body, (b) => b, cachedFromBase64);
+  const body = mapBytes(
+    record.body,
+    (bytes) => bytes,
+    (standIn) => cachedFromBase64(standIn[TRANSPORT_KEY])
+  );
   return body === record.body ? output : ({ ...record, body } as T);
 }
 
+/**
+ * Equal for two sent bodies exactly when they show the same thing: a text
+ * body by its text, a byte stand-in by its bytes. Undefined otherwise.
+ */
+export function sentBodyKey(body: unknown): string | undefined {
+  if (typeof body === "string") return `text:${body}`;
+  return isTransportBody(body) ? `bytes:${body[TRANSPORT_KEY]}` : undefined;
+}
+
+const encoded = new WeakMap<object, TransportBody>();
+
+function encodeStandIn(source: Uint8Array | ArrayBuffer): TransportBody {
+  let standIn = encoded.get(source);
+  if (!standIn) {
+    standIn = { [TRANSPORT_KEY]: toBase64(bytesOf(source)!) };
+    encoded.set(source, standIn);
+  }
+  return standIn;
+}
+
 const RECENT_DECODES = 32;
+const RECENT_DECODE_BYTES = 32 * 1024 * 1024;
 const recentDecodes = new Map<string, Uint8Array>();
+let recentDecodeBytes = 0;
 
 function cachedFromBase64(base64: string): Uint8Array {
   let bytes = recentDecodes.get(base64);
   if (bytes) {
     recentDecodes.delete(base64);
-  } else {
-    bytes = fromBase64(base64);
-    if (recentDecodes.size >= RECENT_DECODES) {
-      recentDecodes.delete(recentDecodes.keys().next().value!);
-    }
+    recentDecodes.set(base64, bytes);
+    return bytes;
   }
+  bytes = fromBase64(base64);
   recentDecodes.set(base64, bytes);
+  recentDecodeBytes += bytes.length;
+  for (const [key, old] of recentDecodes) {
+    if (
+      recentDecodes.size <= RECENT_DECODES &&
+      recentDecodeBytes <= RECENT_DECODE_BYTES
+    ) {
+      break;
+    }
+    if (key === base64) break;
+    recentDecodes.delete(key);
+    recentDecodeBytes -= old.length;
+  }
   return bytes;
 }
 
 /**
- * Rebuilds `value` with every byte array or byte stand-in passed through
- * `convert`; returns `value` itself when it holds neither.
+ * Rebuilds `value` with every byte array passed through `onBytes` and every
+ * byte stand-in through `onStandIn`; returns `value` itself when nothing
+ * changed.
  */
 function mapBytes(
   value: unknown,
-  convert: (bytes: Uint8Array) => unknown,
-  decode: (base64: string) => Uint8Array = fromBase64
+  onBytes: (bytes: Uint8Array | ArrayBuffer) => unknown,
+  onStandIn: (standIn: TransportBody) => unknown
 ): unknown {
-  const bytes = bytesOf(value);
-  if (bytes) return convert(bytes);
-  if (isTransportBody(value)) return convert(decode(value[TRANSPORT_KEY]));
+  if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+    return onBytes(value);
+  }
+  if (isTransportBody(value)) return onStandIn(value);
   if (value === null || typeof value !== "object") return value;
   let changed = false;
   const entries = Object.entries(value).map(([key, item]) => {
-    const next: unknown = mapBytes(item, convert, decode);
+    const next: unknown = mapBytes(item, onBytes, onStandIn);
     changed ||= next !== item;
     return [key, next] as const;
   });
