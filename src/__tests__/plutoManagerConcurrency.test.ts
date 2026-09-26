@@ -4,7 +4,7 @@ import {
   PlutoManagerLogger,
   type ServerState,
 } from "../plutoManager.js";
-import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
+import type { IPlutoServer, IFileReader } from "../plutoManagerTypes.js";
 import { Host, Worker } from "@plutojl/rainbow";
 
 type ServerStatus = ServerState["status"];
@@ -19,43 +19,39 @@ function createMockLogger(): PlutoManagerLogger {
   };
 }
 
-interface MockServerManager extends IPlutoServerManager {
+const SERVER_URL = "http://localhost:1234";
+
+interface MockServerManager extends IPlutoServer {
   startCalls: number;
   running: boolean;
+  /** An exit the server did not ask for */
   triggerStop: () => void;
 }
 
 function createMockServerManager(startDelayMs = 20): MockServerManager {
-  let onStopCallback: (() => void) | undefined;
+  let onExitCallback: (() => void) | undefined;
   const manager: MockServerManager = {
     startCalls: 0,
     running: false,
+    writesNotebookFiles: true,
     triggerStop: () => {
       manager.running = false;
-      onStopCallback?.();
+      onExitCallback?.();
     },
     start: async () => {
       manager.startCalls++;
-      if (manager.running) {
-        return;
+      if (!manager.running) {
+        await delay(startDelayMs);
+        manager.running = true;
       }
-      await delay(startDelayMs);
-      manager.running = true;
+      return SERVER_URL;
     },
     stop: async () => {
-      // Like real managers, the process exit fires the stop callback
-      // before stop() resolves
-      if (manager.running) {
-        manager.triggerStop();
-      }
+      manager.running = false;
     },
-    waitForReady: async () => {},
-    onStop: (cb: () => void) => {
-      onStopCallback = cb;
+    onExit: (cb: () => void) => {
+      onExitCallback = cb;
     },
-    onPortChanged: () => {},
-    getActualPort: () => 1234,
-    getServerUrl: () => "http://localhost:1234",
   };
   return manager;
 }
@@ -133,6 +129,7 @@ describe("PlutoManager concurrency", () => {
           throw new Error("boom");
         }
         serverManager.running = true;
+        return SERVER_URL;
       };
 
       const manager = new PlutoManager(
@@ -331,27 +328,56 @@ describe("PlutoManager concurrency", () => {
       });
     });
 
-    it("keeps a configured URL when the server manager reports a port", async () => {
+    it("takes an owned server's URL from its start, and forgets it on stop", async () => {
       const serverManager = createMockServerManager(1);
-      let reportPort: (port: number) => void = () => {};
-      serverManager.onPortChanged = (cb) => {
-        reportPort = cb;
+      serverManager.start = async () => "http://localhost:1235";
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      const urls: string[] = [];
+      manager.on("serverStateChanged", (state) => {
+        if (state.status !== "stopped") {
+          urls.push(state.url);
+        }
+      });
+
+      await manager.start();
+      expect(manager.getServerUrl()).toBe("http://localhost:1235");
+      await manager.stop();
+
+      expect(urls).toEqual([
+        "http://localhost:1234",
+        "http://localhost:1235",
+        "http://localhost:1235",
+      ]);
+      expect(manager.getServerUrl()).toBe("http://localhost:1234");
+    });
+
+    it("returns to the configured URL when an owned server on a fallback port dies", async () => {
+      const serverManager = createMockServerManager(1);
+      serverManager.start = async () => {
+        serverManager.running = true;
+        return "http://localhost:1235";
       };
       const manager = new PlutoManager(
         1234,
         createMockLogger(),
         serverManager,
-        stubFileReader,
-        "http://10.0.0.99:1234"
+        stubFileReader
       );
-
-      reportPort(1235);
       await manager.start();
+      expect(manager.getServerUrl()).toBe("http://localhost:1235");
 
-      expect(manager.getServerUrl()).toBe("http://10.0.0.99:1234");
+      serverManager.triggerStop();
+
       expect(manager.getState()).toMatchObject({
-        url: "http://10.0.0.99:1234",
+        status: "failed",
+        url: "http://localhost:1235",
       });
+      expect(manager.getServerUrl()).toBe("http://localhost:1234");
     });
 
     it("moves to failed with the reason when the start fails", async () => {
@@ -475,6 +501,7 @@ describe("PlutoManager concurrency", () => {
         serverManager.startCalls++;
         serverManager.running = true;
         serverManager.triggerStop();
+        return SERVER_URL;
       };
       const manager = new PlutoManager(
         1234,
@@ -532,7 +559,7 @@ describe("PlutoManager concurrency", () => {
       manager.on("workerRecreated", (path) => recreated.push(path));
 
       dieOnConnect = true;
-      await manager.start();
+      await expect(manager.start()).rejects.toThrow("stopped unexpectedly");
       expect(manager.getState().status).toBe("failed");
       expect(recreated).toEqual([]);
 

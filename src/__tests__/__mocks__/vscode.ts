@@ -39,7 +39,7 @@ export class NotebookCellOutput {
   constructor(public items: NotebookCellOutputItem[]) {}
 }
 
-// Workspace (used by PlutoServerTaskManager and PlutoManager)
+// Workspace (used by the Julia toolchain and PlutoManager)
 export const workspace = {
   getConfiguration: (section?: string) => ({
     get: (key: string, defaultValue?: unknown) => {
@@ -85,7 +85,7 @@ export const workspace = {
   },
 };
 
-// Task-related types (used by PlutoServerTaskManager)
+// Task-related types (used by VscodeTaskLauncher)
 export enum TaskScope {
   Global = 1,
   Workspace = 2,
@@ -106,6 +106,14 @@ export enum TaskPanelKind {
 export class TaskExecution {
   constructor(public task: Task) {}
   terminate() {}
+}
+
+export class ProcessExecution {
+  constructor(
+    public process: string,
+    public args: string[],
+    public options?: Record<string, unknown>
+  ) {}
 }
 
 export class ShellExecution {
@@ -139,20 +147,29 @@ export class Task {
     public scope: TaskScope | { uri: unknown; name?: string },
     public name: string,
     public source: string,
-    public execution: ShellExecution,
+    public execution: ShellExecution | ProcessExecution,
     public problemMatchers?: string[]
   ) {}
 }
 
-// Tasks namespace (used by PlutoServerTaskManager)
-const taskEndListeners: Array<(e: { execution: TaskExecution }) => void> = [];
+// Tasks namespace (used by VscodeTaskLauncher)
+type TaskProcessEnd = { execution: TaskExecution; exitCode?: number };
+const taskEndListeners: Array<(e: TaskProcessEnd) => void> = [];
+
+/** Test helper: report that a task's process ended. */
+export function endTaskProcess(
+  execution: TaskExecution,
+  exitCode?: number
+): void {
+  for (const listener of [...taskEndListeners]) {
+    listener({ execution, exitCode });
+  }
+}
 
 export const tasks = {
   executeTask: async (task: Task): Promise<TaskExecution> =>
     await Promise.resolve(new TaskExecution(task)),
-  onDidEndTaskProcess: (
-    listener: (e: { execution: TaskExecution }) => void
-  ) => {
+  onDidEndTaskProcess: (listener: (e: TaskProcessEnd) => void) => {
     taskEndListeners.push(listener);
     return {
       dispose: () => {
