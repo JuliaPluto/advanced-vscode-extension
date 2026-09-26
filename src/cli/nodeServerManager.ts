@@ -55,10 +55,6 @@ export class NodeServerManager implements IPlutoServerManager {
     return !["default", "system", ""].includes(this.juliaVersion);
   }
 
-  isRunning(): boolean {
-    return !!this.juliaProcess || this.starting;
-  }
-
   onStop(callback: () => void): void {
     this.onStopCallback = callback;
   }
@@ -93,8 +89,11 @@ export class NodeServerManager implements IPlutoServerManager {
   }
 
   async start(): Promise<void> {
-    if (this.juliaProcess || this.starting) {
-      throw new Error("Pluto server is already running");
+    if (this.starting) {
+      throw new Error("Pluto server is already starting");
+    }
+    if (this.juliaProcess) {
+      return;
     }
     this.starting = true;
 

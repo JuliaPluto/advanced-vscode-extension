@@ -4,10 +4,12 @@
  * The CLI uses NodeServerManager (child_process-based).
  */
 export interface IPlutoServerManager {
+  /** Launch the server, or wait for the one this manager already runs. */
   start(): Promise<void>;
+  /** Stop the server; a no-op when none is running. */
   stop(): Promise<void>;
-  isRunning(): boolean;
   waitForReady(): Promise<void>;
+  /** Called when the server process exits, whatever the cause. */
   onStop(callback: () => void): void;
   onPortChanged(callback: (newPort: number) => void): void;
   getActualPort(): number;

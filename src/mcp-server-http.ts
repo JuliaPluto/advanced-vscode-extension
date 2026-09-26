@@ -156,7 +156,7 @@ export class PlutoMCPHttpServer {
       "Start the Pluto server on the configured port (set via --pluto-port or extension settings)",
       {},
       async () => {
-        if (this.plutoManager.isRunning()) {
+        if (this.plutoManager.isConnected()) {
           return {
             content: [
               {
@@ -214,13 +214,7 @@ export class PlutoMCPHttpServer {
       "Stop the running Pluto server",
       {},
       async () => {
-        // Use isConnected() instead of isRunning() — we may be connected
-        // to an externally-managed server (no owned process), and stop
-        // should still disconnect and clean up.
-        if (
-          !this.plutoManager.isConnected() &&
-          !this.plutoManager.isRunning()
-        ) {
+        if (this.plutoManager.getState().status === "stopped") {
           return {
             content: [
               {
@@ -232,15 +226,11 @@ export class PlutoMCPHttpServer {
         }
 
         await this.plutoManager.stop();
-
-        const stillRunning = this.plutoManager.isRunning();
         return {
           content: [
             {
               type: "text",
-              text: stillRunning
-                ? "Warning: stop() returned but the server process may still be running. It should be force-killed shortly."
-                : "Pluto server stopped",
+              text: "Pluto server stopped",
             },
           ],
         };
@@ -623,7 +613,8 @@ export class PlutoMCPHttpServer {
       "Get the status of the Pluto server and open notebooks",
       {},
       async () => {
-        const isConnected = this.plutoManager.isConnected();
+        const state = this.plutoManager.getState();
+        const isConnected = state.status === "ready";
         const notebooks = isConnected
           ? this.plutoManager.getOpenNotebooks()
           : [];
@@ -635,6 +626,10 @@ export class PlutoMCPHttpServer {
               text: JSON.stringify(
                 {
                   server_running: isConnected,
+                  server_state: state.status,
+                  ...(state.status === "failed" && {
+                    failure_reason: state.reason,
+                  }),
                   server_url: this.plutoManager.getServerUrl(),
                   open_notebooks: notebooks.length,
                   message: isConnected
