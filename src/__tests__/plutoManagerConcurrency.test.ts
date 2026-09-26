@@ -506,6 +506,26 @@ describe("PlutoManager concurrency", () => {
       expect(manager.getState()).toEqual({ status: "stopped" });
     });
 
+    it("cancelStart() ends stopped even when stopping the launch fails", async () => {
+      const serverManager = createMockServerManager(20);
+      serverManager.stop = async () => {
+        throw new Error("terminate failed");
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+
+      const started = manager.start();
+      await delay(5);
+      manager.cancelStart();
+
+      await expect(started).rejects.toThrow("terminate failed");
+      expect(manager.getState()).toEqual({ status: "stopped" });
+    });
+
     it("starts a server that is stopping once the stop settles", async () => {
       const serverManager = createMockServerManager(1);
       const manager = new PlutoManager(

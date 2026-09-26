@@ -235,9 +235,12 @@ export class PlutoManager {
       abort.signal.throwIfAborted();
     } catch (error) {
       if (abort.signal.aborted && this.state.status === "starting") {
-        await this.server.stop();
-        this.serverUrl = this.configuredUrl;
-        this.setState({ status: "stopped" });
+        try {
+          await this.server.stop();
+        } finally {
+          this.serverUrl = this.configuredUrl;
+          this.setState({ status: "stopped" });
+        }
         throw new Error("Pluto server start was cancelled");
       }
       if (abort.signal.aborted) {
