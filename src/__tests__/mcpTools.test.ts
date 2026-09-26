@@ -31,7 +31,7 @@ describe("the tool set", () => {
     });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain("start_pluto_server");
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
     expect(manager.start).not.toHaveBeenCalled();
   });
 
@@ -39,22 +39,14 @@ describe("the tool set", () => {
     const manager = fakePlutoManager();
     const tools = createPlutoTools(manager);
     await tools.call("edit_cell", { path: "/nb.jl", cell_id: "c1", code: "y" });
-    expect(manager.executeCell).toHaveBeenCalledWith(
-      expect.anything(),
-      "c1",
-      "y"
-    );
+    expect(manager.executeCell).toHaveBeenCalledWith("/nb.jl", "c1", "y");
     const result = await tools.call("edit_cell", {
       path: "/nb.jl",
       cell_id: "c1",
       code: "z",
       run: false,
     });
-    expect(manager.setCellCode).toHaveBeenCalledWith(
-      expect.anything(),
-      "c1",
-      "z"
-    );
+    expect(manager.setCellCode).toHaveBeenCalledWith("/nb.jl", "c1", "z");
     expect(json(result).message).toContain("not executed");
   });
 
@@ -142,7 +134,7 @@ describe("the tool set", () => {
     expect(await readFile(file, "utf-8")).toContain(
       "### A Pluto.jl notebook ###"
     );
-    expect(manager.getWorker).toHaveBeenCalledWith(file);
+    expect(manager.liveWorker).toHaveBeenCalledWith(file);
 
     const again = await tools.call("create_notebook", { path: file });
     expect(again.isError).toBe(true);
@@ -160,7 +152,7 @@ describe("the tool set", () => {
       expect(result.isError).toBe(true);
       expect(textOf(result)).toContain("must be absolute");
       expect(existsSync(join(dir, "rel"))).toBe(false);
-      expect(manager.getWorker).not.toHaveBeenCalled();
+      expect(manager.liveWorker).not.toHaveBeenCalled();
     } finally {
       process.chdir(cwd);
     }
@@ -175,11 +167,7 @@ describe("the tool set", () => {
       index: 0,
     });
     expect(textOf(moved)).toBe("Moved 1 cell(s) to position 0");
-    expect(manager.moveCells).toHaveBeenCalledWith(
-      expect.anything(),
-      ["c1"],
-      0
-    );
+    expect(manager.moveCells).toHaveBeenCalledWith("/nb.jl", ["c1"], 0);
 
     const folded = await tools.call("fold_cell", {
       path: "/nb.jl",
@@ -207,7 +195,7 @@ describe("the tool set", () => {
     expect(textOf(result)).toBe(
       "Moving a notebook only works when the Pluto server is on localhost (it shares this machine's filesystem). Use save_notebook to write a copy instead."
     );
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
     expect(manager.moveNotebook).not.toHaveBeenCalled();
   });
 

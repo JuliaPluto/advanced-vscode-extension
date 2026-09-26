@@ -111,12 +111,6 @@ export async function openInBrowser(
   try {
     // Get (or create) the worker for this notebook
     const worker = await plutoManager.getWorker(notebookPath);
-    if (!worker) {
-      vscode.window.showErrorMessage(
-        `Could not open ${notebookPath} on the Pluto server.`
-      );
-      return;
-    }
 
     const url = `${plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
     await openUrl(url);

@@ -1,7 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import { tmpdir } from "os";
-import type { Worker } from "@plutojl/rainbow";
 import { z } from "zod";
 import {
   extensionFor,
@@ -21,7 +20,7 @@ import {
 
 async function renderPng(
   manager: PlutoToolsManager,
-  worker: Worker,
+  notebookPath: string,
   cell_id: string,
   mime: string
 ): Promise<Buffer> {
@@ -34,7 +33,7 @@ async function renderPng(
   const pngPath = join(tmpdir(), `pluto-cell-${cell_id}-${Date.now()}.png`);
   try {
     const render = await manager.executeCodeEphemeral(
-      worker,
+      notebookPath,
       renderCellToPngCode(cell_id, pngPath)
     );
     if (render.errored) {
@@ -106,7 +105,7 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
           if (wantedExt && wantedExt !== nativeExt) {
             // The caller named a format: render to it when possible, refuse otherwise
             if (wantedExt === "png" && !isImageBlockMime(output.mime)) {
-              bytes = await renderPng(manager, worker, cell_id, output.mime);
+              bytes = await renderPng(manager, path, cell_id, output.mime);
               mime = "image/png";
             } else if (!(wantedExt === "jpg" && nativeExt === "jpg")) {
               throw new Error(
@@ -133,7 +132,7 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
             },
           ]);
         }
-        const png = await renderPng(manager, worker, cell_id, output.mime);
+        const png = await renderPng(manager, path, cell_id, output.mime);
         return content([
           {
             type: "image",
