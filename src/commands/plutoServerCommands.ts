@@ -21,6 +21,10 @@ async function startServerWithProgress(
         progress.report({ message: "Server started successfully!" });
         vscode.window.showInformationMessage(message);
       } catch (error: unknown) {
+        if (plutoManager.getState().status === "stopped") {
+          // The start was cancelled
+          return;
+        }
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(
@@ -126,16 +130,15 @@ export async function openInBrowser(
 }
 
 /**
- * A server that is starting is stopped once the start settles; it is never
- * started a second time.
+ * A server that is starting is cancelled; it is never started a second
+ * time.
  */
 export async function toggleServer(plutoManager: PlutoManager): Promise<void> {
   switch (plutoManager.getState().status) {
     case "starting":
-      vscode.window.showInformationMessage(
-        "Pluto server will stop once it finishes starting"
-      );
-      await stopServer(plutoManager);
+      if (plutoManager.cancelStart()) {
+        vscode.window.showInformationMessage("Pluto server start cancelled");
+      }
       break;
     case "ready":
       await stopServer(plutoManager);

@@ -20,10 +20,13 @@ function createGatedServer() {
     startCalls: 0,
     running: false,
     release: () => release(),
-    start: async () => {
+    start: async (signal?: AbortSignal) => {
       server.startCalls++;
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         release = resolve;
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
       });
       server.running = true;
       return "http://localhost:1234";
@@ -71,17 +74,15 @@ describe("server toggle and status bar", () => {
     jest.restoreAllMocks();
   });
 
-  it("does not start a second time when clicked while starting", async () => {
+  it("cancels the start when clicked while starting, never starting again", async () => {
     const started = manager.start();
     await tick();
     expect(manager.getState().status).toBe("starting");
-    expect(item.tooltip).toContain("Click to stop once it is ready");
+    expect(item.tooltip).toContain("Click to cancel");
 
-    const clicked = toggle();
-    await tick();
-    server.release();
-    await Promise.all([started, clicked]);
+    await toggle();
 
+    await expect(started).rejects.toThrow("cancelled");
     expect(server.startCalls).toBe(1);
     expect(manager.getState()).toEqual({ status: "stopped" });
     expect(item.tooltip).toContain("Click to start");

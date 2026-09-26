@@ -459,6 +459,73 @@ describe("PlutoManager concurrency", () => {
       expect(serverManager.running).toBe(false);
     });
 
+    it("cancelStart() aborts the launch and returns to stopped", async () => {
+      const serverManager = createMockServerManager(1);
+      let launchSignal: AbortSignal | undefined;
+      serverManager.start = (signal) => {
+        launchSignal = signal;
+        return new Promise<string>((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(signal.reason))
+        );
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      const seen = recordStates(manager);
+
+      const started = manager.start();
+      await delay(5);
+      expect(manager.cancelStart()).toBe(true);
+
+      await expect(started).rejects.toThrow("cancelled");
+      expect(launchSignal?.aborted).toBe(true);
+      expect(seen).toEqual(["starting", "stopped"]);
+      expect(manager.cancelStart()).toBe(false);
+    });
+
+    it("cancelStart() stops a launch that ignores the signal", async () => {
+      const serverManager = createMockServerManager(20);
+      const stop = jest.spyOn(serverManager, "stop");
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+
+      const started = manager.start();
+      await delay(5);
+      manager.cancelStart();
+
+      await expect(started).rejects.toThrow("cancelled");
+      expect(stop).toHaveBeenCalled();
+      expect(serverManager.running).toBe(false);
+      expect(manager.getState()).toEqual({ status: "stopped" });
+    });
+
+    it("cancelStart() ends stopped even when stopping the launch fails", async () => {
+      const serverManager = createMockServerManager(20);
+      serverManager.stop = async () => {
+        throw new Error("terminate failed");
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+
+      const started = manager.start();
+      await delay(5);
+      manager.cancelStart();
+
+      await expect(started).rejects.toThrow("terminate failed");
+      expect(manager.getState()).toEqual({ status: "stopped" });
+    });
+
     it("starts a server that is stopping once the stop settles", async () => {
       const serverManager = createMockServerManager(1);
       const manager = new PlutoManager(

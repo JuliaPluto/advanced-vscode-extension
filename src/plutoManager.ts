@@ -232,7 +232,20 @@ export class PlutoManager {
     this.startAbort = abort;
     try {
       await launch(abort.signal);
+      abort.signal.throwIfAborted();
     } catch (error) {
+      if (abort.signal.aborted && this.state.status === "starting") {
+        try {
+          await this.server.stop();
+        } finally {
+          this.serverUrl = this.configuredUrl;
+          this.setState({ status: "stopped" });
+        }
+        throw new Error("Pluto server start was cancelled");
+      }
+      if (abort.signal.aborted) {
+        throw new Error("Pluto server was stopped while starting");
+      }
       if (this.state.status === "starting") {
         this.setState({
           status: "failed",
@@ -313,6 +326,18 @@ export class PlutoManager {
         console.error(`Failed to recreate worker for ${notebookPath}:`, error);
       }
     }
+  }
+
+  /**
+   * Cancel a start in flight: its launch is terminated and the state
+   * returns to stopped. Returns whether there was a start to cancel.
+   */
+  public cancelStart(): boolean {
+    if (this.state.status !== "starting" || !this.startAbort) {
+      return false;
+    }
+    this.startAbort.abort();
+    return true;
   }
 
   /**
