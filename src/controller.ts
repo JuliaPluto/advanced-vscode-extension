@@ -7,7 +7,7 @@ import type {
   NotebookData,
   UpdateEvent,
 } from "@plutojl/rainbow";
-import { formatCellOutput } from "./cellOutput.ts";
+import { formatCellOutput, rendererCellState } from "./cellOutput.ts";
 import { ExecutionLedger } from "./executionLedger.ts";
 import {
   EditProvenance,
@@ -456,21 +456,18 @@ export class PlutoNotebookController {
     this.sendCellState(notebook, cellId, state);
   }
 
-  /**
-   * Streams a cell's logs, stdout and progress to its renderer. While an
-   * execution is live, its output reaches the renderer only through
-   * replaceOutput, so it is left out here.
-   */
+  /** Streams a cell's logs, stdout and progress to its renderer. */
   private sendCellState(
     notebook: vscode.NotebookDocument,
     cellId: CellId,
     state: CellResultData
   ): void {
-    const live = this.ledger.isActive(notebook.uri.fsPath, cellId);
-    const { output, ...rest } = state;
     this.sendMessageToRenderer(notebook, {
       type: "setState",
-      state: live ? rest : { ...rest, output },
+      state: rendererCellState(
+        state,
+        this.ledger.isActive(notebook.uri.fsPath, cellId)
+      ),
       cell_id: cellId,
     });
   }

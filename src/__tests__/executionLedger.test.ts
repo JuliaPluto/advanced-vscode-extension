@@ -182,6 +182,43 @@ describe("ExecutionLedger", () => {
     expect(created[1].outputs).toEqual([["out-8"]]);
   });
 
+  it("draws the same body again when it carries a new stamp", () => {
+    const { ledger, created } = setup();
+    ledger.begin("/a.jl", "c1", "cell");
+    ledger.finish("/a.jl", "c1", result(7));
+
+    ledger.begin("/a.jl", "c1", "cell");
+    ledger.finish(
+      "/a.jl",
+      "c1",
+      result(8, { output: { body: "out-7", last_run_timestamp: 8 } } as never)
+    );
+    expect(created[1].outputs).toEqual([["out-7"]]);
+  });
+
+  it("draws a result once per run however often it is rendered", () => {
+    const { ledger, created } = setup();
+    ledger.begin("/a.jl", "c1", "cell");
+    ledger.render("/a.jl", "c1", result(8));
+    ledger.render("/a.jl", "c1", result(8));
+    ledger.finish("/a.jl", "c1", result(8));
+    expect(created[0].outputs).toEqual([["out-8"]]);
+    expect(created[0].ended[0].success).toBe(true);
+    expect(ledger.needsRender("/a.jl", "c1", result(8))).toBe(false);
+  });
+
+  it("redraws a streamed result whose output was rejected", async () => {
+    const { ledger, created } = setup();
+    const execution = ledger.begin("/a.jl", "c1", "cell");
+    execution.rejectOutput = true;
+    ledger.render("/a.jl", "c1", result(8));
+    await Promise.resolve();
+    await Promise.resolve();
+    execution.rejectOutput = false;
+    ledger.finish("/a.jl", "c1", result(8));
+    expect(created[0].outputs).toEqual([["out-8"]]);
+  });
+
   it("renders a stamp-less result into the live execution", () => {
     const { ledger, created } = setup();
     ledger.begin("/a.jl", "c1", "cell");
