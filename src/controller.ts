@@ -8,26 +8,20 @@ import type {
   UpdateEvent,
 } from "@plutojl/rainbow";
 import { formatCellOutput, foldHiddenCellsEnabled } from "./serializer.ts";
+import { createVsCodeCellFromPlutoCell } from "./plutoSerializer.ts";
 import {
-  extractMarkdownContent,
-  createVsCodeCellFromPlutoCell,
-} from "./plutoSerializer.ts";
+  encodeMarkdown,
+  markdownTextFromCode,
+  MARKDOWN_WRAPPER_KEY,
+} from "./markdownCodec.ts";
 import { isDefined, isNotDefined, isEmptyString } from "./helpers.ts";
 import { type Worker } from "@plutojl/rainbow";
 
-/**
- * Prepare cell code for Pluto worker
- * Wraps markdown cells in #VSCODE-MARKDOWN marker and md""" syntax
- */
 function prepareCellCodeForWorker(cell: vscode.NotebookCell): string {
   const code = cell.document.getText();
-
-  // If it's a markdown cell, wrap it properly for Pluto
-  if (cell.kind === vscode.NotebookCellKind.Markup) {
-    return `#VSCODE-MARKDOWN\nmd"""\n${code}\n"""`;
-  }
-
-  return code;
+  return cell.kind === vscode.NotebookCellKind.Markup
+    ? encodeMarkdown(code, cell.metadata?.[MARKDOWN_WRAPPER_KEY])
+    : code;
 }
 
 // --- START: Merged Interfaces ---
@@ -972,13 +966,10 @@ export class PlutoNotebookController {
     if (!cell) {
       return;
     }
-    let newText = rawCode ?? "";
-    if (cell.kind === vscode.NotebookCellKind.Markup) {
-      const markdown = extractMarkdownContent(newText);
-      if (isDefined(markdown)) {
-        newText = markdown;
-      }
-    }
+    const newText =
+      cell.kind === vscode.NotebookCellKind.Markup
+        ? markdownTextFromCode(rawCode ?? "")
+        : (rawCode ?? "");
     if (cell.document.getText() === newText) {
       return;
     }
