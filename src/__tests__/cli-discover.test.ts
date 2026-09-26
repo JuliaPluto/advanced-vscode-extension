@@ -1,6 +1,7 @@
 import * as http from "http";
 import type { AddressInfo } from "net";
 import {
+  collectStatus,
   discoverMcp,
   isInsideVSCode,
   probeMcp,
@@ -170,6 +171,61 @@ describe("discoverMcp", () => {
       ).toBeUndefined();
     } finally {
       vscode.server.close();
+    }
+  });
+});
+
+describe("collectStatus", () => {
+  function plutoServer() {
+    return serve((_req, res) => res.end("<title>Pluto.jl</title>"));
+  }
+
+  it("probes the Pluto server the tool server reports", async () => {
+    const pluto = await plutoServer();
+    const plutoUrl = `http://localhost:${pluto.port}`;
+    const tools = await healthServer({
+      status: "ok",
+      host: "cli",
+      plutoServerRunning: true,
+      plutoUrl,
+    });
+    try {
+      const status = await collectStatus({
+        mcpPort: tools.port,
+        mcpPortExplicit: true,
+        plutoPort: 1,
+        env: {},
+      });
+      expect(status.pluto).toEqual({ url: plutoUrl, running: true });
+    } finally {
+      tools.server.close();
+      pluto.server.close();
+    }
+  });
+
+  it("probes an explicitly given Pluto location instead", async () => {
+    const tools = await healthServer({
+      status: "ok",
+      host: "cli",
+      plutoServerRunning: true,
+      plutoUrl: "http://localhost:1",
+    });
+    const pluto = await plutoServer();
+    try {
+      const status = await collectStatus({
+        mcpPort: tools.port,
+        mcpPortExplicit: true,
+        plutoPort: pluto.port,
+        plutoExplicit: true,
+        env: {},
+      });
+      expect(status.pluto).toEqual({
+        url: `http://localhost:${pluto.port}`,
+        running: true,
+      });
+    } finally {
+      tools.server.close();
+      pluto.server.close();
     }
   });
 });

@@ -7,6 +7,7 @@ import {
   resolveRunConfig,
 } from "../cli/resolveConfig.ts";
 import { DEFAULTS } from "../cli/config.ts";
+import type { RawArgs } from "../cli/parseArgs.ts";
 
 describe("resolveConfig", () => {
   let cwd: string;
@@ -72,6 +73,23 @@ describe("resolveConfig", () => {
     expect(config.mcpPortExplicit).toBe(true);
     expect(config.plutoPort).toBe(1200);
     expect(config.juliaVersion).toBe("1.11");
+  });
+
+  it("treats a Pluto port or URL from a flag or env as explicit, not from a file", () => {
+    fs.writeFileSync(
+      path.join(cwd, ".plutomcp.json"),
+      JSON.stringify({ plutoPort: 1300, serverUrl: "http://localhost:1300" })
+    );
+    const explicit = (args: Partial<RawArgs>, env: NodeJS.ProcessEnv = {}) =>
+      resolveRunConfig({ command: "status", ...args }, { cwd, env })
+        .plutoExplicit;
+    expect(explicit({})).toBe(false);
+    expect(explicit({ plutoPort: 1235 })).toBe(true);
+    expect(explicit({ plutoUrl: "http://localhost:1235" })).toBe(true);
+    expect(explicit({}, { PLUTO_PORT: "1235" })).toBe(true);
+    expect(explicit({}, { PLUTO_SERVER_URL: "http://localhost:1235" })).toBe(
+      true
+    );
   });
 
   it("accepts an http(s) Pluto URL", () => {
