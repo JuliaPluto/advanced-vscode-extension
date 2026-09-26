@@ -27,7 +27,9 @@ export interface LedgerDeps<
  * (notebook path, Pluto cell id), and the stamp of the last result drawn
  * per cell. Every execution, including a materialized one, leaves through
  * `settle`: ended at most once, removed from the ledger, and announced via
- * `onSettled`. A result is stamped as drawn only if its output was accepted.
+ * `onSettled`. A result stays stamped as drawn only if its output was
+ * accepted: the stamp is recorded with the output and withdrawn if the
+ * output is rejected.
  */
 export class ExecutionLedger<
   Cell,
@@ -92,7 +94,18 @@ export class ExecutionLedger<
     if (!execution) {
       return false;
     }
-    if (this.replaceOutput(execution, this.deps.formatOutput(state))) {
+    const stamp = state.output?.last_run_timestamp;
+    const accepted = this.replaceOutput(
+      execution,
+      this.deps.formatOutput(state),
+      () => {
+        const stamps = this.renderedStamp.get(notebookPath);
+        if (stamp && stamps?.get(cellId) === stamp) {
+          stamps.delete(cellId);
+        }
+      }
+    );
+    if (accepted) {
       this.markRendered(notebookPath, cellId, state);
     }
     this.settle(notebookPath, cellId, execution, !state.errored, endTime);
@@ -232,17 +245,22 @@ export class ExecutionLedger<
     }
   }
 
-  /** false when the execution rejected the output synchronously. */
+  /**
+   * false when the execution rejected the output synchronously;
+   * `onRejected` runs when it rejects it asynchronously.
+   */
   private replaceOutput(
     execution: CellExecution<Output>,
-    output: Output
+    output: Output,
+    onRejected?: () => void
   ): boolean {
     try {
       const pending = execution.replaceOutput([output]);
       if (pending) {
-        pending.then(undefined, (error: unknown) =>
-          this.deps.log?.(`[LEDGER] replaceOutput rejected: ${String(error)}`)
-        );
+        pending.then(undefined, (error: unknown) => {
+          this.deps.log?.(`[LEDGER] replaceOutput rejected: ${String(error)}`);
+          onRejected?.();
+        });
       }
       return true;
     } catch {
