@@ -363,6 +363,34 @@ describe("toTransport / fromTransport", () => {
     expect(fromTransport(sent).body).toEqual(big);
   });
 
+  it("decodes the same stand-in to the same array", () => {
+    const sent = throughJson(toTransport({ mime: "image/png", body: png }));
+    expect(fromTransport(sent).body).toBe(
+      fromTransport(throughJson(sent)).body
+    );
+  });
+
+  it("encodes a body object once", () => {
+    const output = { mime: "image/png", body: png };
+    expect(toTransport(output).body).toBe(toTransport({ ...output }).body);
+  });
+
+  it("keeps recent decodes within a byte budget", () => {
+    const big = (fill: number) =>
+      throughJson(
+        toTransport({
+          mime: "image/png",
+          body: new Uint8Array(12 * 1024 * 1024).fill(fill),
+        })
+      );
+    const first = big(1);
+    const firstBytes = fromTransport(first).body;
+    expect(fromTransport(first).body).toBe(firstBytes);
+    fromTransport(big(2));
+    fromTransport(big(3));
+    expect(fromTransport(first).body).not.toBe(firstBytes);
+  });
+
   it("round-trips an image larger than one encoding chunk", () => {
     const big = new Uint8Array(100_000).map((_, i) => i % 251);
     const back = fromTransport(

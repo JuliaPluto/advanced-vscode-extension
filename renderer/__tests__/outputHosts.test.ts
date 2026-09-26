@@ -38,6 +38,14 @@ describe("canAdopt", () => {
     expect(canAdopt(undefined, out("a"))).toBe(false);
   });
 
+  it("adopts an image re-sent with the same bytes", () => {
+    const image = { $bytes: "iVBORw0K" };
+    expect(canAdopt(out(image), out({ $bytes: "iVBORw0K" }))).toBe(true);
+    expect(canAdopt(out(image), out({ $bytes: "R0lGODlh" }))).toBe(false);
+    expect(canAdopt(out(image, 1), out({ $bytes: "iVBORw0K" }, 2))).toBe(false);
+    expect(canAdopt(out(image), out("iVBORw0K"))).toBe(false);
+  });
+
   it("ignores the run when the output persists its JS state", () => {
     expect(canAdopt(out("a", 1), out("a", 2, true))).toBe(true);
     expect(
