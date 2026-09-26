@@ -37,28 +37,39 @@ export function withCodeFile(
   return { ...args, code: code.replace(/\r?\n$/, "") };
 }
 
+/** Tool servers without `x-pluto-path` marks name their file arguments this way. */
+const LEGACY_PATH_ARGS = ["path", "output_path", "new_path"];
+
+/**
+ * The arguments of `tool` that name files: those its schema marks with
+ * `x-pluto-path`, or the legacy names when no tool in `tools` carries a
+ * mark (a server that predates them).
+ */
+export function pathArgNames(tool: ToolInfo, tools: ToolInfo[]): string[] {
+  const marked = (t: ToolInfo) =>
+    Object.entries(t.inputSchema?.properties ?? {})
+      .filter(([, schema]) => schema["x-pluto-path"])
+      .map(([name]) => name);
+  if (!tools.some((t) => marked(t).length > 0)) {
+    return LEGACY_PATH_ARGS;
+  }
+  return marked(tool);
+}
+
 /**
  * Notebook tools identify notebooks by absolute path (the server cannot
- * know the caller's working directory), so relative values of the
- * arguments the tool's schema marks with `x-pluto-path` are resolved here,
- * where that directory is known.
+ * know the caller's working directory), so relative values of file
+ * arguments are resolved here, where that directory is known.
  */
 export function resolvePathArgs(
   args: Record<string, unknown>,
-  tool: ToolInfo,
+  pathArgs: string[],
   cwd: string
 ): Record<string, unknown> {
   const out = { ...args };
-  for (const [key, schema] of Object.entries(
-    tool.inputSchema?.properties ?? {}
-  )) {
+  for (const key of pathArgs) {
     const value = out[key];
-    if (
-      schema["x-pluto-path"] &&
-      typeof value === "string" &&
-      value !== "" &&
-      !path.isAbsolute(value)
-    ) {
+    if (typeof value === "string" && value !== "" && !path.isAbsolute(value)) {
       out[key] = path.resolve(cwd, value);
     }
   }
@@ -82,7 +93,7 @@ function checkValue(
     ];
   }
   const expected = schema.type;
-  if (expected === undefined) return [];
+  if (typeof expected !== "string") return [];
   const actual = typeOf(value);
   const matches =
     expected === "integer" ? Number.isInteger(value) : expected === actual;

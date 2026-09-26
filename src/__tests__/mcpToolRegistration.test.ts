@@ -4,7 +4,7 @@ import { jest } from "@jest/globals";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { resolvePathArgs } from "../cli/toolArgs.js";
+import { pathArgNames } from "../cli/toolArgs.js";
 import type { ToolInfo } from "../cli/toolClient.js";
 import type { PlutoManager } from "../plutoManager.js";
 import * as toolSet from "../mcpTools/index.js";
@@ -70,33 +70,15 @@ describe("MCP registration", () => {
     );
   });
 
-  it("marks every file argument, so the CLI resolves exactly those", async () => {
-    const { tools } = await sessions[0].listTools();
-    const marked = new Set<string>();
-    for (const t of tools) {
-      const properties = (t.inputSchema.properties ?? {}) as Record<
-        string,
-        { type?: string; "x-pluto-path"?: boolean }
-      >;
-      const strings = Object.keys(properties).filter(
-        (name) => properties[name].type === "string"
-      );
-      const resolved = resolvePathArgs(
-        Object.fromEntries(strings.map((name) => [name, "rel"])),
-        t as ToolInfo,
-        "/cwd"
-      );
-      for (const name of strings) {
-        const isPath = resolved[name] === "/cwd/rel";
-        expect({ tool: t.name, name, isPath }).toEqual({
-          tool: t.name,
-          name,
-          isPath: !!properties[name]["x-pluto-path"],
-        });
-        if (isPath) marked.add(name);
-      }
-    }
-    expect(marked).toContain("path");
+  it("marks exactly the file arguments, so the CLI resolves those", async () => {
+    const tools = (await sessions[0].listTools()).tools as ToolInfo[];
+    const marked = new Set(tools.flatMap((t) => pathArgNames(t, tools)));
+    expect(marked).toEqual(new Set(["path", "output_path", "new_path"]));
+    const readOutput = tools.find((t) => t.name === "read_cell_output")!;
+    expect(pathArgNames(readOutput, tools).sort()).toEqual([
+      "output_path",
+      "path",
+    ]);
   });
 
   it("lists every tool in the package README, and nothing else", () => {

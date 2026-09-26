@@ -3,6 +3,7 @@ import * as path from "path";
 import { extensionFor } from "../notebookOutput.ts";
 import {
   checkToolArgs,
+  pathArgNames,
   readToolArgsSource,
   resolvePathArgs,
   withCodeFile,
@@ -35,7 +36,7 @@ function describeTool(tool: ToolInfo): string {
       const schema = props[name];
       const type = schema.enum
         ? schema.enum.map(String).join(" | ")
-        : (schema.type ?? "any");
+        : [schema.type ?? "any"].flat().join(" | ");
       const flags = [
         required.has(name) ? yellow("required") : "",
         schema["x-pluto-path"] ? dim("file path, relative to cwd") : "",
@@ -140,6 +141,9 @@ export interface CallOptions {
   codeFile?: string;
 }
 
+/** Exit status when `call` rejects its input before anything is sent. */
+const REFUSED = 2;
+
 export async function callTool(
   port: number,
   toolName: string,
@@ -154,7 +158,7 @@ export async function callTool(
     console.error(
       `${err.red("error:")} could not read tool arguments from ${argsJson}: ${e instanceof Error ? e.message : String(e)}`
     );
-    process.exit(1);
+    process.exit(REFUSED);
   }
   let parsed: unknown;
   try {
@@ -171,7 +175,7 @@ export async function callTool(
         `  e.g. npx @plutojl/cli call ${toolName} '{"path": "nb.pluto.jl"}'  (or @args.json, or - for stdin)`
       )
     );
-    process.exit(1);
+    process.exit(REFUSED);
   }
   let args = parsed as Record<string, unknown>;
   if (codeFile !== undefined) {
@@ -181,7 +185,7 @@ export async function callTool(
       console.error(
         `${err.red("error:")} --code-file ${codeFile}: ${e instanceof Error ? e.message : String(e)}`
       );
-      process.exit(1);
+      process.exit(REFUSED);
     }
   }
 
@@ -191,7 +195,18 @@ export async function callTool(
     if (!tool) {
       return { refused: noSuchTool(toolName, tools) };
     }
-    const resolved = resolvePathArgs(args, tool, process.cwd());
+    if (codeFile !== undefined && !tool.inputSchema?.properties?.code) {
+      return {
+        refused: badArgs(tool, [
+          `--code-file sets the code argument, which ${toolName} does not take`,
+        ]),
+      };
+    }
+    const resolved = resolvePathArgs(
+      args,
+      pathArgNames(tool, tools),
+      process.cwd()
+    );
     const problems = checkToolArgs(resolved, tool);
     if (problems.length) {
       return { refused: badArgs(tool, problems) };
@@ -203,7 +218,7 @@ export async function callTool(
   });
   if ("refused" in outcome) {
     console.error(outcome.refused);
-    process.exit(1);
+    process.exit(REFUSED);
   }
   const { result } = outcome;
 

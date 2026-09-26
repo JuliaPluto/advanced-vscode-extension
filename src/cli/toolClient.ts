@@ -12,7 +12,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "./config.ts";
 
 export interface ToolSchema {
-  type?: string;
+  type?: string | string[];
   description?: string;
   enum?: unknown[];
   default?: unknown;

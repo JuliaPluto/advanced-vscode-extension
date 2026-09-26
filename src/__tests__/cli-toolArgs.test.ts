@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import {
   checkToolArgs,
+  pathArgNames,
   readToolArgsSource,
   resolvePathArgs,
   withCodeFile,
@@ -23,10 +24,37 @@ const readCellOutput: ToolInfo = {
   },
 };
 
+describe("pathArgNames", () => {
+  const listNotebooks: ToolInfo = { name: "list_notebooks" };
+
+  it("takes the marked arguments when the server marks any", () => {
+    const tools = [listNotebooks, readCellOutput];
+    expect(pathArgNames(readCellOutput, tools)).toEqual([
+      "path",
+      "output_path",
+    ]);
+    expect(pathArgNames(listNotebooks, tools)).toEqual([]);
+  });
+
+  it("falls back to the legacy names when no tool is marked", () => {
+    const legacy: ToolInfo = {
+      name: "read_cell_output",
+      inputSchema: {
+        properties: { path: { type: "string" }, cell_id: { type: "string" } },
+      },
+    };
+    expect(pathArgNames(legacy, [listNotebooks, legacy])).toEqual([
+      "path",
+      "output_path",
+      "new_path",
+    ]);
+  });
+});
+
 describe("resolvePathArgs", () => {
   const cwd = path.join(os.tmpdir(), "proj");
 
-  it("resolves exactly the arguments the schema marks as paths", () => {
+  it("resolves the named arguments against cwd, and only those", () => {
     expect(
       resolvePathArgs(
         {
@@ -35,7 +63,7 @@ describe("resolvePathArgs", () => {
           cell_id: "c",
           label: "rel/not/a/path",
         },
-        readCellOutput,
+        ["path", "output_path"],
         cwd
       )
     ).toEqual({
@@ -47,14 +75,10 @@ describe("resolvePathArgs", () => {
   });
 
   it("leaves absolute paths, empty strings, and non-strings alone", () => {
-    const args = { path: "/abs/nb.jl", output_path: "", cell_id: 42 };
-    expect(resolvePathArgs(args, readCellOutput, cwd)).toEqual(args);
-  });
-
-  it("resolves nothing for a tool without marked arguments", () => {
-    expect(resolvePathArgs({ path: "nb.jl" }, { name: "x" }, cwd)).toEqual({
-      path: "nb.jl",
-    });
+    const args = { path: "/abs/nb.jl", output_path: "", new_path: 42 };
+    expect(
+      resolvePathArgs(args, ["path", "output_path", "new_path"], cwd)
+    ).toEqual(args);
   });
 });
 
@@ -104,6 +128,14 @@ describe("checkToolArgs", () => {
     expect(
       checkToolArgs({ cell_ids: ["a"], index: 0, run: true }, moveCells)
     ).toEqual([]);
+  });
+
+  it("skips the type check for a union type", () => {
+    const tool: ToolInfo = {
+      name: "t",
+      inputSchema: { properties: { x: { type: ["string", "null"] } } },
+    };
+    expect(checkToolArgs({ x: null }, tool)).toEqual([]);
   });
 
   it("rejects every argument of a tool that takes none", () => {

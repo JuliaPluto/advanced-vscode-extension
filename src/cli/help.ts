@@ -80,6 +80,10 @@ export function helpText(): string {
         "",
         `Relative file-path arguments are resolved against the current directory`
       ),
+      opt(
+        "",
+        `Exit status 2: arguments refused before sending; 1: the tool reported an error`
+      ),
       opt("--mcp-port <port>", "Tool server to talk to"),
     ]),
     "",
