@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { getMcpEndpoint } from "../mcpServerDefinitionProvider.ts";
+import { MCP_SERVER_NAME, upsertMcpServer } from "../mcpClientConfig.ts";
 import { openUrl } from "./plutoServerCommands.ts";
 
 /**
@@ -19,32 +20,57 @@ async function createClaudeCodeMCPConfig(mcpUrl: string): Promise<void> {
   const configPath = vscode.Uri.joinPath(workspaceFolders[0].uri, ".mcp.json");
 
   try {
-    let existingConfig: { mcpServers?: Record<string, unknown> } = {};
-
+    let raw: string | undefined;
     try {
-      const existingContent = await vscode.workspace.fs.readFile(configPath);
-      existingConfig = JSON.parse(new TextDecoder().decode(existingContent));
-    } catch {
-      // File doesn't exist, use default empty config
+      raw = new TextDecoder().decode(
+        await vscode.workspace.fs.readFile(configPath)
+      );
+    } catch (error) {
+      if (
+        !(error instanceof vscode.FileSystemError) ||
+        error.code !== "FileNotFound"
+      ) {
+        throw error;
+      }
     }
 
-    existingConfig.mcpServers ??= {};
-    existingConfig.mcpServers["pluto-notebook"] = {
-      url: mcpUrl,
-      type: "http",
-    };
-
-    const configContent = JSON.stringify(existingConfig, null, 2);
-    await vscode.workspace.fs.writeFile(
-      configPath,
-      new TextEncoder().encode(configContent)
-    );
+    let result = upsertMcpServer(raw, { format: "claude-code", url: mcpUrl });
+    if (result.kind === "exists" && !result.current) {
+      const overwrite = await vscode.window.showWarningMessage(
+        `Overwrite existing ${MCP_SERVER_NAME} entry?`,
+        {
+          modal: true,
+          detail: `${configPath.fsPath} already configures ${MCP_SERVER_NAME} with different settings.`,
+        },
+        "Overwrite"
+      );
+      if (overwrite !== "Overwrite") return;
+      result = upsertMcpServer(raw, {
+        format: "claude-code",
+        url: mcpUrl,
+        force: true,
+      });
+    }
+    if (result.kind === "invalid") {
+      vscode.window.showErrorMessage(
+        `${configPath.fsPath} ${result.reason}; fix it and try again. The file was not changed.`
+      );
+      return;
+    }
+    if (result.kind === "updated") {
+      await vscode.workspace.fs.writeFile(
+        configPath,
+        new TextEncoder().encode(result.text)
+      );
+    }
 
     const doc = await vscode.workspace.openTextDocument(configPath);
     await vscode.window.showTextDocument(doc);
 
     vscode.window.showInformationMessage(
-      `Claude Code config created/updated at ${configPath.fsPath}`
+      result.kind === "updated"
+        ? `Claude Code config created/updated at ${configPath.fsPath}`
+        : `Claude Code config at ${configPath.fsPath} already points at this server`
     );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
