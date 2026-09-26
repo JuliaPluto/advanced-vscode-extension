@@ -131,25 +131,28 @@ export async function discoverMcp(
   return found.find((p) => p.host === "vscode") ?? found[0];
 }
 
+/**
+ * Probe the tool server, then Pluto: at the configured location when one
+ * was given explicitly, else where the tool server reports its Pluto.
+ */
 export async function collectStatus(opts: {
   mcpPort: number;
   mcpPortExplicit: boolean;
   plutoPort: number;
   plutoUrl?: string;
+  plutoExplicit?: boolean;
   env?: NodeJS.ProcessEnv;
 }): Promise<Status> {
-  const plutoUrl = opts.plutoUrl ?? `http://localhost:${opts.plutoPort}`;
-  const [pluto, mcp] = await Promise.all([
-    probePluto(plutoUrl),
-    discoverMcp({
-      port: opts.mcpPort,
-      explicit: opts.mcpPortExplicit,
-      env: opts.env,
-    }),
-  ]);
+  const mcp = await discoverMcp({
+    port: opts.mcpPort,
+    explicit: opts.mcpPortExplicit,
+    env: opts.env,
+  });
+  const configured = opts.plutoUrl ?? `http://localhost:${opts.plutoPort}`;
+  const plutoUrl = (!opts.plutoExplicit && mcp?.plutoUrl) || configured;
   return {
     insideVSCode: isInsideVSCode(opts.env),
-    pluto,
+    pluto: await probePluto(plutoUrl),
     mcp,
     mcpPort: opts.mcpPort,
   };
