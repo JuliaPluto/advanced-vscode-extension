@@ -5,6 +5,7 @@ class FakeExecution implements CellExecution<string> {
   started: number[] = [];
   outputs: string[][] = [];
   ended: Array<{ success: boolean | undefined; endTime?: number }> = [];
+  rejectOutput = false;
 
   constructor(readonly cell: string) {}
 
@@ -12,9 +13,12 @@ class FakeExecution implements CellExecution<string> {
     this.started.push(startTime ?? -1);
   }
 
-  replaceOutput(out: string[]): void {
+  replaceOutput(out: string[]): Promise<void> | void {
     if (this.ended.length > 0) {
       throw new Error("execution already resolved");
+    }
+    if (this.rejectOutput) {
+      return Promise.reject(new Error("cell disposed"));
     }
     this.outputs.push(out);
   }
@@ -44,6 +48,7 @@ function result(
 function setup() {
   const created: FakeExecution[] = [];
   const settled: Array<[string, string]> = [];
+  const logs: string[] = [];
   const ledger = new ExecutionLedger<string, string, FakeExecution>({
     createExecution: (cell) => {
       const execution = new FakeExecution(cell);
@@ -52,9 +57,10 @@ function setup() {
     },
     formatOutput: (state) => String(state.output?.body),
     onSettled: (path, cellId) => settled.push([path, cellId]),
+    log: (message) => logs.push(message),
     now: () => 1000,
   });
-  return { ledger, created, settled };
+  return { ledger, created, settled, logs };
 }
 
 describe("ExecutionLedger", () => {
@@ -102,6 +108,45 @@ describe("ExecutionLedger", () => {
     expect(created[0].ended).toHaveLength(1);
     expect(ledger.isActive("/a.jl", "c1")).toBe(false);
     expect(settled).toEqual([["/a.jl", "c1"]]);
+    expect(ledger.needsRender("/a.jl", "c1", result(7))).toBe(true);
+  });
+
+  it("fails a live execution bound to a stale cell object and starts anew", () => {
+    const { ledger, created, settled } = setup();
+    const stale = ledger.begin("/a.jl", "c1", "old-cell");
+    const fresh = ledger.begin("/a.jl", "c1", "new-cell");
+
+    expect(fresh).not.toBe(stale);
+    expect(fresh.cell).toBe("new-cell");
+    expect(stale.ended[0].success).toBe(false);
+    expect(settled).toEqual([["/a.jl", "c1"]]);
+    expect(created).toHaveLength(2);
+  });
+
+  it("fails a replaced cell's execution only while bound to that cell object", () => {
+    const { ledger, created } = setup();
+    ledger.begin("/a.jl", "c1", "old-cell");
+
+    ledger.fail("/a.jl", "c1", { cell: "other-cell" });
+    expect(ledger.isActive("/a.jl", "c1")).toBe(true);
+
+    ledger.fail("/a.jl", "c1", { cell: "old-cell" });
+    expect(created[0].ended[0].success).toBe(false);
+    expect(ledger.needsRender("/a.jl", "c1", result(7))).toBe(true);
+
+    ledger.materialize("/a.jl", "c1", "new-cell", result(7));
+    expect(created[1].cell).toBe("new-cell");
+    expect(created[1].outputs).toEqual([["out-7"]]);
+  });
+
+  it("logs an asynchronous replaceOutput rejection", async () => {
+    const { ledger, logs } = setup();
+    ledger.begin("/a.jl", "c1", "cell").rejectOutput = true;
+    ledger.render("/a.jl", "c1", result(7));
+    await Promise.resolve();
+    expect(logs).toEqual([
+      "[LEDGER] replaceOutput rejected: Error: cell disposed",
+    ]);
   });
 
   it("render and finish report false with no live execution", () => {

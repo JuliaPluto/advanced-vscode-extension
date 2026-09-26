@@ -18,21 +18,26 @@ export interface LedgerDeps<
   formatOutput(state: CellResultData): Output;
   /** Fired once for every execution that ends, whichever way it ends. */
   onSettled(notebookPath: string, cellId: CellId): void;
+  log?(message: string): void;
   now?(): number;
 }
 
 /**
  * Owns the live cell executions of every notebook, keyed by
  * (notebook path, Pluto cell id), and the stamp of the last result drawn
- * per cell. Every execution leaves through `settle`: ended at most once,
- * removed from the ledger, and announced via `onSettled`.
+ * per cell. Every execution, including a materialized one, leaves through
+ * `settle`: ended at most once, removed from the ledger, and announced via
+ * `onSettled`. A result is stamped as drawn only if its output was accepted.
  */
 export class ExecutionLedger<
   Cell,
   Output,
   Execution extends CellExecution<Output> = CellExecution<Output>,
 > {
-  private readonly active = new Map<string, Map<CellId, Execution>>();
+  private readonly active = new Map<
+    string,
+    Map<CellId, { execution: Execution; cell: Cell }>
+  >();
   // last_run_timestamp of the most recently rendered result per cell;
   // recorded only once that result is on screen
   private readonly renderedStamp = new Map<string, Map<CellId, number>>();
@@ -43,21 +48,19 @@ export class ExecutionLedger<
     return this.deps.now?.() ?? Date.now();
   }
 
-  /** The execution for this cell, created and started if none is live. */
+  /**
+   * The execution for this cell, created and started if none is live. A
+   * live execution bound to a different cell object is failed and replaced.
+   */
   begin(notebookPath: string, cellId: CellId, cell: Cell): Execution {
-    let executions = this.active.get(notebookPath);
-    const existing = executions?.get(cellId);
+    const existing = this.active.get(notebookPath)?.get(cellId);
+    if (existing?.cell === cell) {
+      return existing.execution;
+    }
     if (existing) {
-      return existing;
+      this.settle(notebookPath, cellId, existing.execution, false);
     }
-    const execution = this.deps.createExecution(cell);
-    if (!executions) {
-      executions = new Map();
-      this.active.set(notebookPath, executions);
-    }
-    executions.set(cellId, execution);
-    execution.start(this.now());
-    return execution;
+    return this.open(notebookPath, cellId, cell, this.now());
   }
 
   isActive(notebookPath: string, cellId: CellId): boolean {
@@ -70,7 +73,7 @@ export class ExecutionLedger<
 
   /** Streams output into the live execution; false when there is none. */
   render(notebookPath: string, cellId: CellId, state: CellResultData): boolean {
-    const execution = this.active.get(notebookPath)?.get(cellId);
+    const execution = this.active.get(notebookPath)?.get(cellId)?.execution;
     if (!execution) {
       return false;
     }
@@ -85,19 +88,21 @@ export class ExecutionLedger<
     state: CellResultData,
     endTime?: number
   ): boolean {
-    const execution = this.active.get(notebookPath)?.get(cellId);
+    const execution = this.active.get(notebookPath)?.get(cellId)?.execution;
     if (!execution) {
       return false;
     }
-    this.replaceOutput(execution, this.deps.formatOutput(state));
-    this.markRendered(notebookPath, cellId, state);
+    if (this.replaceOutput(execution, this.deps.formatOutput(state))) {
+      this.markRendered(notebookPath, cellId, state);
+    }
     this.settle(notebookPath, cellId, execution, !state.errored, endTime);
     return true;
   }
 
   /**
    * Draws a result that arrived with no execution in flight, as a
-   * synthetic execution whose duration is Pluto's recorded runtime.
+   * synthetic execution whose duration is Pluto's recorded runtime. A live
+   * execution for the cell is finished with the result instead.
    */
   materialize(
     notebookPath: string,
@@ -106,12 +111,10 @@ export class ExecutionLedger<
     state: CellResultData
   ): void {
     const now = this.now();
-    const execution = this.deps.createExecution(cell);
-    execution.start(now - (state.runtime ?? 0) / 1e6);
-    this.replaceOutput(execution, this.deps.formatOutput(state));
-    this.end(execution, !state.errored, now);
-    this.markRendered(notebookPath, cellId, state);
-    this.deps.onSettled(notebookPath, cellId);
+    if (!this.isActive(notebookPath, cellId)) {
+      this.open(notebookPath, cellId, cell, now - (state.runtime ?? 0) / 1e6);
+    }
+    this.finish(notebookPath, cellId, state, now);
   }
 
   /** Whether this result still has to be drawn: settled, stamped, and not drawn yet. */
@@ -130,18 +133,24 @@ export class ExecutionLedger<
   }
 
   /**
-   * Ends the cell's execution as failed. With `only`, a different live
-   * execution for the cell is left alone.
+   * Ends the cell's execution as failed. With `only` or `cell`, a live
+   * execution that is not that execution, or not bound to that cell
+   * object, is left alone.
    */
   fail(
     notebookPath: string,
     cellId: CellId,
-    opts: { output?: Output; only?: Execution } = {}
+    opts: { output?: Output; only?: Execution; cell?: Cell } = {}
   ): void {
-    const execution = this.active.get(notebookPath)?.get(cellId);
-    if (!execution || (opts.only && opts.only !== execution)) {
+    const entry = this.active.get(notebookPath)?.get(cellId);
+    if (
+      !entry ||
+      (opts.only && opts.only !== entry.execution) ||
+      (opts.cell && opts.cell !== entry.cell)
+    ) {
       return;
     }
+    const { execution } = entry;
     if (opts.output !== undefined) {
       this.replaceOutput(execution, opts.output);
     }
@@ -153,7 +162,7 @@ export class ExecutionLedger<
     if (!executions) {
       return;
     }
-    for (const [cellId, execution] of [...executions]) {
+    for (const [cellId, { execution }] of [...executions]) {
       this.settle(notebookPath, cellId, execution, false);
     }
   }
@@ -176,6 +185,23 @@ export class ExecutionLedger<
   dispose(): void {
     this.failAll();
     this.renderedStamp.clear();
+  }
+
+  private open(
+    notebookPath: string,
+    cellId: CellId,
+    cell: Cell,
+    startTime: number
+  ): Execution {
+    const execution = this.deps.createExecution(cell);
+    let executions = this.active.get(notebookPath);
+    if (!executions) {
+      executions = new Map();
+      this.active.set(notebookPath, executions);
+    }
+    executions.set(cellId, { execution, cell });
+    execution.start(startTime);
+    return execution;
   }
 
   private settle(
@@ -206,14 +232,21 @@ export class ExecutionLedger<
     }
   }
 
+  /** false when the execution rejected the output synchronously. */
   private replaceOutput(
     execution: CellExecution<Output>,
     output: Output
-  ): void {
+  ): boolean {
     try {
-      void execution.replaceOutput([output]);
+      const pending = execution.replaceOutput([output]);
+      if (pending) {
+        pending.then(undefined, (error: unknown) =>
+          this.deps.log?.(`[LEDGER] replaceOutput rejected: ${String(error)}`)
+        );
+      }
+      return true;
     } catch {
-      // Already resolved
+      return false;
     }
   }
 

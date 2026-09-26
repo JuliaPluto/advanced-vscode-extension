@@ -118,6 +118,7 @@ export class PlutoNotebookController {
       formatOutput: formatCellOutput,
       onSettled: (notebookPath, cellId) =>
         this.plutoManager.emitCellUpdated(notebookPath, cellId),
+      log: (message) => this.outputChannel.appendLine(message),
     });
 
     this.controller.supportedLanguages = this.supportedLanguages;
@@ -930,7 +931,7 @@ export class PlutoNotebookController {
     }
   }
 
-  private updateAllCellsFromState = async (
+  private updateAllCellsFromState = (
     notebook: vscode.NotebookDocument,
     update: UpdateEvent
   ) => {
@@ -995,15 +996,15 @@ export class PlutoNotebookController {
           const [action, ...rest] = path;
           if (path.length === 0 && patches.length === 1) {
             // This is a state reset; handle it accordingly and break
-            void this.updateAllCellsFromState(notebook, event).catch(
-              (error) => {
-                this.outputChannel.appendLine(
-                  `Failed to reset cells from state: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`
-                );
-              }
-            );
+            try {
+              this.updateAllCellsFromState(notebook, event);
+            } catch (error) {
+              this.outputChannel.appendLine(
+                `Failed to reset cells from state: ${
+                  error instanceof Error ? error.message : String(error)
+                }`
+              );
+            }
             break;
           }
           switch (action) {
@@ -1256,6 +1257,14 @@ export class PlutoNotebookController {
     notebook: vscode.NotebookDocument,
     removedCells: readonly vscode.NotebookCell[]
   ): Promise<void> {
+    // Removed and replaced cells alike: an execution bound to a cell object
+    // that left the document can no longer draw anything
+    for (const removedCell of removedCells) {
+      const cellId = removedCell.metadata?.pluto_cell_id as string | undefined;
+      if (cellId) {
+        this.ledger.fail(notebook.uri.fsPath, cellId, { cell: removedCell });
+      }
+    }
     const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
     if (!worker) {
       this.outputChannel.appendLine("No worker available for notebook");
@@ -1284,7 +1293,6 @@ export class PlutoNotebookController {
         }
 
         this.outputChannel.appendLine(`Deleting cell with ID: ${cellId}`);
-        this.ledger.fail(notebook.uri.fsPath, cellId);
 
         // Remove cell from worker
         await this.plutoManager.deleteCell(worker, cellId);
