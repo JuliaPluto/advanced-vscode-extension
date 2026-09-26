@@ -11,14 +11,26 @@ import { parsePlutoNotebook } from "../plutoSerializer.ts";
 import { NotebookCellKind } from "vscode";
 
 describe("presentOutput", () => {
-  it("replaces image bodies with their size and a fetch hint", () => {
+  it("keeps a small SVG inline as text", () => {
     const out = presentOutput({
       mime: "image/svg+xml",
       body: new TextEncoder().encode("<svg>hi</svg>"),
+    }) as { body: unknown; body_note?: string };
+    expect(out.body).toBe("<svg>hi</svg>");
+    expect(out.body_note).toBeUndefined();
+  });
+
+  it("replaces a large SVG with its size and a fetch hint", () => {
+    const svg = `<svg>${"x".repeat(INLINE_TEXT_LIMIT)}</svg>`;
+    const out = presentOutput({
+      mime: "image/svg+xml",
+      body: new TextEncoder().encode(svg),
     }) as { body: unknown; bytes: number; body_note: string };
     expect(out.body).toBeNull();
-    expect(out.bytes).toBe(13);
-    expect(out.body_note).toMatch(/image\/svg\+xml output of 13 bytes/);
+    expect(out.bytes).toBe(svg.length);
+    expect(out.body_note).toMatch(
+      new RegExp(`image/svg\\+xml output of ${svg.length} bytes`)
+    );
     expect(out.body_note).toMatch(/as: "image" to see it/);
   });
 
