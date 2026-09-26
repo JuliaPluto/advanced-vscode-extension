@@ -69,7 +69,7 @@ npx @plutojl/cli tools [name] [--mcp-port <port>]
 
 ### `call`
 
-Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options. The JSON may also come from a file (`@args.json`) or stdin (`-`), which avoids shell quoting for multi-line cell code. Relative `path`, `output_path`, and `new_path` arguments are resolved against the current directory before they are sent, since the server needs absolute notebook paths.
+Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options. The JSON may also come from a file (`@args.json`) or stdin (`-`). For multi-line cell code, `--code-file cell.jl` supplies the `code` argument from a file (`-` for stdin), so the code needs no JSON or shell escaping. Relative `path`, `output_path`, and `new_path` arguments are resolved against the current directory before they are sent, since the server needs absolute notebook paths.
 
 ```bash
 npx @plutojl/cli call <tool_name> [json_args | @file | -] [options]
@@ -79,13 +79,15 @@ npx @plutojl/cli call learn_pluto_basics          # read this first
 npx @plutojl/cli call get_notebook_status
 npx @plutojl/cli call open_notebook '{"path": "/tmp/nb.pluto.jl"}'
 npx @plutojl/cli call execute_code '{"code": "sqrt(2)"}'
+npx @plutojl/cli call create_cell '{"path": "nb.pluto.jl"}' --code-file cell.jl
 ```
 
-| Option                | Default | Description                          |
-| --------------------- | ------- | ------------------------------------ |
-| `--mcp-port <port>`   | `3100`  | Tool server (MCP) port               |
-| `--timeout <seconds>` | `120`   | How long to wait for the tool result |
-| `--raw`               | —       | Output raw JSON response             |
+| Option                | Default | Description                                          |
+| --------------------- | ------- | ---------------------------------------------------- |
+| `--mcp-port <port>`   | `3100`  | Tool server (MCP) port                               |
+| `--timeout <seconds>` | `120`   | How long to wait for the tool result                 |
+| `--raw`               | —       | Output raw JSON response                             |
+| `--code-file <file>`  | —       | Take the `code` argument from a file (`-` for stdin) |
 
 ### `install`
 

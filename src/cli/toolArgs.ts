@@ -19,6 +19,27 @@ export function readToolArgsSource(arg: string, cwd: string): string {
 }
 
 /**
+ * Set the `code` argument from a file (`-` reads stdin), dropping the
+ * file's final newline. Refuses when the arguments already carry `code`.
+ */
+export function withCodeFile(
+  args: Record<string, unknown>,
+  codeFile: string,
+  cwd: string
+): Record<string, unknown> {
+  if ("code" in args) {
+    throw new Error(
+      "pass the cell code either as the code argument or with --code-file, not both"
+    );
+  }
+  const code =
+    codeFile === "-"
+      ? fs.readFileSync(0, "utf-8")
+      : fs.readFileSync(path.resolve(cwd, codeFile), "utf-8");
+  return { ...args, code: code.replace(/\r?\n$/, "") };
+}
+
+/**
  * Notebook tools identify notebooks by absolute path (the server cannot
  * know the caller's working directory), so resolve relative file
  * arguments here, where that directory is known.

@@ -112,6 +112,26 @@ describe("parseArgs", () => {
     );
   });
 
+  it("parses --code-file for call only, and one use of stdin", () => {
+    expect(
+      parseArgs(["call", "create_cell", '{"path":"x"}', "--code-file", "c.jl"])
+    ).toEqual({
+      command: "call",
+      toolName: "create_cell",
+      toolArgs: '{"path":"x"}',
+      codeFile: "c.jl",
+    });
+    expect(
+      parseArgs(["call", "edit_cell", "@a.json", "--code-file=-"])
+    ).toMatchObject({ toolArgs: "@a.json", codeFile: "-" });
+    expect(() =>
+      parseArgs(["call", "create_cell", "-", "--code-file", "-"])
+    ).toThrow(/not both/);
+    expect(() => parseArgs(["tools", "--code-file", "c.jl"])).toThrow(
+      /not valid for 'tools'/
+    );
+  });
+
   it("passes everything after -- as positionals", () => {
     expect(parseArgs(["call", "--", "tool", "--not-a-flag"])).toEqual({
       command: "call",
