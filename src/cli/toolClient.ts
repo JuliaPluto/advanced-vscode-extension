@@ -12,10 +12,13 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "./config.ts";
 
 export interface ToolSchema {
-  type?: string;
+  type?: string | string[];
   description?: string;
   enum?: unknown[];
   default?: unknown;
+  items?: ToolSchema;
+  /** Set on string arguments that name a file. */
+  "x-pluto-path"?: boolean;
 }
 
 export interface ToolInfo {

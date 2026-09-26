@@ -2,30 +2,146 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+  checkToolArgs,
+  pathArgNames,
   readToolArgsSource,
   resolvePathArgs,
   withCodeFile,
 } from "../cli/toolArgs.ts";
+import type { ToolInfo } from "../cli/toolClient.ts";
+
+const readCellOutput: ToolInfo = {
+  name: "read_cell_output",
+  inputSchema: {
+    properties: {
+      path: { type: "string", "x-pluto-path": true },
+      cell_id: { type: "string" },
+      as: { type: "string", enum: ["text", "file", "image"] },
+      output_path: { type: "string", "x-pluto-path": true },
+      label: { type: "string" },
+    },
+    required: ["path", "cell_id"],
+  },
+};
+
+describe("pathArgNames", () => {
+  const listNotebooks: ToolInfo = { name: "list_notebooks" };
+
+  it("takes the marked arguments when the server marks any", () => {
+    const tools = [listNotebooks, readCellOutput];
+    expect(pathArgNames(readCellOutput, tools)).toEqual([
+      "path",
+      "output_path",
+    ]);
+    expect(pathArgNames(listNotebooks, tools)).toEqual([]);
+  });
+
+  it("falls back to the legacy names when no tool is marked", () => {
+    const legacy: ToolInfo = {
+      name: "read_cell_output",
+      inputSchema: {
+        properties: { path: { type: "string" }, cell_id: { type: "string" } },
+      },
+    };
+    expect(pathArgNames(legacy, [listNotebooks, legacy])).toEqual([
+      "path",
+      "output_path",
+      "new_path",
+    ]);
+  });
+});
 
 describe("resolvePathArgs", () => {
   const cwd = path.join(os.tmpdir(), "proj");
 
-  it("resolves relative notebook and output paths against cwd", () => {
+  it("resolves the named arguments against cwd, and only those", () => {
     expect(
       resolvePathArgs(
-        { path: "scripts/nb.pluto.jl", output_path: "out/x.png", cell_id: "c" },
+        {
+          path: "scripts/nb.pluto.jl",
+          output_path: "out/x.png",
+          cell_id: "c",
+          label: "rel/not/a/path",
+        },
+        ["path", "output_path"],
         cwd
       )
     ).toEqual({
       path: path.join(cwd, "scripts/nb.pluto.jl"),
       output_path: path.join(cwd, "out/x.png"),
       cell_id: "c",
+      label: "rel/not/a/path",
     });
   });
 
   it("leaves absolute paths, empty strings, and non-strings alone", () => {
-    const args = { path: "/abs/nb.jl", new_path: "", code: 42 };
-    expect(resolvePathArgs(args, cwd)).toEqual(args);
+    const args = { path: "/abs/nb.jl", output_path: "", new_path: 42 };
+    expect(
+      resolvePathArgs(args, ["path", "output_path", "new_path"], cwd)
+    ).toEqual(args);
+  });
+});
+
+describe("checkToolArgs", () => {
+  it("accepts arguments that match the schema", () => {
+    expect(
+      checkToolArgs(
+        { path: "/nb.jl", cell_id: "c", as: "file" },
+        readCellOutput
+      )
+    ).toEqual([]);
+  });
+
+  it("names unknown and missing arguments", () => {
+    expect(
+      checkToolArgs({ path: "/nb.jl", url: "http://x" }, readCellOutput)
+    ).toEqual(["unknown argument url", "missing required argument cell_id"]);
+  });
+
+  it("names wrong types and values outside an enum", () => {
+    expect(
+      checkToolArgs({ path: 1, cell_id: "c", as: "png" }, readCellOutput)
+    ).toEqual([
+      "path must be a string, got number",
+      'as must be one of "text", "file", "image", got "png"',
+    ]);
+  });
+
+  it("checks array items, numbers and booleans", () => {
+    const moveCells: ToolInfo = {
+      name: "move_cells",
+      inputSchema: {
+        properties: {
+          cell_ids: { type: "array", items: { type: "string" } },
+          index: { type: "number" },
+          run: { type: "boolean" },
+        },
+      },
+    };
+    expect(
+      checkToolArgs({ cell_ids: ["a", 2], index: "0", run: "yes" }, moveCells)
+    ).toEqual([
+      "cell_ids[1] must be a string, got number",
+      "index must be a number, got string",
+      "run must be a boolean, got string",
+    ]);
+    expect(
+      checkToolArgs({ cell_ids: ["a"], index: 0, run: true }, moveCells)
+    ).toEqual([]);
+  });
+
+  it("skips the type check for a union type", () => {
+    const tool: ToolInfo = {
+      name: "t",
+      inputSchema: { properties: { x: { type: ["string", "null"] } } },
+    };
+    expect(checkToolArgs({ x: null }, tool)).toEqual([]);
+  });
+
+  it("rejects every argument of a tool that takes none", () => {
+    expect(checkToolArgs({ port: 1234 }, { name: "start" })).toEqual([
+      "unknown argument port",
+    ]);
   });
 });
 
