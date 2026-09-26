@@ -139,6 +139,26 @@ describe("ExecutionLedger", () => {
     expect(created[1].outputs).toEqual([["out-7"]]);
   });
 
+  it("withdraws the stamp when the final output is rejected", async () => {
+    const { ledger } = setup();
+    ledger.begin("/a.jl", "c1", "cell").rejectOutput = true;
+    ledger.finish("/a.jl", "c1", result(7));
+    expect(ledger.needsRender("/a.jl", "c1", result(7))).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ledger.needsRender("/a.jl", "c1", result(7))).toBe(true);
+  });
+
+  it("keeps a newer stamp when an older output is rejected", async () => {
+    const { ledger } = setup();
+    ledger.begin("/a.jl", "c1", "cell").rejectOutput = true;
+    ledger.finish("/a.jl", "c1", result(7));
+    ledger.markRendered("/a.jl", "c1", result(8));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ledger.needsRender("/a.jl", "c1", result(8))).toBe(false);
+  });
+
   it("logs an asynchronous replaceOutput rejection", async () => {
     const { ledger, logs } = setup();
     ledger.begin("/a.jl", "c1", "cell").rejectOutput = true;
