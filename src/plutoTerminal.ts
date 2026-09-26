@@ -7,6 +7,8 @@ import {
   getExampleCommandsHelp,
 } from "./terminalExamples.ts";
 import { isDefined, isNotDefined } from "./helpers.ts";
+import { newNotebookSource } from "./notebookOutput.ts";
+import { PLUTO_NOTEBOOK_FILTERS } from "./plutoFileName.ts";
 import type { Worker } from "@plutojl/rainbow";
 
 /**
@@ -142,24 +144,14 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
   private async createNewNotebook(): Promise<void> {
     try {
       const uri = await vscode.window.showSaveDialog({
-        filters: { "Pluto Notebooks": ["pluto.jl", "dyad.jl"] },
+        filters: PLUTO_NOTEBOOK_FILTERS,
         defaultUri: vscode.Uri.file("Untitled.pluto.jl"),
       });
 
       if (uri) {
-        // Create minimal Pluto notebook
-        const minimalNotebook = `### A Pluto.jl notebook ###
-# v0.19.40
-
-using Markdown
-using InteractiveUtils
-
-# ╔═╡ Cell order:
-# ╠═`;
-
         await vscode.workspace.fs.writeFile(
           uri,
-          Buffer.from(minimalNotebook, "utf-8")
+          new TextEncoder().encode(newNotebookSource())
         );
 
         // Open the notebook in VSCode
@@ -183,7 +175,7 @@ using InteractiveUtils
   private async openExistingNotebook(): Promise<void> {
     try {
       const uris = await vscode.window.showOpenDialog({
-        filters: { "Pluto Notebooks": ["pluto.jl", "dyad.jl", "jl"] },
+        filters: PLUTO_NOTEBOOK_FILTERS,
         canSelectMany: false,
       });
 
