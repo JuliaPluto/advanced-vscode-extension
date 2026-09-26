@@ -245,10 +245,6 @@ export class ExecutionLedger<
   }
 
   /**
-   * false when the execution rejected the output synchronously;
-   * `onRejected` runs when it rejects it asynchronously.
-   */
-  /**
    * Draws a result into a live execution unless its stamp is already
    * drawn there or settled for the cell. false when the output was refused.
    */
@@ -285,6 +281,10 @@ export class ExecutionLedger<
     return accepted;
   }
 
+  /**
+   * false when the execution rejected the output synchronously;
+   * `onRejected` runs when it rejects it asynchronously.
+   */
   private replaceOutput(
     execution: CellExecution<Output>,
     output: Output,
