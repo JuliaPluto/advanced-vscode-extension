@@ -1,92 +1,84 @@
-/**
- * Commands module - organized by domain
- *
- * This module exports all command registration functions grouped by their domain:
- * - Pluto Server: Commands for managing the Pluto Julia server
- * - MCP Server: Commands for managing the MCP HTTP server
- * - MCP Config: Commands for configuring MCP clients that run outside VS Code (Claude Code)
- */
-
-import type * as vscode from "vscode";
+import * as vscode from "vscode";
 import type { PlutoManager } from "../plutoManager.ts";
-
-// Re-export all commands from domain-specific modules
-export * from "./plutoServerCommands.ts";
-export * from "./mcpServerCommands.ts";
-export * from "./mcpConfigCommands.ts";
-export * from "./terminalCommands.ts";
-export * from "./notebooksTreeCommands.ts";
-export * from "./viewToggleCommands.ts";
-export * from "./notebookCommands.ts";
-// Import for registerAllCommands
+import { createPlutoTerminal } from "../plutoTerminal.ts";
+import type {
+  NotebooksTreeDataProvider,
+  PlutoNotebookTreeItem,
+} from "../treeView/notebooksTreeDataProvider.ts";
+import { createProjectMcpConfig, showMcpHttpUrl } from "./mcpConfigCommands.ts";
 import {
-  registerStartServerCommand,
-  registerStopServerCommand,
-  registerRestartServerCommand,
-  registerOpenInBrowserCommand,
-  registerToggleServerCommand,
-} from "./plutoServerCommands.ts";
-
-import {
-  registerStartMCPServerCommand,
-  registerStopMCPServerCommand,
-  registerRestartMCPServerCommand,
+  restartMcpServer,
+  startMcpServer,
+  stopMcpServer,
 } from "./mcpServerCommands.ts";
-
+import { createNewNotebook } from "./notebookCommands.ts";
 import {
-  registerCreateProjectMCPConfigCommand,
-  registerGetMCPHttpUrlCommand,
-} from "./mcpConfigCommands.ts";
-
-import {
-  registerFocusCellCommand,
-  registerRevealNotebookCommand,
-  registerReconnectCommand,
+  focusCellFromTree,
+  openNotebookFromTree,
+  reconnectNotebook,
 } from "./notebooksTreeCommands.ts";
-import { registerCreateTerminalCommand } from "./terminalCommands.ts";
-import { registerToggleViewCommand } from "./viewToggleCommands.ts";
-import { registerCreateNewNotebookCommand } from "./notebookCommands.ts";
+import {
+  openInBrowser,
+  restartServer,
+  startServer,
+  stopServer,
+  toggleServer,
+} from "./plutoServerCommands.ts";
+import { toggleView } from "./viewToggleCommands.ts";
 
-/**
- * Register all commands at once
- *
- * This is a convenience function that registers all commands from all domains.
- * It's called during extension activation.
- *
- * @param context - Extension context for registering commands
- * @param plutoManager - Shared PlutoManager instance
- * @param terminalOutputChannel - Shared "Pluto Terminal" output channel
- */
+export { initializePlutoServer } from "./plutoServerCommands.ts";
+
+type CommandHandler = (...args: never[]) => unknown;
+
+export interface CommandDeps {
+  plutoManager: PlutoManager;
+  terminalOutputChannel: vscode.OutputChannel;
+  notebooksTree: NotebooksTreeDataProvider;
+}
+
+/** Every `pluto-notebook.*` command the extension registers. */
+export function commandTable(
+  context: vscode.ExtensionContext,
+  { plutoManager, terminalOutputChannel, notebooksTree }: CommandDeps
+): Record<string, CommandHandler> {
+  return {
+    "pluto-notebook.startServer": () => startServer(plutoManager),
+    "pluto-notebook.stopServer": () => stopServer(plutoManager),
+    "pluto-notebook.restartServer": () => restartServer(plutoManager),
+    "pluto-notebook.toggleServer": () => toggleServer(plutoManager),
+    "pluto-notebook.openInBrowser": (notebookPath?: string) =>
+      openInBrowser(plutoManager, notebookPath),
+
+    "pluto-notebook.startMCPServer": startMcpServer,
+    "pluto-notebook.stopMCPServer": stopMcpServer,
+    "pluto-notebook.restartMCPServer": restartMcpServer,
+    "pluto-notebook.createProjectMCPConfig": createProjectMcpConfig,
+    "pluto-notebook.getMCPHttpUrl": showMcpHttpUrl,
+
+    "pluto-notebook.createTerminal": () =>
+      createPlutoTerminal(plutoManager, terminalOutputChannel, context),
+
+    "pluto-notebook.refreshNotebooks": () => notebooksTree.refresh(),
+    "pluto-notebook.openNotebookFromTree": openNotebookFromTree,
+    "pluto-notebook.focusCellFromTree": focusCellFromTree,
+    "pluto-notebook.reconnectNotebook": (notebook: PlutoNotebookTreeItem) =>
+      reconnectNotebook(plutoManager, notebook),
+
+    "pluto-notebook.toggleView": toggleView,
+    "pluto-notebook.createNewNotebook": createNewNotebook,
+  };
+}
+
 export function registerAllCommands(
   context: vscode.ExtensionContext,
-  plutoManager: PlutoManager,
-  terminalOutputChannel: vscode.OutputChannel
+  deps: CommandDeps
 ): void {
-  // Register Pluto Server commands
-  registerStartServerCommand(context, plutoManager);
-  registerStopServerCommand(context, plutoManager);
-  registerRestartServerCommand(context, plutoManager);
-  registerOpenInBrowserCommand(context, plutoManager);
-  registerToggleServerCommand(context, plutoManager);
-
-  // Register MCP Server commands
-  registerStartMCPServerCommand(context);
-  registerStopMCPServerCommand(context);
-  registerRestartMCPServerCommand(context);
-
-  // Register MCP Config commands
-  registerCreateProjectMCPConfigCommand(context);
-  registerGetMCPHttpUrlCommand(context);
-
-  // Register Terminal commands
-  registerCreateTerminalCommand(context, plutoManager, terminalOutputChannel);
-  registerFocusCellCommand(context);
-  registerRevealNotebookCommand(context);
-  registerReconnectCommand(context, plutoManager);
-
-  // Register View Toggle commands
-  registerToggleViewCommand(context);
-
-  // Register Notebook commands
-  registerCreateNewNotebookCommand(context);
+  for (const [id, handler] of Object.entries(commandTable(context, deps))) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        id,
+        handler as (...args: unknown[]) => unknown
+      )
+    );
+  }
 }
