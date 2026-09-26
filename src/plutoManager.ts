@@ -61,6 +61,7 @@ export class PlutoManager {
   private readonly configuredUrl: string; // where the server is expected before it starts
   private serverUrl: string; // where it is now; an owned server may fall back to another port
   private usingCustomServerUrl = false;
+  private ownsServer = false; // ready was reached through a server this manager started
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
   private readonly eventEmitter: EventEmitter = new EventEmitter();
 
@@ -203,6 +204,7 @@ export class PlutoManager {
         await this.probeServer();
       } else {
         this.serverUrl = await this.server.start(signal);
+        this.ownsServer = true;
       }
     });
   }
@@ -232,6 +234,7 @@ export class PlutoManager {
   ): Promise<void> {
     await this.stopPromise?.catch(() => {});
     this.serverUrl = this.configuredUrl;
+    this.ownsServer = false;
     this.setState({ status: "starting", url: this.serverUrl });
     const abort = new AbortController();
     this.startAbort = abort;
@@ -910,13 +913,13 @@ export class PlutoManager {
 
   /**
    * What the server can do for this process. A server this manager did not
-   * start is assumed to write notebook files, as Pluto does by default.
+   * start (a configured URL, or one reached through connect()) is assumed
+   * to write notebook files, as Pluto does by default.
    */
   public capabilities(): ServerCapabilities {
     return serverCapabilities({
       sharesFilesystem: this.sharesFilesystem(),
-      writesNotebookFiles:
-        this.usingCustomServerUrl || this.server.writesNotebookFiles,
+      writesNotebookFiles: !this.ownsServer || this.server.writesNotebookFiles,
     });
   }
 

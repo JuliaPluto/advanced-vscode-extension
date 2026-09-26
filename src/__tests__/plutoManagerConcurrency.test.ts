@@ -197,10 +197,24 @@ describe("PlutoManager concurrency", () => {
       );
     }
 
-    it("leaves the file to the editor for an owned server that does not write it", () => {
-      expect(managerFor(undefined, false).capabilities().fileSync).toBe(
-        "editor-writes-file"
-      );
+    it("leaves the file to the editor for a server it started that does not write it", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.start();
+      expect(manager.capabilities().fileSync).toBe("editor-writes-file");
+    });
+
+    it("assumes a server reached through connect() writes files, even on the default URL", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.connect();
+      expect(manager.capabilities().fileSync).toBe("server-writes-file");
+    });
+
+    it("forgets ownership when a later connect() replaces a started server", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.start();
+      await manager.stop();
+      await manager.connect();
+      expect(manager.capabilities().fileSync).toBe("server-writes-file");
     });
 
     it("assumes a local server it did not start writes files, whatever the owned one would do", () => {

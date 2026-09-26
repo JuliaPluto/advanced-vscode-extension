@@ -1,8 +1,8 @@
-import { serverCapabilities } from "../../serverCapabilities.ts";
 import { jest } from "@jest/globals";
 import type { Worker } from "@plutojl/rainbow";
 import type { ServerState } from "../../plutoManager.js";
 import type { PlutoToolsManager } from "../../mcpTools/tool.js";
+import { serverCapabilities } from "../../serverCapabilities.js";
 
 export const SERVER_URL = "http://localhost:1234";
 

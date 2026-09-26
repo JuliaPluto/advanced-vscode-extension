@@ -1,4 +1,3 @@
-import { serverCapabilities } from "../serverCapabilities.ts";
 import { jest } from "@jest/globals";
 import { existsSync } from "fs";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
@@ -12,6 +11,7 @@ import {
   fakeWorker,
   textOf,
 } from "./helpers/fakePlutoManager.js";
+import { serverCapabilities } from "../serverCapabilities.js";
 
 const json = (result: { content: unknown }) => JSON.parse(textOf(result));
 
@@ -187,12 +187,74 @@ describe("the tool set", () => {
       new_path: "/moved.jl",
     });
     expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain(
-      "only works when the Pluto server is on localhost"
+    expect(textOf(result)).toBe(
+      "Moving a notebook only works when the Pluto server is on localhost (it shares this machine's filesystem). Use save_notebook to write a copy instead."
     );
     expect(manager.getWorker).not.toHaveBeenCalled();
     expect(manager.moveNotebook).not.toHaveBeenCalled();
   });
+
+  it("refuses to render a non-raster output to PNG on a remote server", async () => {
+    const worker = fakeWorker([
+      {
+        cell_id: "c1",
+        code: "plot()",
+        output: { mime: "image/svg+xml", body: "<svg/>" },
+      },
+    ]);
+    const manager = fakePlutoManager({
+      worker,
+      overrides: {
+        capabilities: () =>
+          serverCapabilities({
+            sharesFilesystem: false,
+            writesNotebookFiles: true,
+          }),
+      },
+    });
+    const result = await createPlutoTools(manager).call("read_cell_output", {
+      path: "/nb.jl",
+      cell_id: "c1",
+      as: "image",
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toBe(
+      "The cell's output is image/svg+xml. Rendering to a file needs a Pluto server on localhost (it shares this machine's filesystem). Use as: \"file\" with a .svg name to save the original output instead."
+    );
+    expect(manager.executeCodeEphemeral).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      true,
+      true,
+      "Pluto is tracking this file path and will save changes to it.",
+    ],
+    [
+      true,
+      false,
+      "The server does not write this file: changes reach disk when the notebook is saved in the editor, or through save_notebook.",
+    ],
+    [
+      false,
+      true,
+      "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file.",
+    ],
+  ])(
+    "open_notebook reports who keeps the file (shared filesystem %s, server writes %s)",
+    async (sharesFilesystem, writesNotebookFiles, note) => {
+      const manager = fakePlutoManager({
+        overrides: {
+          capabilities: () =>
+            serverCapabilities({ sharesFilesystem, writesNotebookFiles }),
+        },
+      });
+      const result = await createPlutoTools(manager).call("open_notebook", {
+        path: "/nb.jl",
+      });
+      expect(textOf(result).split("\n").at(-1)).toBe(note);
+    }
+  );
 
   it("exports HTML next to the notebook by default", async () => {
     const fetch = jest

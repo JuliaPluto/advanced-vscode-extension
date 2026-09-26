@@ -3,7 +3,7 @@ import {
   isLoopbackUrl,
   requireCapability,
   serverCapabilities,
-} from "../serverCapabilities.ts";
+} from "../serverCapabilities.js";
 
 describe("serverCapabilities", () => {
   it("lets a local server that writes files keep the file itself", () => {
@@ -36,11 +36,18 @@ describe("serverCapabilities", () => {
         writesNotebookFiles,
       });
       expect(caps.fileSync).toBe("server-holds-copy");
+      expect(caps.moveNotebook).toEqual({
+        ok: false,
+        reason:
+          "Moving a notebook only works when the Pluto server is on localhost (it shares this machine's filesystem). Use save_notebook to write a copy instead.",
+      });
+      expect(caps.writeLocalFile).toEqual({
+        ok: false,
+        reason:
+          "Rendering to a file needs a Pluto server on localhost (it shares this machine's filesystem).",
+      });
       expect(() => requireCapability(caps.moveNotebook)).toThrow(
-        "Moving a notebook only works when the Pluto server is on localhost"
-      );
-      expect(() => requireCapability(caps.writeLocalFile)).toThrow(
-        "Rendering to a file needs a Pluto server on localhost"
+        new Error(caps.moveNotebook.ok ? "" : caps.moveNotebook.reason)
       );
     }
   );

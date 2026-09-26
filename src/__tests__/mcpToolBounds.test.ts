@@ -1,4 +1,3 @@
-import { serverCapabilities } from "../serverCapabilities.ts";
 import { jest } from "@jest/globals";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
@@ -13,6 +12,7 @@ import {
   STILL_STARTING,
 } from "../mcpTools/tool.js";
 import { SERVER_URL, never, textOf } from "./helpers/fakePlutoManager.js";
+import { serverCapabilities } from "../serverCapabilities.js";
 
 /**
  * Every method not listed in `fixtures` returns a promise that never
