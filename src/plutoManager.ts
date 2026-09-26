@@ -479,12 +479,20 @@ export class PlutoManager {
       if (this.workers.get(notebookPath) === cached) {
         this.workers.delete(notebookPath);
       }
+      const wasAdopted = this.adoptedWorkers.delete(notebookPath);
       try {
         cached.close();
       } catch {
         // Already closed
       }
       const reopened = await this.openWorker(notebookPath, documentContent);
+      // The same session keeps the ownership it had; a new one is ours
+      const adopted = reopened.notebook_id === cached.notebook_id && wasAdopted;
+      if (adopted) {
+        this.adoptedWorkers.add(notebookPath);
+      } else {
+        this.adoptedWorkers.delete(notebookPath);
+      }
       this.emit("workerRecreated", notebookPath, reopened);
       return reopened;
     }

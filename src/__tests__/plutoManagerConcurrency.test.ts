@@ -882,6 +882,79 @@ describe("PlutoManager.getWorker", () => {
     expect(recreated).toEqual([second]);
   });
 
+  describe("ownership of a notebook reopened after its connection dropped", () => {
+    const OTHER_ID = "9a1b3c5d-7e9f-4a2b-8c4d-6e8f0a2b4c6d";
+    const running = (id: string) => [{ notebook_id: id, path: NOTEBOOK }];
+
+    function dropConnection(worker: Worker): void {
+      Object.assign(worker, {
+        connected: false,
+        connect: jest.fn(async () => false),
+      });
+    }
+
+    async function reopenAfterDrop(options: {
+      listedBefore: Array<{ notebook_id: string; path: string }>;
+      listedAfter: Array<{ notebook_id: string; path: string }>;
+      reopenedId: string;
+    }): Promise<{ manager: PlutoManager; reopened: Worker }> {
+      jest
+        .spyOn(Host.prototype, "workers")
+        .mockResolvedValueOnce(options.listedBefore as never)
+        .mockResolvedValueOnce(options.listedAfter as never);
+      const first = createFakeWorker({
+        notebook_id: NOTEBOOK_ID,
+        close: jest.fn(),
+      } as Partial<Worker>);
+      const reopened = createFakeWorker({ notebook_id: options.reopenedId });
+      jest
+        .spyOn(Host.prototype, "worker")
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(reopened);
+      const manager = localManager();
+      await manager.getWorker(NOTEBOOK);
+      dropConnection(first);
+
+      await expect(manager.getWorker(NOTEBOOK)).resolves.toBe(reopened);
+      expect(first.close).toHaveBeenCalled();
+      return { manager, reopened };
+    }
+
+    it("keeps an owned notebook that kept running owned", async () => {
+      const { manager, reopened } = await reopenAfterDrop({
+        listedBefore: [],
+        listedAfter: running(NOTEBOOK_ID),
+        reopenedId: NOTEBOOK_ID,
+      });
+
+      await manager.closeNotebook(NOTEBOOK);
+      expect(reopened.shutdown).toHaveBeenCalled();
+    });
+
+    it("owns the new session of an adopted notebook that was shut down", async () => {
+      const { manager, reopened } = await reopenAfterDrop({
+        listedBefore: running(NOTEBOOK_ID),
+        listedAfter: [],
+        reopenedId: OTHER_ID,
+      });
+      expect(opensByPath()).toHaveLength(1);
+
+      await manager.closeNotebook(NOTEBOOK);
+      expect(reopened.shutdown).toHaveBeenCalled();
+    });
+
+    it("keeps an adopted notebook reconnected to the same session adopted", async () => {
+      const { manager, reopened } = await reopenAfterDrop({
+        listedBefore: running(NOTEBOOK_ID),
+        listedAfter: running(NOTEBOOK_ID),
+        reopenedId: NOTEBOOK_ID,
+      });
+
+      await manager.closeNotebook(NOTEBOOK);
+      expect(reopened.shutdown).not.toHaveBeenCalled();
+    });
+  });
+
   it("never starts the server for a notebook operation", async () => {
     const serverManager = createMockServerManager(1);
     const manager = new PlutoManager(
