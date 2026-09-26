@@ -22,6 +22,7 @@ const worker = {
 
 const plutoManager = {
   isConnected: () => true,
+  getState: () => ({ status: "ready", url: "http://localhost:1234" }),
   isLocalServer: () => true,
   getWorker: async () => worker,
   runCell: never,

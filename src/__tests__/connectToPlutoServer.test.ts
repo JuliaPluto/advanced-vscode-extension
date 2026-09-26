@@ -1,9 +1,5 @@
 import { jest } from "@jest/globals";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { PlutoMCPHttpServer } from "../mcp-server-http.js";
-import type { PlutoManager } from "../plutoManager.js";
+import { createPlutoTools, type PlutoToolsManager } from "../mcpTools/index.js";
 import { otherPlutoServerMessage, sameUrl } from "../plutoServerUrl.js";
 
 const CONFIGURED = "http://localhost:1234";
@@ -23,36 +19,16 @@ function createPlutoManager(connected: boolean) {
   return manager;
 }
 
-async function connectClient(plutoManager: unknown): Promise<Client> {
-  const httpServer = new PlutoMCPHttpServer(plutoManager as PlutoManager, 0, {
-    version: "test",
-  });
-  const server = (
-    httpServer as unknown as { createMcpServer(): McpServer }
-  ).createMcpServer();
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(clientTransport);
-  return client;
-}
-
 async function callConnect(
   plutoManager: unknown,
   args: Record<string, unknown>
 ): Promise<{ isError: boolean; text: string }> {
-  const client = await connectClient(plutoManager);
-  try {
-    const result = await client.callTool({
-      name: "connect_to_pluto_server",
-      arguments: args,
-    });
-    const [content] = result.content as Array<{ text: string }>;
-    return { isError: !!result.isError, text: content.text };
-  } finally {
-    await client.close();
-  }
+  const result = await createPlutoTools(plutoManager as PlutoToolsManager).call(
+    "connect_to_pluto_server",
+    args
+  );
+  const [content] = result.content as Array<{ text: string }>;
+  return { isError: !!result.isError, text: content.text };
 }
 
 describe("sameUrl", () => {
