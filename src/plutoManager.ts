@@ -8,10 +8,19 @@ import { resolve as resolvePath } from "path";
 import { v4 as uuidv4 } from "uuid";
 
 /**
+ * Lifecycle state of the Pluto server as PlutoManager sees it. `url` is
+ * where the server is (or is expected to be) reachable.
+ */
+export type ServerState =
+  | { status: "stopped" }
+  | { status: "starting" | "ready" | "stopping"; url: string }
+  | { status: "failed"; url: string; reason: string };
+
+/**
  * Events emitted by PlutoManager
  */
 export interface PlutoManagerEvents {
-  serverStateChanged: () => void;
+  serverStateChanged: (state: ServerState) => void;
   notebookOpened: (notebookPath: string) => void;
   notebookClosed: (notebookPath: string) => void;
   cellUpdated: (notebookPath: string, cellId: string) => void;
@@ -40,8 +49,9 @@ export class PlutoManager {
   private readonly workers: Map<string, Worker> = new Map(); // notebook_id -> Worker
   private readonly pendingWorkers: Map<string, Promise<Worker>> = new Map(); // in-flight worker creation, keyed by path
   private readonly adoptedWorkers: Set<string> = new Set(); // paths of notebooks we attached to but don't own (e.g. open in the user's browser)
-  private startPromise?: Promise<void>; // in-flight start(), shared by concurrent callers
-  private stopping = false; // suppresses "stopped unexpectedly" handling during intentional stop
+  private state: ServerState = { status: "stopped" };
+  private startPromise?: Promise<void>; // in-flight start()/connect(), shared by concurrent callers
+  private stopPromise?: Promise<void>; // in-flight stop(), shared by concurrent callers
   private serverUrl: string;
   private usingCustomServerUrl = false;
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
@@ -72,6 +82,9 @@ export class PlutoManager {
       // Update host with new URL
       if (this.host) {
         this.host = new Host(this.serverUrl);
+      }
+      if (this.state.status === "starting") {
+        this.setState({ status: "starting", url: this.serverUrl });
       }
     });
   }
@@ -107,11 +120,12 @@ export class PlutoManager {
   }
 
   /**
-   * Called when server task stops unexpectedly
+   * Called when the server process exits. An exit while starting is
+   * reported by start() and one while stopping belongs to stop(); only an
+   * exit from ready is unexpected.
    */
   private onServerStopped(): void {
-    if (this.stopping) {
-      // Intentional stop — stop() owns worker shutdown and event emission
+    if (this.state.status !== "ready") {
       return;
     }
 
@@ -126,58 +140,107 @@ export class PlutoManager {
     }
     this.workers.clear();
 
-    // Reset host
-    this.host = undefined;
+    this.setState({
+      status: "failed",
+      url: this.state.url,
+      reason: "Pluto server stopped unexpectedly",
+    });
 
-    // Emit server state changed event
-    this.emit("serverStateChanged");
+    this.logger
+      .showErrorMessage(
+        "Pluto server stopped unexpectedly. Click 'Restart' to start it again.",
+        "Restart"
+      )
+      .then((choice) => {
+        if (choice === "Restart") {
+          this.start().catch((error) => {
+            this.logger.showErrorMessage(
+              `Failed to restart Pluto server: ${error.message}`
+            );
+          });
+        }
+      });
+  }
 
-    // Show warning to user if server stopped unexpectedly
-    if (!this.serverManager.isRunning()) {
-      this.logger
-        .showErrorMessage(
-          "Pluto server stopped unexpectedly. Click 'Restart' to start it again.",
-          "Restart"
-        )
-        .then((choice) => {
-          if (choice === "Restart") {
-            this.start().catch((error) => {
-              this.logger.showErrorMessage(
-                `Failed to restart Pluto server: ${error.message}`
-              );
-            });
-          }
-        });
+  private setState(state: ServerState): void {
+    if (state.status !== "ready") {
+      this.host = undefined;
     }
+    this.state = state;
+    this.emit("serverStateChanged", state);
   }
 
   /**
-   * Check if a Pluto server is available for work. With a custom server
-   * URL there is no owned process — being connected is what counts.
+   * The server's lifecycle state. Every predicate about the server is
+   * derived from this value.
    */
-  public isRunning(): boolean {
-    if (this.usingCustomServerUrl) {
-      return this.isConnected();
-    }
-    return this.serverManager.isRunning() && this.isConnected();
+  public getState(): ServerState {
+    return this.state;
   }
 
   /**
-   * Check if connected to a host (with or without owning the process)
+   * Whether the server is ready for work, with or without owning the process.
    */
   public isConnected(): boolean {
-    return !!this.host;
+    return this.state.status === "ready";
   }
 
   /**
    * Connect to an existing Pluto server without starting a new one.
    * Fails fast with a clear error when the server is unreachable.
    */
-  public async connect(): Promise<void> {
-    if (this.isConnected()) {
-      return;
-    }
+  public connect(): Promise<void> {
+    return this.transitionToReady(() => this.probeServer());
+  }
 
+  /**
+   * Start Pluto server (or connect to custom server URL).
+   */
+  public start(): Promise<void> {
+    return this.transitionToReady(async () => {
+      if (!this.usingCustomServerUrl) {
+        await this.serverManager.start();
+        await this.serverManager.waitForReady();
+      }
+      await this.probeServer();
+    });
+  }
+
+  /**
+   * Move from stopped or failed through starting to ready. Concurrent
+   * callers share the in-flight transition, and one that begins during a
+   * stop waits for the stop to finish. Every path that reaches ready
+   * recreates the notebooks banked by the last stop.
+   */
+  private transitionToReady(launch: () => Promise<void>): Promise<void> {
+    if (this.state.status === "ready" && !this.stopPromise) {
+      return Promise.resolve();
+    }
+    this.startPromise ??= this.runStart(launch).finally(() => {
+      this.startPromise = undefined;
+    });
+    return this.startPromise;
+  }
+
+  private async runStart(launch: () => Promise<void>): Promise<void> {
+    await this.stopPromise?.catch(() => {});
+    this.setState({ status: "starting", url: this.serverUrl });
+    try {
+      await launch();
+    } catch (error) {
+      this.setState({
+        status: "failed",
+        url: this.serverUrl,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    this.host = new Host(this.serverUrl);
+    this.setState({ status: "ready", url: this.serverUrl });
+    await this.recreateWorkers();
+  }
+
+  private async probeServer(): Promise<void> {
     try {
       await fetch(this.serverUrl, { signal: AbortSignal.timeout(5000) });
     } catch (error) {
@@ -187,55 +250,6 @@ export class PlutoManager {
         }`
       );
     }
-
-    this.host = new Host(this.serverUrl);
-  }
-
-  /**
-   * Whether a start() is currently in flight.
-   */
-  public isStarting(): boolean {
-    return !!this.startPromise;
-  }
-
-  /**
-   * Start Pluto server (or connect to custom server URL).
-   * Concurrent callers share one in-flight start. State events fire when
-   * the start begins and when it settles (success or failure), so UI like
-   * the status bar can show a "starting" phase.
-   */
-  public async start(): Promise<void> {
-    if (!this.startPromise) {
-      this.startPromise = this.doStart().finally(() => {
-        this.startPromise = undefined;
-        this.emit("serverStateChanged");
-      });
-      this.emit("serverStateChanged");
-    }
-    return this.startPromise;
-  }
-
-  private async doStart(): Promise<void> {
-    // If using custom server URL, just connect without starting
-    if (this.usingCustomServerUrl) {
-      await this.connect();
-      await this.recreateWorkers();
-      return;
-    }
-
-    // Check if already running
-    if (this.serverManager.isRunning()) {
-      await this.serverManager.waitForReady();
-      await this.connect();
-      return;
-    }
-
-    await this.serverManager.start();
-    await this.serverManager.waitForReady();
-    await this.connect();
-
-    // Recreate workers for notebooks that were open before server stopped
-    await this.recreateWorkers();
   }
 
   /**
@@ -266,49 +280,59 @@ export class PlutoManager {
   }
 
   /**
-   * Stop Pluto server. Times out worker shutdown after 10s to avoid hanging.
-   * Open notebooks are remembered and recreated on the next start().
+   * Stop Pluto server. A stop requested while starting takes effect once
+   * the start settles. Times out worker shutdown after 10s to avoid
+   * hanging. Open notebooks are remembered and recreated on the next start().
    */
-  public async stop(): Promise<void> {
-    this.stopping = true;
-    try {
-      // Remember open notebooks so the next start() can recreate them
-      for (const notebookPath of this.workers.keys()) {
-        this.notebooksToRecreate.add(notebookPath);
-      }
+  public stop(): Promise<void> {
+    this.stopPromise ??= this.runStop().finally(() => {
+      this.stopPromise = undefined;
+    });
+    return this.stopPromise;
+  }
 
-      // Close all workers with a timeout — don't let a hung worker block shutdown
-      const workerShutdown = Promise.allSettled(
-        [...this.workers.entries()].map(([notebookPath, worker]) =>
-          this.releaseWorker(notebookPath, worker).catch(() => {
-            // Worker shutdown can fail if server is already gone — ignore
-          })
-        )
-      );
+  private async runStop(): Promise<void> {
+    await this.startPromise?.catch(() => {});
+    this.setState({ status: "stopping", url: this.serverUrl });
 
-      const timeoutMs = 10_000;
-      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        workerShutdown,
-        new Promise<void>((resolve) => {
-          timeoutHandle = setTimeout(resolve, timeoutMs);
-        }),
-      ]);
-      clearTimeout(timeoutHandle);
-      this.workers.clear();
-
-      // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
-      if (this.serverManager.isRunning()) {
-        await this.serverManager.stop();
-      }
-
-      this.host = undefined;
-
-      // Emit server state changed event
-      this.emit("serverStateChanged");
-    } finally {
-      this.stopping = false;
+    // Remember open notebooks so the next start() can recreate them
+    for (const notebookPath of this.workers.keys()) {
+      this.notebooksToRecreate.add(notebookPath);
     }
+
+    // Close all workers with a timeout — don't let a hung worker block shutdown
+    const workerShutdown = Promise.allSettled(
+      [...this.workers.entries()].map(([notebookPath, worker]) =>
+        this.releaseWorker(notebookPath, worker).catch(() => {
+          // Worker shutdown can fail if server is already gone — ignore
+        })
+      )
+    );
+
+    const timeoutMs = 10_000;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      workerShutdown,
+      new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+    clearTimeout(timeoutHandle);
+    this.workers.clear();
+
+    // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
+    try {
+      await this.serverManager.stop();
+    } catch (error) {
+      this.setState({
+        status: "failed",
+        url: this.serverUrl,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+
+    this.setState({ status: "stopped" });
   }
 
   /**
@@ -485,7 +509,7 @@ export class PlutoManager {
             await worker.restart();
           }
 
-          if (this.stopping || this.host !== host) {
+          if (this.host !== host) {
             throw new Error(
               "Pluto server was stopped while opening the notebook"
             );
@@ -536,7 +560,7 @@ export class PlutoManager {
       // The server may have been stopped (or replaced) while we were
       // connecting — registering the worker now would leak it into a
       // manager whose stop() has already run
-      if (this.stopping || this.host !== host) {
+      if (this.host !== host) {
         throw new Error("Pluto server was stopped while opening the notebook");
       }
     } catch (error) {
@@ -953,17 +977,16 @@ export class PlutoManager {
    * Close all notebook connections
    */
   public async dispose(): Promise<void> {
+    this.setState({ status: "stopping", url: this.serverUrl });
     for (const [notebookPath, worker] of this.workers.entries()) {
       await this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 
-    // Stop task (fire and forget - dispose is not async)
-    if (this.serverManager.isRunning()) {
-      await this.serverManager.stop().catch(() => {
-        // Ignore errors during dispose
-      });
-    }
+    await this.serverManager.stop().catch(() => {
+      // Ignore errors during dispose
+    });
+    this.setState({ status: "stopped" });
   }
 
   public async restartNotebook(notebookPath?: string): Promise<void> {

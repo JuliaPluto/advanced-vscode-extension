@@ -15,7 +15,6 @@ import type { PlutoManager } from "../plutoManager.ts";
 const outputChannel = { appendLine: () => {} };
 
 const plutoManager = {
-  isRunning: () => false,
   isConnected: () => false,
 } as unknown as PlutoManager;
 

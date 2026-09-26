@@ -1,7 +1,13 @@
 import { jest } from "@jest/globals";
-import { PlutoManager, PlutoManagerLogger } from "../plutoManager.js";
+import {
+  PlutoManager,
+  PlutoManagerLogger,
+  type ServerState,
+} from "../plutoManager.js";
 import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
 import { Host, Worker } from "@plutojl/rainbow";
+
+type ServerStatus = ServerState["status"];
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -30,15 +36,19 @@ function createMockServerManager(startDelayMs = 20): MockServerManager {
     },
     start: async () => {
       manager.startCalls++;
+      if (manager.running) {
+        return;
+      }
       await delay(startDelayMs);
       manager.running = true;
     },
     stop: async () => {
       // Like real managers, the process exit fires the stop callback
       // before stop() resolves
-      manager.triggerStop();
+      if (manager.running) {
+        manager.triggerStop();
+      }
     },
-    isRunning: () => manager.running,
     waitForReady: async () => {},
     onStop: (cb: () => void) => {
       onStopCallback = cb;
@@ -259,6 +269,205 @@ describe("PlutoManager concurrency", () => {
       const worker = await manager.getWorker("/tmp/nb.pluto.jl");
       expect(worker).toBe(working);
       expect(createWorkerSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("server state", () => {
+    const NOTEBOOK_ID = "0b6c8e0e-7d1c-4b8e-9d1f-3e0c7c6b2a11";
+    const NOTEBOOK = "/tmp/state.pluto.jl";
+
+    function recordStates(manager: PlutoManager): ServerStatus[] {
+      const seen: ServerStatus[] = [];
+      manager.on("serverStateChanged", (state) => seen.push(state.status));
+      return seen;
+    }
+
+    // A local server opens notebooks by path: POST /open answers the id
+    function serveLocalNotebooks(): void {
+      global.fetch = jest.fn(async () => ({
+        ok: true,
+        text: async () => NOTEBOOK_ID,
+      })) as unknown as typeof fetch;
+      jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+      const worker = createFakeWorker({ notebook_id: NOTEBOOK_ID });
+      jest.spyOn(Host.prototype, "worker").mockReturnValue(worker);
+    }
+
+    it("moves stopped → starting → ready, carrying the URL", async () => {
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        createMockServerManager(1),
+        stubFileReader
+      );
+      const seen = recordStates(manager);
+
+      expect(manager.getState()).toEqual({ status: "stopped" });
+      await manager.start();
+
+      expect(seen).toEqual(["starting", "ready"]);
+      expect(manager.getState()).toEqual({
+        status: "ready",
+        url: "http://localhost:1234",
+      });
+    });
+
+    it("moves to failed with the reason when the start fails", async () => {
+      const serverManager = createMockServerManager(1);
+      serverManager.start = async () => {
+        throw new Error("julia exploded");
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      const seen = recordStates(manager);
+
+      await expect(manager.start()).rejects.toThrow("julia exploded");
+
+      expect(seen).toEqual(["starting", "failed"]);
+      expect(manager.getState()).toEqual({
+        status: "failed",
+        url: "http://localhost:1234",
+        reason: "julia exploded",
+      });
+    });
+
+    it("moves ready → failed when the server exits unexpectedly", async () => {
+      const serverManager = createMockServerManager(1);
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      await manager.start();
+      const seen = recordStates(manager);
+
+      serverManager.triggerStop();
+
+      expect(seen).toEqual(["failed"]);
+      expect(manager.getState()).toMatchObject({
+        status: "failed",
+        reason: expect.stringContaining("stopped unexpectedly"),
+      });
+      expect(manager.isConnected()).toBe(false);
+    });
+
+    it("moves ready → stopping → stopped on stop()", async () => {
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        createMockServerManager(1),
+        stubFileReader
+      );
+      await manager.start();
+      const seen = recordStates(manager);
+
+      await manager.stop();
+
+      expect(seen).toEqual(["stopping", "stopped"]);
+    });
+
+    it("stops a server that is starting once the start settles", async () => {
+      const serverManager = createMockServerManager(30);
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      const seen = recordStates(manager);
+
+      const started = manager.start();
+      await delay(5);
+      expect(manager.getState().status).toBe("starting");
+      await Promise.all([started, manager.stop()]);
+
+      expect(serverManager.startCalls).toBe(1);
+      expect(seen).toEqual(["starting", "ready", "stopping", "stopped"]);
+      expect(serverManager.running).toBe(false);
+    });
+
+    it("starts a server that is stopping once the stop settles", async () => {
+      const serverManager = createMockServerManager(1);
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      await manager.start();
+      const seen = recordStates(manager);
+
+      await Promise.all([manager.stop(), manager.start()]);
+
+      expect(seen).toEqual(["stopping", "stopped", "starting", "ready"]);
+      expect(serverManager.startCalls).toBe(2);
+    });
+
+    describe("recreates open notebooks on every path to ready", () => {
+      const paths: Array<
+        [string, (m: PlutoManager, s: MockServerManager) => Promise<void>]
+      > = [
+        [
+          "stop() then start()",
+          async (m) => {
+            await m.stop();
+            await m.start();
+          },
+        ],
+        [
+          "restart()",
+          async (m) => {
+            await m.restart();
+          },
+        ],
+        [
+          "unexpected exit then start()",
+          async (m, s) => {
+            s.triggerStop();
+            await m.start();
+          },
+        ],
+        [
+          "stop() then connect()",
+          async (m) => {
+            await m.stop();
+            await m.connect();
+          },
+        ],
+        [
+          "stop() that leaves the process running, then start()",
+          async (m, s) => {
+            s.stop = async () => {};
+            await m.stop();
+            await m.start();
+          },
+        ],
+      ];
+
+      it.each(paths)("%s", async (_name, reachReadyAgain) => {
+        serveLocalNotebooks();
+        const serverManager = createMockServerManager(1);
+        const manager = new PlutoManager(
+          1234,
+          createMockLogger(),
+          serverManager,
+          stubFileReader
+        );
+        await manager.getWorker(NOTEBOOK);
+        const recreated: string[] = [];
+        manager.on("workerRecreated", (path) => recreated.push(path));
+
+        await reachReadyAgain(manager, serverManager);
+
+        expect(manager.getState().status).toBe("ready");
+        expect(recreated).toEqual([NOTEBOOK]);
+        expect(manager.getOpenNotebooks()).toHaveLength(1);
+      });
     });
   });
 });

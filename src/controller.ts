@@ -1197,7 +1197,7 @@ export class PlutoNotebookController {
       void this.applyFoldsOnce(notebook);
 
       // Only initialize if server is running
-      if (this.plutoManager.isRunning()) {
+      if (this.plutoManager.isConnected()) {
         try {
           const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
 
@@ -1398,7 +1398,7 @@ export class PlutoNotebookController {
       return;
     }
 
-    if (!this.plutoManager.isRunning()) {
+    if (!this.plutoManager.isConnected()) {
       this.outputChannel.appendLine(
         "Server not running - skipping cell change handling"
       );

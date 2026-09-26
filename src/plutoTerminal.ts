@@ -846,19 +846,9 @@ using InteractiveUtils
     this.write("\x1b[1;36mTerminal Status:\x1b[0m\r\n");
 
     // Server status from PlutoManager
-    const serverStatus = this.plutoManager.isRunning();
-    const serverConnected = this.plutoManager.isConnected();
-
-    this.write(
-      `  Server: ${
-        serverStatus ? "\x1b[32mRunning\x1b[0m" : "\x1b[31mStopped\x1b[0m"
-      }\r\n`
-    );
-    this.write(
-      `  Server Connected: ${
-        serverConnected ? "\x1b[32mYes\x1b[0m" : "\x1b[31mNo\x1b[0m"
-      }\r\n`
-    );
+    const serverState = this.plutoManager.getState().status;
+    const serverColor = serverState === "ready" ? "32" : "31";
+    this.write(`  Server: \x1b[${serverColor}m${serverState}\x1b[0m\r\n`);
     this.write(`  Server URL: ${this.plutoManager.getServerUrl()}\r\n`);
     this.write(
       `  Notebook Bound: ${
