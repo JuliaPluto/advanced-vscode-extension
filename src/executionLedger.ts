@@ -22,6 +22,13 @@ export interface LedgerDeps<
   now?(): number;
 }
 
+interface LiveExecution<Cell, Execution> {
+  execution: Execution;
+  cell: Cell;
+  // Stamp of the result this execution last drew
+  shown?: number;
+}
+
 /**
  * Owns the live cell executions of every notebook, keyed by
  * (notebook path, Pluto cell id), and the stamp of the last result drawn
@@ -38,7 +45,7 @@ export class ExecutionLedger<
 > {
   private readonly active = new Map<
     string,
-    Map<CellId, { execution: Execution; cell: Cell }>
+    Map<CellId, LiveExecution<Cell, Execution>>
   >();
   // last_run_timestamp of the most recently rendered result per cell;
   // recorded only once that result is on screen
@@ -73,13 +80,16 @@ export class ExecutionLedger<
     return (this.active.get(notebookPath)?.size ?? 0) > 0;
   }
 
-  /** Streams output into the live execution; false when there is none. */
+  /**
+   * Streams output into the live execution; false when there is none. A
+   * result whose stamp is already drawn for this cell is left mounted.
+   */
   render(notebookPath: string, cellId: CellId, state: CellResultData): boolean {
-    const execution = this.active.get(notebookPath)?.get(cellId)?.execution;
-    if (!execution) {
+    const entry = this.active.get(notebookPath)?.get(cellId);
+    if (!entry) {
       return false;
     }
-    this.replaceOutput(execution, this.deps.formatOutput(state));
+    this.draw(notebookPath, cellId, entry, state);
     return true;
   }
 
@@ -90,25 +100,14 @@ export class ExecutionLedger<
     state: CellResultData,
     endTime?: number
   ): boolean {
-    const execution = this.active.get(notebookPath)?.get(cellId)?.execution;
-    if (!execution) {
+    const entry = this.active.get(notebookPath)?.get(cellId);
+    if (!entry) {
       return false;
     }
-    const stamp = state.output?.last_run_timestamp;
-    const accepted = this.replaceOutput(
-      execution,
-      this.deps.formatOutput(state),
-      () => {
-        const stamps = this.renderedStamp.get(notebookPath);
-        if (stamp && stamps?.get(cellId) === stamp) {
-          stamps.delete(cellId);
-        }
-      }
-    );
-    if (accepted) {
+    if (this.draw(notebookPath, cellId, entry, state)) {
       this.markRendered(notebookPath, cellId, state);
     }
-    this.settle(notebookPath, cellId, execution, !state.errored, endTime);
+    this.settle(notebookPath, cellId, entry.execution, !state.errored, endTime);
     return true;
   }
 
@@ -243,6 +242,43 @@ export class ExecutionLedger<
     } catch {
       // Already resolved
     }
+  }
+
+  /**
+   * Draws a result into a live execution unless its stamp is already
+   * drawn there or settled for the cell. false when the output was refused.
+   */
+  private draw(
+    notebookPath: string,
+    cellId: CellId,
+    entry: LiveExecution<Cell, Execution>,
+    state: CellResultData
+  ): boolean {
+    const stamp = state.output?.last_run_timestamp;
+    if (
+      stamp &&
+      (stamp === entry.shown ||
+        stamp === this.renderedStamp.get(notebookPath)?.get(cellId))
+    ) {
+      return true;
+    }
+    const accepted = this.replaceOutput(
+      entry.execution,
+      this.deps.formatOutput(state),
+      () => {
+        if (entry.shown === stamp) {
+          entry.shown = undefined;
+        }
+        const stamps = this.renderedStamp.get(notebookPath);
+        if (stamp && stamps?.get(cellId) === stamp) {
+          stamps.delete(cellId);
+        }
+      }
+    );
+    if (accepted) {
+      entry.shown = stamp;
+    }
+    return accepted;
   }
 
   /**

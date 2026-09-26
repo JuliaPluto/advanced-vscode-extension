@@ -7,7 +7,7 @@ import type {
   NotebookData,
   UpdateEvent,
 } from "@plutojl/rainbow";
-import { formatCellOutput } from "./cellOutput.ts";
+import { formatCellOutput, rendererCellState } from "./cellOutput.ts";
 import { serializeCellResult } from "./outputSerialization.ts";
 import { ExecutionLedger } from "./executionLedger.ts";
 import {
@@ -458,9 +458,21 @@ export class PlutoNotebookController {
       return;
     }
     this.ledger.materialize(notebook.uri.fsPath, cellId, cell, state);
+    this.sendCellState(notebook, cellId, state);
+  }
+
+  /** Streams a cell's logs, stdout and progress to its renderer. */
+  private sendCellState(
+    notebook: vscode.NotebookDocument,
+    cellId: CellId,
+    state: CellResultData
+  ): void {
     this.sendMessageToRenderer(notebook, {
       type: "setState",
-      state,
+      state: rendererCellState(
+        state,
+        this.ledger.isActive(notebook.uri.fsPath, cellId)
+      ),
       cell_id: cellId,
     });
   }
@@ -516,11 +528,7 @@ export class PlutoNotebookController {
     // Optimistically send data. May be ignored.
     // If not ignored, this makes sure logs, stdout and progress
     // is communicated
-    this.sendMessageToRenderer(notebook, {
-      type: "setState",
-      state: currentCellState,
-      cell_id: currentCellState.cell_id,
-    });
+    this.sendCellState(notebook, cellId, currentCellState);
 
     const segment2 = path[2];
 
@@ -874,11 +882,7 @@ export class PlutoNotebookController {
       } else {
         this.ledger.render(notebook.uri.fsPath, cell_id, state);
       }
-      this.sendMessageToRenderer(notebook, {
-        type: "setState",
-        state,
-        cell_id,
-      });
+      this.sendCellState(notebook, cell_id, state);
     }
   };
 
