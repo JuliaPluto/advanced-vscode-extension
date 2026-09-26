@@ -74,6 +74,41 @@ describe("resolveConfig", () => {
     expect(config.juliaVersion).toBe("1.11");
   });
 
+  it("accepts an http(s) Pluto URL", () => {
+    const config = resolveRunConfig(
+      { command: "run", plutoUrl: "https://pluto.example:8443/" },
+      { cwd, env: {} }
+    );
+    expect(config.plutoUrl).toBe("https://pluto.example:8443/");
+  });
+
+  it("rejects a Pluto URL without a scheme, suggesting http://", () => {
+    expect(() =>
+      resolveRunConfig(
+        { command: "run", plutoUrl: "localhost:1234" },
+        { cwd, env: {} }
+      )
+    ).toThrow("did you mean 'http://localhost:1234'?");
+  });
+
+  it.each(["foo", "ftp://host", "http://"])(
+    "rejects the Pluto URL '%s'",
+    (plutoUrl) => {
+      expect(() =>
+        resolveRunConfig({ command: "run", plutoUrl }, { cwd, env: {} })
+      ).toThrow("--pluto-url");
+    }
+  );
+
+  it("checks a Pluto URL from the environment too", () => {
+    expect(() =>
+      resolveRunConfig(
+        { command: "run" },
+        { cwd, env: { PLUTO_SERVER_URL: "localhost:1234" } }
+      )
+    ).toThrow("http://");
+  });
+
   it("install reads the tool-server port from .plutomcp.json like every other command", () => {
     fs.writeFileSync(
       path.join(cwd, ".plutomcp.json"),

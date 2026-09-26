@@ -20,6 +20,7 @@ import {
   renderCellToPngCode,
 } from "./notebookOutput.ts";
 import type { PlutoManager } from "./plutoManager.ts";
+import { otherPlutoServerMessage, sameUrl } from "./plutoServerUrl.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import { z } from "zod";
 // @ts-expect-error - esbuild will load this as text
@@ -189,15 +190,32 @@ export class PlutoMCPHttpServer {
     // Connect to Pluto Server
     server.tool(
       "connect_to_pluto_server",
-      "Connect to an already-running Pluto server at the configured URL (set via --pluto-url or extension settings)",
-      {},
-      async () => {
+      "Connect to the already-running Pluto server this tool server is configured for (the command-line tool's --pluto-url, or the VS Code extension settings). A `url` is checked against that server; a different one is refused, since the tool server cannot be pointed at another Pluto server.",
+      {
+        url: z
+          .string()
+          .regex(/^https?:\/\//i, "Must be an http:// or https:// URL")
+          .url()
+          .optional()
+          .describe(
+            "Expected URL of the running Pluto server, e.g. http://localhost:1234"
+          ),
+      },
+      async ({ url }) => {
+        if (this.plutoManager.getState().status === "starting") {
+          await this.plutoManager.start();
+        }
+        const current = this.plutoManager.getServerUrl();
+        if (url && !sameUrl(url, current)) {
+          throw new Error(otherPlutoServerMessage(current, url));
+        }
+
         if (this.plutoManager.isConnected()) {
           return {
             content: [
               {
                 type: "text",
-                text: `Already connected to a Pluto server at ${this.plutoManager.getServerUrl()}`,
+                text: `Already connected to a Pluto server at ${current}`,
               },
             ],
           };
