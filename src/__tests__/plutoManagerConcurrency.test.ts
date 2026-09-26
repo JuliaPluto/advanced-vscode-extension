@@ -943,6 +943,18 @@ describe("PlutoManager.getWorker", () => {
       expect(reopened.shutdown).toHaveBeenCalled();
     });
 
+    it("adopts a new browser session found for the path", async () => {
+      const { manager, reopened } = await reopenAfterDrop({
+        listedBefore: running(NOTEBOOK_ID),
+        listedAfter: running(OTHER_ID),
+        reopenedId: OTHER_ID,
+      });
+      expect(opensByPath()).toEqual([]);
+
+      await manager.closeNotebook(NOTEBOOK);
+      expect(reopened.shutdown).not.toHaveBeenCalled();
+    });
+
     it("keeps an adopted notebook reconnected to the same session adopted", async () => {
       const { manager, reopened } = await reopenAfterDrop({
         listedBefore: running(NOTEBOOK_ID),

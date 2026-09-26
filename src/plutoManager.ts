@@ -486,12 +486,14 @@ export class PlutoManager {
         // Already closed
       }
       const reopened = await this.openWorker(notebookPath, documentContent);
-      // The same session keeps the ownership it had; a new one is ours
-      const adopted = reopened.notebook_id === cached.notebook_id && wasAdopted;
-      if (adopted) {
-        this.adoptedWorkers.add(notebookPath);
-      } else {
-        this.adoptedWorkers.delete(notebookPath);
+      // The same session keeps the ownership it had; a new one keeps
+      // what opening decided (adopted from the listing, owned by path)
+      if (reopened.notebook_id === cached.notebook_id) {
+        if (wasAdopted) {
+          this.adoptedWorkers.add(notebookPath);
+        } else {
+          this.adoptedWorkers.delete(notebookPath);
+        }
       }
       this.emit("workerRecreated", notebookPath, reopened);
       return reopened;
