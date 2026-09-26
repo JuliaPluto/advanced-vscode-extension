@@ -4,6 +4,12 @@ export interface CliConfig {
   mcpPortExplicit: boolean;
   plutoPort: number;
   plutoUrl: string | undefined;
+  /**
+   * True when the Pluto port or URL was named on the command line or in the
+   * environment. Otherwise `status` checks the Pluto server a running tool
+   * server reports, if any.
+   */
+  plutoExplicit: boolean;
   /** juliaup channel, or "default" to use whatever `julia` resolves to. */
   juliaVersion: string;
   /** True when the channel was named by the user rather than defaulted. */

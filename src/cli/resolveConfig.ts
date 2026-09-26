@@ -123,6 +123,11 @@ export function resolveRunConfig(
     plutoUrl: checkPlutoUrl(
       args.plutoUrl ?? env.PLUTO_SERVER_URL ?? file.serverUrl ?? undefined
     ),
+    plutoExplicit:
+      args.plutoPort !== undefined ||
+      args.plutoUrl !== undefined ||
+      envInt("PLUTO_PORT", env) !== undefined ||
+      env.PLUTO_SERVER_URL !== undefined,
     juliaVersion: juliaVersion ?? DEFAULTS.juliaVersion,
     juliaVersionExplicit: juliaVersion !== undefined,
     workDir,
