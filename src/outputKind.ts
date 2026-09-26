@@ -75,8 +75,7 @@ const PLUTO_OBJECT_MIME = /^application\/vnd\.pluto\.[a-z]+\+object$/;
  * so the key cannot collide with a real one.
  */
 const TRANSPORT_KEY = "$bytes";
-const BASE64 =
-  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 interface OutputRecord {
   mime?: unknown;
@@ -101,12 +100,16 @@ function bytesOf(body: unknown): Uint8Array | undefined {
 
 type TransportBody = { [TRANSPORT_KEY]: string };
 
+function isBase64(text: string): boolean {
+  return text.length % 4 === 0 && BASE64.test(text);
+}
+
 function isTransportBody(body: unknown): body is TransportBody {
   return (
     body !== null &&
     typeof body === "object" &&
     typeof (body as Record<string, unknown>)[TRANSPORT_KEY] === "string" &&
-    BASE64.test((body as TransportBody)[TRANSPORT_KEY])
+    isBase64((body as TransportBody)[TRANSPORT_KEY])
   );
 }
 

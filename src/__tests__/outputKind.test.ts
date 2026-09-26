@@ -353,6 +353,16 @@ describe("toTransport / fromTransport", () => {
     }
   });
 
+  it("carries a 5 MB image", () => {
+    const big = new Uint8Array(5 * 1024 * 1024).map((_, i) => i % 253);
+    const sent = throughJson(toTransport({ mime: "image/png", body: big }));
+    expect(classifyOutput(sent)).toMatchObject({
+      body: "bytes",
+      size: big.length,
+    });
+    expect(fromTransport(sent).body).toEqual(big);
+  });
+
   it("round-trips an image larger than one encoding chunk", () => {
     const big = new Uint8Array(100_000).map((_, i) => i % 251);
     const back = fromTransport(
