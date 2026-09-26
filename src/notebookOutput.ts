@@ -1,37 +1,26 @@
 import { randomUUID } from "crypto";
+import { classifyOutput, outputBytes, outputText } from "./outputKind.ts";
 
 /** Longest text body returned inline in a cell result. */
 export const INLINE_TEXT_LIMIT = 4_000;
 /** Longest serialized tree (Pluto object view) returned inline in a cell result. */
 export const INLINE_TREE_LIMIT = 8_000;
 
-const TEXT_MIME = /^(text\/|image\/svg|application\/(json|javascript|xml))/;
-const IMAGE_MIME = /^image\//;
-const RASTER_MIME = /^image\/(png|jpeg|gif|webp)$/;
-/** Mimes whose bodies are never returned inline, only through read_cell_output. */
-const HEAVY_MIME = /^(image\/|application\/pdf|application\/octet-stream)/;
-
 const FETCH_HINT =
   'use read_cell_output with as: "text", "file", or "image" to fetch it';
 const IMAGE_HINT =
   'use read_cell_output with as: "image" to see it, or as: "file" / "text" for the original output';
 
-function bytesOf(value: unknown): Uint8Array | undefined {
-  if (value instanceof Uint8Array) return value;
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  return undefined;
-}
+/** Image mimes a tool response can carry as an image content block. */
+const IMAGE_BLOCK_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 
-export function isTextMime(mime: string): boolean {
-  return TEXT_MIME.test(mime);
-}
-
-export function isImageMime(mime: string): boolean {
-  return IMAGE_MIME.test(mime);
-}
-
-export function isRasterMime(mime: string): boolean {
-  return RASTER_MIME.test(mime);
+export function isImageBlockMime(mime: string): boolean {
+  return IMAGE_BLOCK_MIMES.has(mime);
 }
 
 export function extensionFor(mime: string): string {
@@ -57,81 +46,63 @@ export interface FullOutput {
   mime: string;
   /** Body as bytes, whatever Pluto sent. */
   bytes: Uint8Array;
-  /** Body as text for text-like mimes and tree objects (serialized JSON). */
+  /** Body as text for textual mimes and structured bodies (serialized JSON). */
   text: string | undefined;
 }
 
-/** The complete body of a cell output, decoded once, for tools that hand it over whole. */
+/** The complete body of a cell output, for tools that hand it over whole. */
 export function fullOutput(output: unknown): FullOutput | undefined {
-  if (output === null || typeof output !== "object") return undefined;
-  const record = output as Record<string, unknown>;
-  const mime = typeof record.mime === "string" ? record.mime : "text/plain";
-  const body = record.body;
-  const bytes = bytesOf(body);
-  if (bytes) {
-    return {
-      mime,
-      bytes,
-      text: isTextMime(mime) ? new TextDecoder().decode(bytes) : undefined,
-    };
-  }
-  if (typeof body === "string") {
-    return { mime, bytes: new TextEncoder().encode(body), text: body };
-  }
-  if (body === undefined || body === null) return undefined;
-  const text = JSON.stringify(body);
-  return { mime, bytes: new TextEncoder().encode(text), text };
+  const bytes = outputBytes(output);
+  if (!bytes) return undefined;
+  return {
+    mime: classifyOutput(output).mime,
+    bytes,
+    text: outputText(output),
+  };
 }
 
 /**
- * Make a cell output compact enough for a tool response. Image and other
- * heavy bodies are replaced by their size; text is cut at
- * INLINE_TEXT_LIMIT and tree objects at INLINE_TREE_LIMIT, each with a
- * note on how to fetch the whole thing.
+ * Make a cell output compact enough for a tool response. A body whose mime
+ * is textual is cut at INLINE_TEXT_LIMIT, except an SVG over the limit, and
+ * a structured body at INLINE_TREE_LIMIT. Any other body is replaced by its
+ * size, each with a note on how to fetch it.
  */
 export function presentOutput(output: unknown): unknown {
   if (output === null || typeof output !== "object") return output;
   const record = output as Record<string, unknown>;
-  const mime = typeof record.mime === "string" ? record.mime : "";
-  let body = record.body;
-  const bytes = bytesOf(body);
+  const kind = classifyOutput(record);
 
-  if (HEAVY_MIME.test(mime)) {
-    const size =
-      bytes?.length ?? (typeof body === "string" ? body.length : undefined);
+  if (kind.body === "empty") return record;
+
+  if (kind.body === "structured") {
+    if (kind.size <= INLINE_TREE_LIMIT) return record;
     return {
       ...record,
       body: null,
-      bytes: size,
-      body_note: `${mime} output${size !== undefined ? ` of ${size} bytes` : ""} is not returned inline; ${IMAGE_MIME.test(mime) ? IMAGE_HINT : FETCH_HINT}`,
+      bytes: kind.size,
+      body_note: `${kind.mime} output of ${kind.size} characters is not returned inline; ${FETCH_HINT}`,
     };
   }
 
-  if (bytes) {
-    body = new TextDecoder().decode(bytes);
-  }
-
-  if (typeof body === "string") {
-    if (body.length <= INLINE_TEXT_LIMIT) return { ...record, body };
-    return {
-      ...record,
-      body: body.slice(0, INLINE_TEXT_LIMIT),
-      body_note: `truncated to ${INLINE_TEXT_LIMIT} of ${body.length} characters; ${FETCH_HINT}`,
-    };
-  }
-
-  if (body !== null && typeof body === "object") {
-    const size = JSON.stringify(body).length;
-    if (size <= INLINE_TREE_LIMIT) return { ...record, body };
+  const text = kind.mimeTextual ? outputText(record) : undefined;
+  if (
+    text === undefined ||
+    (kind.family === "image" && text.length > INLINE_TEXT_LIMIT)
+  ) {
     return {
       ...record,
       body: null,
-      bytes: size,
-      body_note: `${mime || "structured"} output of ${size} characters is not returned inline; ${FETCH_HINT}`,
+      bytes: kind.size,
+      body_note: `${kind.mime} output of ${kind.size} bytes is not returned inline; ${kind.family === "image" ? IMAGE_HINT : FETCH_HINT}`,
     };
   }
 
-  return { ...record, body };
+  if (text.length <= INLINE_TEXT_LIMIT) return { ...record, body: text };
+  return {
+    ...record,
+    body: text.slice(0, INLINE_TEXT_LIMIT),
+    body_note: `truncated to ${INLINE_TEXT_LIMIT} of ${text.length} characters; ${FETCH_HINT}`,
+  };
 }
 
 /**
