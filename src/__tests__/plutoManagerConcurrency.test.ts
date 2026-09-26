@@ -312,6 +312,48 @@ describe("PlutoManager concurrency", () => {
       });
     });
 
+    it("connect() to a configured URL reports starting → ready", async () => {
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        createMockServerManager(1),
+        stubFileReader,
+        "http://10.0.0.99:1234"
+      );
+      const seen = recordStates(manager);
+
+      await manager.connect();
+
+      expect(seen).toEqual(["starting", "ready"]);
+      expect(manager.getState()).toEqual({
+        status: "ready",
+        url: "http://10.0.0.99:1234",
+      });
+    });
+
+    it("keeps a configured URL when the server manager reports a port", async () => {
+      const serverManager = createMockServerManager(1);
+      let reportPort: (port: number) => void = () => {};
+      serverManager.onPortChanged = (cb) => {
+        reportPort = cb;
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader,
+        "http://10.0.0.99:1234"
+      );
+
+      reportPort(1235);
+      await manager.start();
+
+      expect(manager.getServerUrl()).toBe("http://10.0.0.99:1234");
+      expect(manager.getState()).toMatchObject({
+        url: "http://10.0.0.99:1234",
+      });
+    });
+
     it("moves to failed with the reason when the start fails", async () => {
       const serverManager = createMockServerManager(1);
       serverManager.start = async () => {

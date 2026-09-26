@@ -76,8 +76,11 @@ export class PlutoManager {
       this.onServerStopped();
     });
 
-    // Register callback to update server URL when port changes
+    // A configured server URL is fixed; only an owned server moves ports
     this.serverManager.onPortChanged((newPort: number) => {
+      if (this.usingCustomServerUrl) {
+        return;
+      }
       this.serverUrl = `http://localhost:${newPort}`;
       // Update host with new URL
       if (this.host) {
