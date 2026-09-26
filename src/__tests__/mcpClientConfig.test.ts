@@ -87,6 +87,15 @@ describe("upsertMcpServer", () => {
       });
     });
 
+    it("reports an entry with the same values in another key order as current", () => {
+      const reordered = JSON.stringify({
+        mcpServers: { [MCP_SERVER_NAME]: { url, type: "http" } },
+      });
+      expect(
+        upsertMcpServer(reordered, { format: "claude-code", url })
+      ).toEqual({ kind: "exists", current: true });
+    });
+
     it("reports an identical entry as current", () => {
       expect(upsertMcpServer(raw(url), { format: "claude-code", url })).toEqual(
         { kind: "exists", current: true }

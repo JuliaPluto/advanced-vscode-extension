@@ -3,6 +3,21 @@ import { getMcpEndpoint } from "../mcpServerDefinitionProvider.ts";
 import { MCP_SERVER_NAME, upsertMcpServer } from "../mcpClientConfig.ts";
 import { openUrl } from "./plutoServerCommands.ts";
 
+/** A missing file reads as `undefined`; any other read failure throws. */
+async function readConfigText(uri: vscode.Uri): Promise<string | undefined> {
+  try {
+    return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+  } catch (error) {
+    if (
+      error instanceof vscode.FileSystemError &&
+      error.code === "FileNotFound"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 /**
  * VS Code and its in-editor agents discover the server through the native
  * MCP server definition provider; a config file is only needed by clients
@@ -20,21 +35,10 @@ async function createClaudeCodeMCPConfig(mcpUrl: string): Promise<void> {
   const configPath = vscode.Uri.joinPath(workspaceFolders[0].uri, ".mcp.json");
 
   try {
-    let raw: string | undefined;
-    try {
-      raw = new TextDecoder().decode(
-        await vscode.workspace.fs.readFile(configPath)
-      );
-    } catch (error) {
-      if (
-        !(error instanceof vscode.FileSystemError) ||
-        error.code !== "FileNotFound"
-      ) {
-        throw error;
-      }
-    }
-
-    let result = upsertMcpServer(raw, { format: "claude-code", url: mcpUrl });
+    let result = upsertMcpServer(await readConfigText(configPath), {
+      format: "claude-code",
+      url: mcpUrl,
+    });
     if (result.kind === "exists" && !result.current) {
       const overwrite = await vscode.window.showWarningMessage(
         `Overwrite existing ${MCP_SERVER_NAME} entry?`,
@@ -45,7 +49,7 @@ async function createClaudeCodeMCPConfig(mcpUrl: string): Promise<void> {
         "Overwrite"
       );
       if (overwrite !== "Overwrite") return;
-      result = upsertMcpServer(raw, {
+      result = upsertMcpServer(await readConfigText(configPath), {
         format: "claude-code",
         url: mcpUrl,
         force: true,

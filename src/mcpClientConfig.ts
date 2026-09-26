@@ -60,7 +60,7 @@ export type UpsertResult =
   | { kind: "updated"; config: JsonObject; text: string }
   /** An entry is already there and `force` was not set; `current` says whether it equals the requested one. */
   | { kind: "exists"; current: boolean }
-  /** The config could not be parsed; the file must be left alone. */
+  /** The config is not a JSON object with an object server map; the file must be left alone. */
   | { kind: "invalid"; reason: string };
 
 export function hasMcpServerEntry(
@@ -97,7 +97,7 @@ export function upsertMcpServer(
   if (existing !== undefined && !opts.force) {
     return {
       kind: "exists",
-      current: JSON.stringify(existing) === JSON.stringify(entry),
+      current: sameEntry(existing, entry),
     };
   }
 
@@ -111,6 +111,16 @@ export function upsertMcpServer(
     config: merged,
     text: JSON.stringify(merged, null, 2) + "\n",
   };
+}
+
+/** Entries are flat string maps; key order is irrelevant. */
+function sameEntry(existing: unknown, entry: JsonObject): boolean {
+  if (!isObject(existing)) return false;
+  const keys = Object.keys(entry);
+  return (
+    Object.keys(existing).length === keys.length &&
+    keys.every((key) => existing[key] === entry[key])
+  );
 }
 
 function isObject(value: unknown): value is JsonObject {
