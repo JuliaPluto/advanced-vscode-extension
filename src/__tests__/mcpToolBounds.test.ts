@@ -12,6 +12,7 @@ import {
   STILL_STARTING,
 } from "../mcpTools/tool.js";
 import { SERVER_URL, never, textOf } from "./helpers/fakePlutoManager.js";
+import { serverCapabilities } from "../serverCapabilities.js";
 
 /**
  * Every method not listed in `fixtures` returns a promise that never
@@ -50,8 +51,8 @@ function hangingManager(
     getState: () => state,
     isConnected: () => state.status === "ready",
     getServerUrl: () => SERVER_URL,
-    isLocalServer: () => true,
-    serverWritesNotebookFiles: () => true,
+    capabilities: () =>
+      serverCapabilities({ sharesFilesystem: true, writesNotebookFiles: true }),
     getOpenNotebooks: () => [],
     ...(resolution === "resolves" && {
       getWorker: async () => hangingWorker,
