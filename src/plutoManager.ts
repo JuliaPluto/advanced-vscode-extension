@@ -123,11 +123,19 @@ export class PlutoManager {
   }
 
   /**
-   * Called when the server process exits. An exit while starting is
-   * reported by start() and one while stopping belongs to stop(); only an
-   * exit from ready is unexpected.
+   * Called when the server process exits. An exit while starting fails the
+   * start and one while stopping belongs to stop(); only an exit from
+   * ready is unexpected.
    */
   private onServerStopped(): void {
+    if (this.state.status === "starting") {
+      this.setState({
+        status: "failed",
+        url: this.state.url,
+        reason: "Pluto server exited while starting",
+      });
+      return;
+    }
     if (this.state.status !== "ready") {
       return;
     }
@@ -211,9 +219,11 @@ export class PlutoManager {
 
   /**
    * Move from stopped or failed through starting to ready. Concurrent
-   * callers share the in-flight transition, and one that begins during a
-   * stop waits for the stop to finish. Every path that reaches ready
-   * recreates the notebooks banked by the last stop.
+   * callers share the in-flight transition, whichever of start() and
+   * connect() began it: a start() during a connect() settles with the
+   * connect's probe and launches nothing. One that begins during a stop
+   * waits for the stop to finish. Every path that reaches ready recreates
+   * the notebooks banked by the last stop.
    */
   private transitionToReady(launch: () => Promise<void>): Promise<void> {
     if (this.state.status === "ready" && !this.stopPromise) {
@@ -231,12 +241,21 @@ export class PlutoManager {
     try {
       await launch();
     } catch (error) {
-      this.setState({
-        status: "failed",
-        url: this.serverUrl,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      if (this.state.status === "starting") {
+        this.setState({
+          status: "failed",
+          url: this.serverUrl,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
       throw error;
+    }
+    if (this.state.status !== "starting") {
+      throw new Error(
+        this.state.status === "failed"
+          ? this.state.reason
+          : "Pluto server was stopped while starting"
+      );
     }
     this.host = new Host(this.serverUrl);
     this.setState({ status: "ready", url: this.serverUrl });
@@ -266,7 +285,15 @@ export class PlutoManager {
     const notebookPaths = Array.from(this.notebooksToRecreate);
     this.notebooksToRecreate.clear();
 
-    for (const notebookPath of notebookPaths) {
+    for (const [index, notebookPath] of notebookPaths.entries()) {
+      // Once the server has left ready, getWorker() would await the very
+      // start that runs this loop; the rest waits for the next start
+      if (this.state.status !== "ready") {
+        for (const rest of notebookPaths.slice(index)) {
+          this.notebooksToRecreate.add(rest);
+        }
+        return;
+      }
       try {
         // Use getWorker to recreate the worker
         const worker = await this.getWorker(notebookPath);
@@ -276,6 +303,10 @@ export class PlutoManager {
           this.emit("workerRecreated", notebookPath, worker);
         }
       } catch (error) {
+        if (this.state.status !== "ready") {
+          this.notebooksToRecreate.add(notebookPath);
+          continue;
+        }
         // Log error but continue with other notebooks
         console.error(`Failed to recreate worker for ${notebookPath}:`, error);
       }

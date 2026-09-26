@@ -450,6 +450,100 @@ describe("PlutoManager concurrency", () => {
       expect(serverManager.startCalls).toBe(2);
     });
 
+    it("start() on a configured URL only probes it", async () => {
+      const serverManager = createMockServerManager(1);
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader,
+        "http://10.0.0.99:1234"
+      );
+
+      await manager.start();
+
+      expect(serverManager.startCalls).toBe(0);
+      expect(manager.getState()).toEqual({
+        status: "ready",
+        url: "http://10.0.0.99:1234",
+      });
+    });
+
+    it("fails the start when the process exits before ready", async () => {
+      const serverManager = createMockServerManager(1);
+      serverManager.start = async () => {
+        serverManager.startCalls++;
+        serverManager.running = true;
+        serverManager.triggerStop();
+      };
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+
+      await expect(manager.start()).rejects.toThrow("exited while starting");
+      expect(manager.getState()).toMatchObject({ status: "failed" });
+    });
+
+    it("does not reach ready when disposed while starting", async () => {
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        createMockServerManager(30),
+        stubFileReader
+      );
+
+      const started = manager.start();
+      await delay(5);
+      await manager.dispose();
+
+      await expect(started).rejects.toThrow("stopped while starting");
+      expect(manager.getState()).toEqual({ status: "stopped" });
+    });
+
+    it("settles when the server dies while recreating notebooks", async () => {
+      serveLocalNotebooks();
+      const serverManager = createMockServerManager(1);
+      let dieOnConnect = false;
+      jest.spyOn(Host.prototype, "worker").mockImplementation(() =>
+        createFakeWorker({
+          notebook_id: NOTEBOOK_ID,
+          connect: jest.fn(async () => {
+            if (dieOnConnect) {
+              dieOnConnect = false;
+              serverManager.triggerStop();
+            }
+            return true;
+          }),
+        } as Partial<Worker>)
+      );
+      const manager = new PlutoManager(
+        1234,
+        createMockLogger(),
+        serverManager,
+        stubFileReader
+      );
+      await manager.getWorker("/tmp/one.pluto.jl");
+      await manager.getWorker("/tmp/two.pluto.jl");
+      await manager.stop();
+      const recreated: string[] = [];
+      manager.on("workerRecreated", (path) => recreated.push(path));
+
+      dieOnConnect = true;
+      await manager.start();
+      expect(manager.getState().status).toBe("failed");
+      expect(recreated).toEqual([]);
+
+      await manager.start();
+      expect(manager.getState().status).toBe("ready");
+      expect(recreated.sort()).toEqual([
+        "/tmp/one.pluto.jl",
+        "/tmp/two.pluto.jl",
+      ]);
+    });
+
     describe("recreates open notebooks on every path to ready", () => {
       const paths: Array<
         [string, (m: PlutoManager, s: MockServerManager) => Promise<void>]
