@@ -1,3 +1,4 @@
+import { serverCapabilities } from "../serverCapabilities.ts";
 import { jest } from "@jest/globals";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
@@ -50,8 +51,8 @@ function hangingManager(
     getState: () => state,
     isConnected: () => state.status === "ready",
     getServerUrl: () => SERVER_URL,
-    isLocalServer: () => true,
-    serverWritesNotebookFiles: () => true,
+    capabilities: () =>
+      serverCapabilities({ sharesFilesystem: true, writesNotebookFiles: true }),
     getOpenNotebooks: () => [],
     ...(resolution === "resolves" && {
       getWorker: async () => hangingWorker,

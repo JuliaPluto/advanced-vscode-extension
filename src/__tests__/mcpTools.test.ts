@@ -1,3 +1,4 @@
+import { serverCapabilities } from "../serverCapabilities.ts";
 import { jest } from "@jest/globals";
 import { existsSync } from "fs";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
@@ -173,7 +174,13 @@ describe("the tool set", () => {
 
   it("refuses move_notebook on a remote server before opening the notebook", async () => {
     const manager = fakePlutoManager({
-      overrides: { isLocalServer: () => false },
+      overrides: {
+        capabilities: () =>
+          serverCapabilities({
+            sharesFilesystem: false,
+            writesNotebookFiles: true,
+          }),
+      },
     });
     const result = await createPlutoTools(manager).call("move_notebook", {
       path: "/nb.jl",
