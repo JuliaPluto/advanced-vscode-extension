@@ -1,9 +1,9 @@
 import {
   parsePlutoNotebook,
   serializePlutoNotebook,
+  PlutoNotebookSerializer,
 } from "../plutoSerializer.ts";
 import { isMarkdownCell } from "../markdownCodec.ts";
-import { PlutoNotebookSerializer } from "../serializer.ts";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
