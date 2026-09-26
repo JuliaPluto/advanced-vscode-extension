@@ -33,36 +33,16 @@ The Pluto server can now be run as a VSCode task, providing better integration w
 
 ## Implementation
 
-### PlutoServerTaskManager
+`PlutoServer` (`src/server/plutoServer.ts`) owns everything both hosts share: port selection with fallback, the Julia bootstrap program (`src/server/bootstrap.ts`), the server environment, readiness polling (600 s budget) and a bounded stop (graceful, then kill after 5 s). `start(signal?)` resolves with the server URL once it answers HTTP.
 
-New class in `src/plutoServerTask.ts` that manages the server as a VSCode task:
+Below it sits the process-launcher seam (`src/server/launcher.ts`): launch, observe exit, terminate. Two launchers implement it:
 
-```typescript
-export class PlutoServerTaskManager {
-  async start(): Promise<void>; // Start server as task
-  async stop(): Promise<void>; // Stop server task
-  isRunning(): boolean; // Check if task is running
-  getServerUrl(): string; // Get server URL
-  waitForReady(): Promise<void>; // Wait for server to be ready
-}
-```
+- `VscodeTaskLauncher` (`src/plutoServerTask.ts`) runs the server as this VS Code task. Its `adopt()` re-attaches to a `pluto-server` task left running by an earlier extension host; `PlutoServer` waits for and stops an adopted server exactly like one it launched.
+- `SpawnLauncher` (`src/cli/spawnLauncher.ts`) runs it as a child process of `@plutojl/cli`.
 
-### PlutoManager Integration
+Which Julia to run is resolved per host: `resolveExtensionToolchain` asks the Julia extension, `resolveCliToolchain` uses `julia` on PATH and juliaup. The extension starts Pluto with `update: true` and `writeNotebookFiles: false`, so the editor is the only writer of notebook files.
 
-`PlutoManager` now supports two modes:
-
-1. **Task Mode** (default, recommended):
-
-   ```typescript
-   const manager = new PlutoManager(port, outputChannel, serverUrl, true);
-   ```
-
-2. **Spawn Mode** (legacy, for compatibility):
-   ```typescript
-   const manager = new PlutoManager(port, outputChannel, serverUrl, false);
-   ```
-
-The mode is controlled by the `useTasksForServer` parameter (defaults to `true`).
+`PlutoManager` holds the server's lifecycle state (`stopped | starting | ready | stopping | failed`) on top of `PlutoServer`.
 
 ## Task Configuration
 

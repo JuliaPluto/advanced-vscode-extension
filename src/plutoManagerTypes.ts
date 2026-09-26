@@ -1,27 +1,4 @@
 /**
- * Abstraction for starting/stopping the Pluto server process.
- * VSCode uses PlutoServerTaskManager (vscode.Task-based).
- * The CLI uses NodeServerManager (child_process-based).
- */
-export interface IPlutoServerManager {
-  /** Launch the server, or wait for the one this manager already runs. */
-  start(): Promise<void>;
-  /** Stop the server; a no-op when none is running. */
-  stop(): Promise<void>;
-  waitForReady(): Promise<void>;
-  /** Called when the server process exits, whatever the cause. */
-  onStop(callback: () => void): void;
-  onPortChanged(callback: (newPort: number) => void): void;
-  getActualPort(): number;
-  getServerUrl(): string;
-  /**
-   * Whether the server writes notebook files itself after every run.
-   * Absent means Pluto's default, which is to write them.
-   */
-  writesNotebookFiles?(): boolean;
-}
-
-/**
  * Abstraction for reading a file by its filesystem path.
  * VSCode uses vscode.workspace.fs; the CLI uses fs/promises.
  */

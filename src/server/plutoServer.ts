@@ -11,6 +11,8 @@ export interface JuliaToolchain {
   args: string[];
   packageServer?: string;
   juliaHubToken?: string;
+  /** Passed to the server as JULIA_PLUTO_VSCODE_WORKSPACE. */
+  workspaceDir?: string;
   /** Host-specific environment additions. */
   env?: Record<string, string>;
 }
@@ -18,8 +20,6 @@ export interface JuliaToolchain {
 export interface PlutoServerOptions {
   /** Preferred port; the next free one is used when it is taken. */
   port: number;
-  /** Passed to the server as JULIA_PLUTO_VSCODE_WORKSPACE. */
-  workspaceDir?: string;
   /** Whether Pluto writes notebook files after every run. */
   writeNotebookFiles: boolean;
   /** Re-resolve and precompile Pluto on every start. */
@@ -151,8 +151,8 @@ export class PlutoServer implements IPlutoServer {
       JULIA_LOAD_PATH: isWindows() ? ";" : ":",
       ...toolchain.env,
     };
-    if (this.options.workspaceDir !== undefined) {
-      env.JULIA_PLUTO_VSCODE_WORKSPACE = this.options.workspaceDir;
+    if (toolchain.workspaceDir !== undefined) {
+      env.JULIA_PLUTO_VSCODE_WORKSPACE = toolchain.workspaceDir;
     }
     if (toolchain.packageServer) {
       env.JULIA_PKG_SERVER = toolchain.packageServer;

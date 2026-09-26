@@ -39,7 +39,7 @@ export class NotebookCellOutput {
   constructor(public items: NotebookCellOutputItem[]) {}
 }
 
-// Workspace (used by PlutoServerTaskManager and PlutoManager)
+// Workspace (used by the Julia toolchain and PlutoManager)
 export const workspace = {
   getConfiguration: (section?: string) => ({
     get: (key: string, defaultValue?: unknown) => {
@@ -85,7 +85,7 @@ export const workspace = {
   },
 };
 
-// Task-related types (used by PlutoServerTaskManager)
+// Task-related types (used by VscodeTaskLauncher)
 export enum TaskScope {
   Global = 1,
   Workspace = 2,
@@ -144,7 +144,7 @@ export class Task {
   ) {}
 }
 
-// Tasks namespace (used by PlutoServerTaskManager)
+// Tasks namespace (used by VscodeTaskLauncher)
 const taskEndListeners: Array<(e: { execution: TaskExecution }) => void> = [];
 
 export const tasks = {

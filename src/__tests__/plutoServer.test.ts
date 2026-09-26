@@ -15,6 +15,8 @@ interface FakeBehaviour {
   /** Exit on its own after this long. */
   exitAfterMs?: number;
   ignoresGraceful?: boolean;
+  /** Survive even "kill", exiting only when the test says so. */
+  ignoresKill?: boolean;
 }
 
 /** A "server process" that is an in-process HTTP server on the port. */
@@ -53,7 +55,11 @@ class FakeProcess implements LaunchedProcess {
 
   terminate(how: "graceful" | "kill"): void {
     this.terminations.push(how);
-    if (how === "kill" || !this.behaviour.ignoresGraceful) {
+    const ignored =
+      how === "kill"
+        ? this.behaviour.ignoresKill
+        : this.behaviour.ignoresGraceful || this.behaviour.ignoresKill;
+    if (!ignored) {
       this.exit(0);
     }
   }
@@ -95,6 +101,7 @@ const toolchain: JuliaToolchain = {
   command: "julia",
   args: ["+1.11"],
   packageServer: "https://pkg.example",
+  workspaceDir: "/work",
 };
 
 const fast = {
@@ -115,7 +122,6 @@ describe("PlutoServer", () => {
       resolveToolchain,
       {
         port,
-        workspaceDir: "/work",
         writeNotebookFiles: false,
         update: true,
         ...fast,
@@ -318,6 +324,26 @@ describe("PlutoServer", () => {
       );
       expect(process.terminations).toEqual(["graceful", "kill"]);
       expect(onExit).not.toHaveBeenCalled();
+    });
+
+    it("does not let a late exit of a stopped process touch the next one", async () => {
+      const launcher = track(
+        new FakeLauncher({ readyAfterMs: 0, ignoresKill: true })
+      );
+      const server = serverWith(launcher);
+      const onExit = jest.fn();
+      server.onExit(onExit);
+      await server.start();
+      await server.stop();
+      const next = await server.start();
+
+      launcher.launched[0].process.exit(9);
+
+      expect(onExit).not.toHaveBeenCalled();
+      expect(await server.start()).toBe(next);
+      expect(launcher.launched).toHaveLength(2);
+      launcher.launched[1].process.exit(1);
+      expect(onExit).toHaveBeenCalledTimes(1);
     });
 
     it("is a no-op when nothing runs", async () => {

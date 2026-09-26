@@ -1,7 +1,8 @@
 import "@plutojl/rainbow/node-polyfill";
 import { PlutoManager } from "../plutoManager.ts";
 import { PlutoMCPHttpServer } from "../mcp-server-http.ts";
-import { NodeServerManager } from "./nodeServerManager.ts";
+import { SpawnLauncher, resolveCliToolchain } from "./spawnLauncher.ts";
+import { PlutoServer } from "../server/plutoServer.ts";
 import { NodeFileReader } from "./nodeFileReader.ts";
 import { consoleLogger } from "./logger.ts";
 import { type CliConfig, VERSION } from "./config.ts";
@@ -105,17 +106,22 @@ export async function run(config: CliConfig): Promise<void> {
     process.exit(1);
   }
 
-  const serverManager = new NodeServerManager(
-    config.plutoPort,
-    config.juliaVersion,
-    config.workDir,
-    { update: config.update }
+  const plutoServer = new PlutoServer(
+    new SpawnLauncher(),
+    () =>
+      resolveCliToolchain({
+        juliaVersion: config.juliaVersion,
+        workDir: config.workDir,
+        update: config.update,
+      }),
+    { port: config.plutoPort, writeNotebookFiles: true, update: config.update },
+    { warn: (message) => console.warn(`[pluto] ${message}`) }
   );
 
   const plutoManager = new PlutoManager(
     config.plutoPort,
     consoleLogger,
-    serverManager,
+    plutoServer,
     new NodeFileReader(),
     config.plutoUrl
   );
