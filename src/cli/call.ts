@@ -1,196 +1,9 @@
-/**
- * MCP tool caller — connects to a running MCP server via SSE,
- * sends JSON-RPC requests, and prints responses.
- * Uses raw fetch + SSE parsing to avoid eventsource polyfill issues in CJS bundles.
- */
-
 import * as fs from "fs";
 import * as path from "path";
-import { VERSION } from "./config.ts";
 import { extensionFor } from "../notebookOutput.ts";
 import { readToolArgsSource, resolvePathArgs } from "./toolArgs.ts";
+import { type ToolInfo, withToolClient } from "./toolClient.ts";
 import { bold, cyan, dim, err, yellow } from "./ui.ts";
-
-interface ToolSchema {
-  type?: string;
-  description?: string;
-  enum?: unknown[];
-  default?: unknown;
-}
-
-interface ToolInfo {
-  name: string;
-  description?: string;
-  inputSchema?: {
-    properties?: Record<string, ToolSchema>;
-    required?: string[];
-  };
-}
-
-interface JsonRpcResponse {
-  jsonrpc: string;
-  id: number;
-  result?: {
-    tools?: ToolInfo[];
-    content?: Array<{
-      type: string;
-      text?: string;
-      data?: string;
-      mimeType?: string;
-    }>;
-    isError?: boolean;
-  };
-  error?: { code: number; message: string };
-}
-
-export async function mcpRequest(
-  port: number,
-  method: string,
-  params: Record<string, unknown> = {},
-  timeoutMs = 30000
-): Promise<JsonRpcResponse["result"]> {
-  const sseUrl = `http://localhost:${port}/mcp`;
-
-  // 1. Open SSE connection to get session endpoint
-  const sseResponse = await fetch(sseUrl, {
-    headers: { Accept: "text/event-stream" },
-  });
-
-  if (!sseResponse.ok || !sseResponse.body) {
-    throw new Error(
-      `Failed to connect to MCP server at ${sseUrl} (${sseResponse.status})`
-    );
-  }
-
-  const reader = sseResponse.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let sessionUrl: string | undefined;
-
-  // Read until we get the endpoint event
-  while (!sessionUrl) {
-    const { done, value } = await reader.read();
-    if (done) throw new Error("SSE stream ended before receiving endpoint");
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    for (let i = 0; i < lines.length - 1; i++) {
-      const line = lines[i];
-      if (line.startsWith("data: ") && !sessionUrl) {
-        sessionUrl = line.slice(6).trim();
-      }
-    }
-    buffer = lines[lines.length - 1];
-  }
-
-  const messagesUrl = `http://localhost:${port}${sessionUrl}`;
-  const requestId = 1;
-
-  // 2. First send initialize
-  await fetch(messagesUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 0,
-      method: "initialize",
-      params: {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "plutojl-cli", version: VERSION },
-      },
-    }),
-  });
-
-  // Read and discard the initialize response
-  let initDone = false;
-  while (!initDone) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    if (buffer.includes('"initialize"') || buffer.includes('"id":0')) {
-      initDone = true;
-    }
-  }
-
-  // Send initialized notification
-  await fetch(messagesUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "notifications/initialized",
-    }),
-  });
-
-  // 3. Send the actual request
-  await fetch(messagesUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: requestId,
-      method,
-      params,
-    }),
-  });
-
-  // 4. Read SSE events until we get our response
-  buffer = "";
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    reader.cancel().catch(() => {});
-  }, timeoutMs);
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // Parse SSE events from buffer
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-
-      for (const part of parts) {
-        let eventData = "";
-        for (const line of part.split("\n")) {
-          if (line.startsWith("data: ")) {
-            eventData += line.slice(6);
-          }
-        }
-        if (eventData) {
-          try {
-            const parsed = JSON.parse(eventData) as JsonRpcResponse;
-            if (parsed.id === requestId) {
-              if (parsed.error) {
-                throw new Error(
-                  `MCP error ${parsed.error.code}: ${parsed.error.message}`
-                );
-              }
-              return parsed.result;
-            }
-          } catch (e) {
-            if (e instanceof SyntaxError) continue; // not JSON, skip
-            throw e;
-          }
-        }
-      }
-    }
-  } finally {
-    clearTimeout(timeout);
-    reader.cancel().catch(() => {});
-  }
-
-  if (timedOut) {
-    throw new Error(
-      `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${method}. ` +
-        `The operation may still be running on the server — pass --timeout <seconds> to wait longer.`
-    );
-  }
-  throw new Error("No response received from MCP server");
-}
 
 /** First sentence of a description, for the one-line listing. */
 function summary(text: string | undefined): string {
@@ -250,8 +63,7 @@ function describeTool(tool: ToolInfo): string {
 }
 
 export async function listTools(port: number, filter?: string): Promise<void> {
-  const result = await mcpRequest(port, "tools/list");
-  const tools = result?.tools ?? [];
+  const tools = await withToolClient(port, (client) => client.listTools());
 
   if (filter) {
     const tool = tools.find((t) => t.name === filter);
@@ -335,21 +147,15 @@ export async function callTool(
     process.cwd()
   );
 
-  const result = await mcpRequest(
-    port,
-    "tools/call",
-    {
-      name: toolName,
-      arguments: args,
-    },
-    timeoutMs
+  const result = await withToolClient(port, (client) =>
+    client.callTool(toolName, args, timeoutMs)
   );
 
   if (raw) {
     console.log(JSON.stringify(result, null, 2));
   } else {
     let imageIndex = 0;
-    for (const item of result?.content ?? []) {
+    for (const item of result.content ?? []) {
       if (item.type === "text" && item.text) {
         console.log(item.text);
       } else if (item.type === "image" && item.data) {
@@ -369,7 +175,7 @@ export async function callTool(
     }
   }
 
-  if (result?.isError) {
+  if (result.isError) {
     process.exit(1);
   }
 }
