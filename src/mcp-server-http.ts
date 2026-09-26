@@ -528,7 +528,30 @@ export class PlutoMCPHttpServer {
         let result = null;
 
         if (run) {
-          result = await this.plutoManager.executeCell(worker, cell_id, code);
+          const outcome = await withExecutionTimeout(
+            this.plutoManager.executeCell(worker, cell_id, code)
+          );
+
+          if (outcome.timedOut) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      cell_id: cell_id,
+                      timed_out: true,
+                      message: `Cell code was updated and the cell is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It continues to execute — use wait_for_notebook_idle or poll read_cell to get the result. Do NOT retry edit_cell.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          result = outcome.value;
         } else {
           await this.plutoManager.setCellCode(worker, cell_id, code);
         }
@@ -766,8 +789,28 @@ export class PlutoMCPHttpServer {
         }
 
         try {
-          const docs = await worker.getDocs(symbol);
+          const outcome = await withExecutionTimeout(worker.getDocs(symbol));
 
+          if (outcome.timedOut) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      symbol,
+                      timed_out: true,
+                      message: `Documentation lookup is still running after ${EXECUTION_TIMEOUT_MS / 1000}s, most likely because the notebook is busy running cells — use wait_for_notebook_idle, then call get_docs again.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          const docs = outcome.value;
           return {
             content: [
               {
@@ -857,16 +900,40 @@ export class PlutoMCPHttpServer {
           let symbolsWithDocs: Array<{ symbol: string; docs?: string }> = [];
 
           if (include_docs) {
-            symbolsWithDocs = await Promise.all(
-              symbols.map(async (symbol) => {
-                try {
-                  const docs = await worker.getDocs(symbol);
-                  return { symbol, docs: docs || undefined };
-                } catch {
-                  return { symbol, docs: undefined };
-                }
-              })
+            const outcome = await withExecutionTimeout(
+              Promise.all(
+                symbols.map(async (symbol) => {
+                  try {
+                    const docs = await worker.getDocs(symbol);
+                    return { symbol, docs: docs || undefined };
+                  } catch {
+                    return { symbol, docs: undefined };
+                  }
+                })
+              )
             );
+
+            if (outcome.timedOut) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      {
+                        count: symbols.length,
+                        symbols: symbols.map((symbol) => ({ symbol })),
+                        timed_out: true,
+                        message: `Documentation lookup is still running after ${EXECUTION_TIMEOUT_MS / 1000}s, most likely because the notebook is busy running cells; symbols are listed without docs. Use wait_for_notebook_idle, then call introspect_notebook again or get_docs for one symbol.`,
+                      },
+                      null,
+                      2
+                    ),
+                  },
+                ],
+              };
+            }
+
+            symbolsWithDocs = outcome.value;
           } else {
             symbolsWithDocs = symbols.map((symbol) => ({ symbol }));
           }
@@ -1050,7 +1117,7 @@ export class PlutoMCPHttpServer {
           };
         }
 
-        const renderPng = async (): Promise<Buffer> => {
+        const renderPng = async (): Promise<TimeoutResult<Buffer>> => {
           if (!this.plutoManager.isLocalServer()) {
             throw new Error(
               `The cell's output is ${output.mime}; rendering it to PNG needs a local Pluto server. Use as: "file" with a .${extensionFor(output.mime)} name to save the original output instead.`
@@ -1060,10 +1127,18 @@ export class PlutoMCPHttpServer {
             tmpdir(),
             `pluto-cell-${cell_id}-${Date.now()}.png`
           );
-          const render = await this.plutoManager.executeCodeEphemeral(
+          const rendering = this.plutoManager.executeCodeEphemeral(
             worker,
             renderCellToPngCode(cell_id, pngPath)
           );
+          const outcome = await withExecutionTimeout(rendering);
+          if (outcome.timedOut) {
+            void rendering
+              .finally(() => rm(pngPath, { force: true }))
+              .catch(() => {});
+            return outcome;
+          }
+          const render = outcome.value;
           if (render.errored) {
             const why = fullOutput(render.output)?.text ?? "unknown error";
             throw new Error(
@@ -1071,10 +1146,27 @@ export class PlutoMCPHttpServer {
             );
           }
           try {
-            return await readFile(pngPath);
+            return { timedOut: false, value: await readFile(pngPath) };
           } finally {
             await rm(pngPath, { force: true });
           }
+        };
+
+        const renderTimedOut = {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  cell_id,
+                  timed_out: true,
+                  message: `Rendering the cell's ${output.mime} output to PNG is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle, then call read_cell_output again.`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
 
         if (as === "file") {
@@ -1092,7 +1184,11 @@ export class PlutoMCPHttpServer {
           if (wantedExt && wantedExt !== nativeExt) {
             // The caller named a format: render to it when possible, refuse otherwise
             if (wantedExt === "png" && !isRasterMime(output.mime)) {
-              bytes = await renderPng();
+              const rendered = await renderPng();
+              if (rendered.timedOut) {
+                return renderTimedOut;
+              }
+              bytes = rendered.value;
               mime = "image/png";
             } else if (!(wantedExt === "jpg" && nativeExt === "jpg")) {
               throw new Error(
@@ -1128,7 +1224,11 @@ export class PlutoMCPHttpServer {
             ],
           };
         }
-        const png = await renderPng();
+        const rendered = await renderPng();
+        if (rendered.timedOut) {
+          return renderTimedOut;
+        }
+        const png = rendered.value;
         return {
           content: [
             {
