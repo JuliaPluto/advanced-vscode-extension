@@ -1,8 +1,8 @@
 import {
   parsePlutoNotebook,
   serializePlutoNotebook,
-  isMarkdownCell,
 } from "../plutoSerializer.ts";
+import { isMarkdownCell } from "../markdownCodec.ts";
 import { PlutoNotebookSerializer } from "../serializer.ts";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -575,5 +575,69 @@ describe("PlutoNotebookSerializer package cells", () => {
     const serializer = new PlutoNotebookSerializer();
     const text = decode(await serializer.serializeNotebook(notebookData()));
     expect(text).toContain("PLUTO_PROJECT_TOML_CONTENTS");
+  });
+});
+
+describe("markdown cells in the file", () => {
+  const notebookWith = (...codes: string[]) => {
+    const ids = codes.map(
+      (_, i) => `cccccccc-0000-0000-0000-00000000000${i + 1}`
+    );
+    return `### A Pluto.jl notebook ###
+# v0.20.0
+
+using Markdown
+using InteractiveUtils
+
+${codes.map((code, i) => `# ╔═╡ ${ids[i]}\n${code}\n`).join("\n")}
+# ╔═╡ Cell order:
+${ids.map((id) => `# ╠═${id}`).join("\n")}
+`;
+  };
+
+  it("imports a bare md string authored in Pluto as a markdown cell", () => {
+    const [cell] = parsePlutoNotebook(
+      notebookWith('md"""\n# Title\n"""')
+    ).cells;
+    expect(cell.kind).toBe(NotebookCellKind.Markup);
+    expect(cell.value).toBe("# Title");
+  });
+
+  it("imports an interpolating md string without the marker as code", () => {
+    const [cell] = parsePlutoNotebook(notebookWith('md"x is $(x)"')).cells;
+    expect(cell.kind).toBe(NotebookCellKind.Code);
+  });
+
+  it("re-saves every markdown form unchanged", () => {
+    const source = notebookWith(
+      '#VSCODE-MARKDOWN\nmd"""\n# One\n"""',
+      '#VSCODE-MARKDOWN\nmd"""# Two"""',
+      'md"""\n# Three\n"""',
+      'md"# Four"'
+    );
+    const parsed = parsePlutoNotebook(source);
+    expect(parsed.cells.map((c) => c.value)).toEqual([
+      "# One",
+      "# Two",
+      "# Three",
+      "# Four",
+    ]);
+    const saved = serializePlutoNotebook(
+      parsed.cells,
+      parsed.notebook_id,
+      parsed.pluto_version
+    );
+    expect(saved).not.toContain("pluto_markdown_wrapper");
+    expect(parsePlutoNotebook(saved).cells.map((c) => c.value)).toEqual(
+      parsed.cells.map((c) => c.value)
+    );
+    for (const code of [
+      '#VSCODE-MARKDOWN\nmd"""\n# One\n"""',
+      '#VSCODE-MARKDOWN\nmd"""# Two"""',
+      '\nmd"""\n# Three\n"""',
+      '\nmd"# Four"',
+    ]) {
+      expect(saved).toContain(code);
+    }
   });
 });
