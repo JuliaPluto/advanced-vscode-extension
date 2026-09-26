@@ -113,8 +113,8 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
               );
             }
           }
-          signal.throwIfAborted();
           await mkdir(dirname(dest), { recursive: true });
+          signal.throwIfAborted();
           await writeFile(dest, bytes);
           return `Wrote ${bytes.length} bytes of ${mime} to ${dest}`;
         }
