@@ -4,6 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import type { IPlutoServerManager } from "../plutoManagerTypes.ts";
 import { isPortAvailable, findAvailablePort } from "../portUtils.ts";
+import { plutoBootstrap } from "../server/bootstrap.ts";
 import {
   getExecutableName,
   isWindows,
@@ -168,24 +169,11 @@ export class NodeServerManager implements IPlutoServerManager {
       // environment, then serve. Pkg.instantiate() always runs so a pruned
       // depot is repaired; the registry update and resolve only run when
       // Pluto is not in the project yet or --update was passed.
-      const install = this.options.update ? "true" : "false";
-      const runCode = [
-        "import Pkg",
-        "s = string",
-        "env = mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION)))",
-        "Pkg.activate(env)",
-        `if ${install} || !haskey(Pkg.project().dependencies, s(:Pluto))`,
-        "Pkg.Registry.add()",
-        "Pkg.add(s(:Pluto))",
-        "Pkg.add(s(:Pkg))",
-        "end",
-        "Pkg.instantiate()",
-        `if ${install}`,
-        "Pkg.precompile()",
-        "end",
-        "using Pluto",
-        `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false)`,
-      ].join(";");
+      const runCode = plutoBootstrap({
+        port: this.actualPort,
+        update: !!this.options.update,
+        writeNotebookFiles: true,
+      });
 
       console.log(
         this.options.update

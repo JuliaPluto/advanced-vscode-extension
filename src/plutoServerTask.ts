@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { isDefined } from "./helpers.ts";
+import { plutoBootstrap } from "./server/bootstrap.ts";
 import { isPortAvailable, findAvailablePort } from "./portUtils.ts";
 import {
   isWindows,
@@ -206,19 +207,11 @@ export class PlutoServerTaskManager {
 
     // --- Step 5: Start the Pluto server task (setup + run in one process) ---
     // Setup steps run first in the same Julia session, then Pluto.run() blocks.
-    const serverCode = [
-      `println("Julia ", VERSION, " at ", Sys.BINDIR)`,
-      `import Pkg`,
-      `s = string`,
-      `Pkg.activate(mkpath(joinpath(Pkg.depots1(), s(:environments), s(:vscode_pluto_notebook), string(VERSION))))`,
-      `Pkg.Registry.add()`,
-      `Pkg.add(s(:Pluto))`,
-      `Pkg.add(s(:Pkg))`,
-      `Pkg.instantiate()`,
-      `Pkg.precompile()`,
-      `using Pluto`,
-      `Pluto.run(port=${this.actualPort}; require_secret_for_open_links=false, require_secret_for_access=false, launch_browser=false, disable_writing_notebook_files=true)`,
-    ].join(";");
+    const serverCode = plutoBootstrap({
+      port: this.actualPort,
+      update: true,
+      writeNotebookFiles: false,
+    });
     const juliaArgs = [...channelArgs, "-e", serverCode];
 
     console.log(
