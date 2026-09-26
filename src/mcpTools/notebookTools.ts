@@ -49,12 +49,14 @@ export function notebookTools(manager: PlutoToolsManager): PlutoTool[] {
         (args) =>
           `Moving ${args.path} to ${args.new_path} has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s — check list_notebooks before retrying.`
       ),
-      run: async ({ path, new_path }, worker) => {
+      precondition: () => {
         if (!manager.isLocalServer()) {
           throw new Error(
             "move_notebook only works when the Pluto server is on localhost (shared filesystem). Use save_notebook to write a copy instead."
           );
         }
+      },
+      run: async ({ path, new_path }, worker) => {
         await manager.moveNotebook(worker, new_path);
         return `Notebook moved from ${path} to ${new_path}. Pluto is now tracking the new path.`;
       },

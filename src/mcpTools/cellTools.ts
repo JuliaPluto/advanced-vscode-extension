@@ -7,6 +7,7 @@ import {
   execution,
   notebookTool,
   reply,
+  unacknowledged,
   withTimeout,
   type PlutoTool,
   type PlutoToolsManager,
@@ -252,6 +253,7 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
       description:
         "Permanently remove a cell from the notebook by its ID. Use list_cells to find cell IDs.",
       args: { cell_id: cellId },
+      bound: unacknowledged(),
       run: async ({ cell_id }, worker) => {
         await manager.deleteCell(worker, cell_id);
         return `Cell ${cell_id} deleted`;
@@ -270,6 +272,7 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
             "Target position in the current cell order (before removing the moved cells). E.g. 0 = beginning, 1 = after first cell."
           ),
       },
+      bound: unacknowledged(),
       run: async ({ cell_ids, index }, worker) => {
         await manager.moveCells(worker, cell_ids, index);
         return `Moved ${cell_ids.length} cell(s) to position ${index}`;
@@ -288,6 +291,7 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
             "true to hide (fold) the cell code, false to show (unfold) it"
           ),
       },
+      bound: unacknowledged(),
       run: async ({ cell_id, folded }, worker) => {
         await manager.foldCell(worker, cell_id, folded);
         return `Cell ${cell_id} ${folded ? "folded (code hidden)" : "unfolded (code visible)"}`;

@@ -7,7 +7,9 @@ import { otherPlutoServerMessage, sameUrl } from "../plutoServerUrl.ts";
 import { notebookPath } from "./args.ts";
 import {
   EXECUTION_TIMEOUT_MS,
+  STILL_STARTING,
   execution,
+  resolveNotebook,
   serverTool,
   tool,
   type PlutoTool,
@@ -15,8 +17,6 @@ import {
 } from "./tool.ts";
 // @ts-expect-error - esbuild will load this as text
 import PlutoGuide from "../PLUTO_GUIDE.md";
-
-const stillStarting = `The Pluto server is still starting after ${EXECUTION_TIMEOUT_MS / 1000}s and keeps starting — poll get_notebook_status until server_state is ready.`;
 
 export function serverTools(manager: PlutoToolsManager): PlutoTool[] {
   return [
@@ -33,7 +33,7 @@ export function serverTools(manager: PlutoToolsManager): PlutoTool[] {
       description:
         "Start the Pluto server on the configured port (set via --pluto-port or extension settings)",
       args: {},
-      bound: execution(stillStarting),
+      bound: execution(STILL_STARTING),
       run: async () => {
         if (manager.isConnected()) {
           return `Pluto server is already running at ${manager.getServerUrl()}`;
@@ -57,7 +57,7 @@ export function serverTools(manager: PlutoToolsManager): PlutoTool[] {
             "Expected URL of the running Pluto server, e.g. http://localhost:1234"
           ),
       },
-      bound: execution(stillStarting),
+      bound: execution(STILL_STARTING),
       run: async ({ url }) => {
         if (manager.getState().status === "starting") {
           await manager.start();
@@ -148,10 +148,7 @@ export function serverTools(manager: PlutoToolsManager): PlutoTool[] {
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, newNotebookSource(title), "utf-8");
 
-        const worker = await manager.getWorker(path);
-        if (!worker) {
-          throw new Error("Failed to create worker for notebook");
-        }
+        const worker = await resolveNotebook(manager, path);
         return `Notebook created and opened: ${path}\nNotebook ID: ${worker.notebook_id}\nAdd cells with create_cell; call save_notebook to persist them.`;
       },
     }),

@@ -7,9 +7,11 @@ import {
   content,
   execution,
   notebookTool,
+  STILL_STARTING,
   reply,
   serverTool,
   tool,
+  unacknowledged,
 } from "../mcpTools/tool.js";
 import {
   SERVER_URL,
@@ -122,6 +124,94 @@ describe("tool", () => {
       });
     });
 
+    it("says an unacknowledged change may still apply", async () => {
+      const t = tool({
+        name: "delete_it",
+        description: "",
+        args: {},
+        bound: unacknowledged(),
+        run: never,
+      });
+      const call = t.call({});
+      await jest.advanceTimersByTimeAsync(REPLY_TIMEOUT_MS);
+      expect(textOf(await call)).toBe(
+        "Pluto did not acknowledge delete_it within 30s; the connection to the notebook may be stalled, and the change may still apply — check list_cells before retrying."
+      );
+    });
+
+    it("states a computed bound in its reply", async () => {
+      const t = tool({
+        name: "wait",
+        description: "",
+        args: {},
+        bound: { ...reply(), ms: 45_000 },
+        run: never,
+      });
+      const call = t.call({});
+      await jest.advanceTimersByTimeAsync(45_000);
+      expect(textOf(await call)).toContain("did not answer wait within 45s");
+    });
+
+    it("aborts the body's signal when the bound is reached", async () => {
+      let signal: AbortSignal | undefined;
+      const t = tool({
+        name: "t",
+        description: "",
+        args: {},
+        run: (_args, s) => {
+          signal = s;
+          return never();
+        },
+      });
+      const call = t.call({});
+      await jest.advanceTimersByTimeAsync(0);
+      expect(signal?.aborted).toBe(false);
+      await jest.advanceTimersByTimeAsync(REPLY_TIMEOUT_MS);
+      await call;
+      expect(signal?.aborted).toBe(true);
+    });
+
+    it("answers still starting when a starting server does not get ready", async () => {
+      const manager = fakePlutoManager({
+        state: { status: "starting", url: SERVER_URL },
+        overrides: { start: never },
+      });
+      const t = serverTool(manager, {
+        name: "t",
+        description: "",
+        args: {},
+        run: async () => "unreachable",
+      });
+      const call = t.call({});
+      await jest.advanceTimersByTimeAsync(EXECUTION_TIMEOUT_MS);
+      expect(JSON.parse(textOf(await call))).toEqual({
+        timed_out: true,
+        message: STILL_STARTING,
+      });
+    });
+
+    it("bounds opening a notebook on its own, apart from the body", async () => {
+      const manager = fakePlutoManager({ overrides: { getWorker: never } });
+      const t = notebookTool(manager, {
+        name: "t",
+        description: "",
+        args: {},
+        run: async () => "unreachable",
+      });
+      let settled = false;
+      const call = t.call({ path: "/nb.jl" }).finally(() => (settled = true));
+      await jest.advanceTimersByTimeAsync(REPLY_TIMEOUT_MS);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(
+        EXECUTION_TIMEOUT_MS - REPLY_TIMEOUT_MS
+      );
+      expect(JSON.parse(textOf(await call))).toEqual({
+        timed_out: true,
+        message:
+          "Pluto is still opening /nb.jl after 300s — retry the call or poll get_notebook_status.",
+      });
+    });
+
     it("names what went unanswered", async () => {
       const t = tool({
         name: "docs",
@@ -205,6 +295,22 @@ describe("notebookTool", () => {
       cell_id: "c1",
     });
     expect(manager.getWorker).toHaveBeenCalledWith("/nb.jl");
+  });
+
+  it("checks its precondition before opening the notebook", async () => {
+    const manager = fakePlutoManager();
+    const t = notebookTool(manager, {
+      name: "t",
+      description: "",
+      args: {},
+      precondition: () => {
+        throw new Error("refused");
+      },
+      run: async () => "unreachable",
+    });
+    const result = await t.call({ path: "/nb.jl" });
+    expect(textOf(result)).toBe("refused");
+    expect(manager.getWorker).not.toHaveBeenCalled();
   });
 
   it("describes a notebook that cannot be opened by the server state", async () => {

@@ -102,15 +102,23 @@ function envelope(reply: ToolReply): CallToolResult {
   return textResult(JSON.stringify(reply, null, 2));
 }
 
-/**
- * The longest a call may take, and what it answers when it takes longer.
- * The work itself is not cancelled.
- */
 type ToolArgs = Record<string, unknown>;
 
+/**
+ * The longest a tool body may take, and what the call answers when it
+ * takes longer. The body is signalled but not cancelled.
+ */
 export interface Bound<A = ToolArgs> {
   ms: number | ((args: A) => number);
-  onTimeout(args: A, toolName: string): CallToolResult;
+  onTimeout(args: A, toolName: string, ms: number): CallToolResult;
+}
+
+function timedOut(args: ToolArgs, message: string): CallToolResult {
+  return envelope({
+    ...(args.cell_id !== undefined && { cell_id: args.cell_id }),
+    timed_out: true,
+    message,
+  });
 }
 
 /**
@@ -122,26 +130,54 @@ export function execution(
 ): Bound {
   return {
     ms: EXECUTION_TIMEOUT_MS,
-    onTimeout: (args) => {
-      return envelope({
-        ...(args.cell_id !== undefined && { cell_id: args.cell_id }),
-        timed_out: true,
-        message: typeof message === "function" ? message(args) : message,
-      });
-    },
+    onTimeout: (args) =>
+      timedOut(args, typeof message === "function" ? message(args) : message),
   };
 }
 
-/** Bound for a call that only waits for Pluto to answer. */
-export function reply(what?: (args: ToolArgs) => string): Bound {
+/** Bound for a read that only waits for Pluto to answer. */
+export function reply(subject?: (args: ToolArgs) => string): Bound {
   return {
     ms: REPLY_TIMEOUT_MS,
-    onTimeout: (args, toolName) =>
+    onTimeout: (args, toolName, ms) =>
       textResult(
-        `Pluto did not answer ${what ? what(args) : toolName} within ${REPLY_TIMEOUT_MS / 1000}s; the connection to the notebook may be stalled, and a change the call made may still apply. Check get_notebook_status or list_cells before retrying, or reopen the notebook with open_notebook.`,
+        `Pluto did not answer ${subject ? subject(args) : toolName} within ${ms / 1000}s; the connection to the notebook may be stalled. Check get_notebook_status, or reopen the notebook with open_notebook.`,
         true
       ),
   };
+}
+
+/** Bound for a change that only waits for Pluto to acknowledge it. */
+export function unacknowledged(): Bound {
+  return {
+    ms: REPLY_TIMEOUT_MS,
+    onTimeout: (_args, toolName, ms) =>
+      textResult(
+        `Pluto did not acknowledge ${toolName} within ${ms / 1000}s; the connection to the notebook may be stalled, and the change may still apply — check list_cells before retrying.`,
+        true
+      ),
+  };
+}
+
+export const STILL_STARTING = `The Pluto server is still starting after ${EXECUTION_TIMEOUT_MS / 1000}s and keeps starting — poll get_notebook_status until server_state is ready.`;
+
+/** Ends a call early with `result`, from any phase of it. */
+class BoundReached extends Error {
+  constructor(readonly result: CallToolResult) {
+    super("bound reached");
+  }
+}
+
+async function bounded<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => CallToolResult
+): Promise<T> {
+  const outcome = await withTimeout(promise, ms);
+  if (outcome.timedOut) {
+    throw new BoundReached(onTimeout());
+  }
+  return outcome.value;
 }
 
 /** One tool of the set: its declaration and a call that never throws. */
@@ -152,35 +188,42 @@ export interface PlutoTool {
   call(args: unknown): Promise<CallToolResult>;
 }
 
-export interface ToolSpec<S extends z.ZodRawShape> {
+interface Definition<C> {
   name: string;
   description: string;
-  args: S;
-  /** Defaults to reply(). */
-  bound?: Bound<NoInfer<z.output<z.ZodObject<S>>>>;
-  run(args: z.output<z.ZodObject<S>>): Promise<ToolReply>;
+  shape: z.ZodRawShape;
+  bound?: Bound;
+  /** Runs before the body, outside its bound; bounds its own waits. */
+  prepare(args: ToolArgs): Promise<C>;
+  run(args: ToolArgs, context: C, signal: AbortSignal): Promise<ToolReply>;
 }
 
-/**
- * A tool: its arguments are parsed, the whole call is bounded, and its
- * reply becomes MCP content. A thrown error becomes an error result.
- */
-export function tool<S extends z.ZodRawShape>(spec: ToolSpec<S>): PlutoTool {
-  const schema = z.object(spec.args);
-  const bound = spec.bound ?? reply();
+function define<C>(definition: Definition<C>): PlutoTool {
+  const schema = z.object(definition.shape);
+  const bound = definition.bound ?? reply();
   return {
-    name: spec.name,
-    description: spec.description,
-    shape: spec.args,
+    name: definition.name,
+    description: definition.description,
+    shape: definition.shape,
     async call(raw) {
+      const controller = new AbortController();
       try {
-        const args = schema.parse(raw ?? {});
+        const args = schema.parse(raw ?? {}) as ToolArgs;
+        const context = await definition.prepare(args);
         const ms = typeof bound.ms === "function" ? bound.ms(args) : bound.ms;
-        const outcome = await withTimeout(spec.run(args), ms);
-        return outcome.timedOut
-          ? bound.onTimeout(args, spec.name)
-          : envelope(outcome.value);
+        const outcome = await withTimeout(
+          definition.run(args, context, controller.signal),
+          ms
+        );
+        if (outcome.timedOut) {
+          controller.abort();
+          return bound.onTimeout(args, definition.name, ms);
+        }
+        return envelope(outcome.value);
       } catch (error) {
+        if (error instanceof BoundReached) {
+          return error.result;
+        }
         return textResult(
           error instanceof Error ? error.message : String(error),
           true
@@ -188,6 +231,33 @@ export function tool<S extends z.ZodRawShape>(spec: ToolSpec<S>): PlutoTool {
       }
     },
   };
+}
+
+type Output<S extends z.ZodRawShape> = z.output<z.ZodObject<S>>;
+
+export interface ToolSpec<S extends z.ZodRawShape> {
+  name: string;
+  description: string;
+  args: S;
+  /** Defaults to reply(). */
+  bound?: Bound<NoInfer<Output<S>>>;
+  /** `signal` aborts when the bound is reached. */
+  run(args: Output<S>, signal: AbortSignal): Promise<ToolReply>;
+}
+
+/**
+ * A tool: its arguments are parsed, its body is bounded, and its reply
+ * becomes MCP content. A thrown error becomes an error result.
+ */
+export function tool<S extends z.ZodRawShape>(spec: ToolSpec<S>): PlutoTool {
+  return define({
+    name: spec.name,
+    description: spec.description,
+    shape: spec.args,
+    bound: spec.bound as Bound | undefined,
+    prepare: async () => undefined,
+    run: (args, _context, signal) => spec.run(args as Output<S>, signal),
+  });
 }
 
 /** Why tools cannot reach the Pluto server in this state, and what to do. */
@@ -202,16 +272,50 @@ export function serverUnavailable(state: ServerState, url: string): string {
   }
 }
 
-async function requireServer(manager: PlutoToolsManager): Promise<void> {
+/**
+ * Proceed on a ready server, wait (bounded) for one that is starting,
+ * refuse otherwise. Never starts a server.
+ */
+async function requireServer(
+  manager: PlutoToolsManager,
+  args: ToolArgs
+): Promise<void> {
   const state = manager.getState();
   if (state.status === "ready") {
     return;
   }
   if (state.status === "starting") {
-    await manager.start();
+    await bounded(manager.start(), EXECUTION_TIMEOUT_MS, () =>
+      timedOut(args, STILL_STARTING)
+    );
     return;
   }
   throw new Error(serverUnavailable(state, manager.getServerUrl()));
+}
+
+/**
+ * The worker for a notebook, opening it when needed. Opening is bounded
+ * on its own; its timeout answers timed_out, whatever the tool.
+ */
+export async function resolveNotebook(
+  manager: PlutoToolsManager,
+  path: string
+): Promise<Worker> {
+  const worker = await bounded(
+    manager.getWorker(path),
+    EXECUTION_TIMEOUT_MS,
+    () =>
+      timedOut(
+        {},
+        `Pluto is still opening ${path} after ${EXECUTION_TIMEOUT_MS / 1000}s — retry the call or poll get_notebook_status.`
+      )
+  );
+  if (!worker) {
+    throw new Error(
+      `The Pluto server at ${manager.getServerUrl()} is not ready to open ${path} (state: ${manager.getState().status})`
+    );
+  }
+  return worker;
 }
 
 /** A tool that needs a ready Pluto server; it never starts one. */
@@ -219,12 +323,13 @@ export function serverTool<S extends z.ZodRawShape>(
   manager: PlutoToolsManager,
   spec: ToolSpec<S>
 ): PlutoTool {
-  return tool({
-    ...spec,
-    run: async (args) => {
-      await requireServer(manager);
-      return spec.run(args);
-    },
+  return define({
+    name: spec.name,
+    description: spec.description,
+    shape: spec.args,
+    bound: spec.bound as Bound | undefined,
+    prepare: (args) => requireServer(manager, args),
+    run: (args, _context, signal) => spec.run(args as Output<S>, signal),
   });
 }
 
@@ -235,34 +340,36 @@ export interface NotebookToolSpec<S extends z.ZodRawShape> {
   description: string;
   args: S;
   /** Defaults to reply(). */
-  bound?: Bound<NoInfer<z.output<z.ZodObject<WithPath<S>>>>>;
+  bound?: Bound<NoInfer<Output<WithPath<S>>>>;
+  /** Checked before the notebook is resolved; throw to refuse. */
+  precondition?(args: Output<WithPath<S>>): void;
+  /** `signal` aborts when the bound is reached. */
   run(
-    args: z.output<z.ZodObject<WithPath<S>>>,
-    worker: Worker
+    args: Output<WithPath<S>>,
+    worker: Worker,
+    signal: AbortSignal
   ): Promise<ToolReply>;
 }
 
 /**
  * A tool that operates on a notebook: it takes `path`, and its body gets
- * that notebook's worker, opening the notebook when needed.
+ * that notebook's worker from resolveNotebook.
  */
 export function notebookTool<S extends z.ZodRawShape>(
   manager: PlutoToolsManager,
   spec: NotebookToolSpec<S>
 ): PlutoTool {
-  const args = { path: notebookPath, ...spec.args } as WithPath<S>;
-  return serverTool(manager, {
-    ...spec,
-    args,
-    run: async (parsed) => {
-      const { path } = parsed as { path: string };
-      const worker = await manager.getWorker(path);
-      if (!worker) {
-        throw new Error(
-          `The Pluto server at ${manager.getServerUrl()} is not ready to open ${path} (state: ${manager.getState().status})`
-        );
-      }
-      return spec.run(parsed, worker);
+  return define({
+    name: spec.name,
+    description: spec.description,
+    shape: { path: notebookPath, ...spec.args },
+    bound: spec.bound as Bound | undefined,
+    prepare: async (args) => {
+      await requireServer(manager, args);
+      spec.precondition?.(args as Output<WithPath<S>>);
+      return resolveNotebook(manager, args.path as string);
     },
+    run: (args, worker, signal) =>
+      spec.run(args as Output<WithPath<S>>, worker, signal),
   });
 }

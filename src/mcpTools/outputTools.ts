@@ -65,10 +65,12 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
           'For as: "file" — where to write; defaults to <notebook>.assets/<cell_id>.<ext>'
         ).optional(),
       },
-      bound: execution(
-        `Rendering the cell's output to PNG is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle, then call read_cell_output again.`
+      bound: execution((args) =>
+        args.as === "text"
+          ? `read_cell_output has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s; the connection to the notebook may be stalled — check get_notebook_status, then call read_cell_output again.`
+          : `Rendering the cell's output to PNG is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle, then call read_cell_output again${args.as === "file" ? "; nothing was written" : ""}.`
       ),
-      run: async ({ path, cell_id, as, output_path }, worker) => {
+      run: async ({ path, cell_id, as, output_path }, worker, signal) => {
         const snippet = worker.getSnippet(cell_id);
         if (!snippet) {
           throw new Error(`Cell ${cell_id} not found — use list_cells`);
@@ -111,6 +113,7 @@ export function outputTools(manager: PlutoToolsManager): PlutoTool[] {
               );
             }
           }
+          signal.throwIfAborted();
           await mkdir(dirname(dest), { recursive: true });
           await writeFile(dest, bytes);
           return `Wrote ${bytes.length} bytes of ${mime} to ${dest}`;

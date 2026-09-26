@@ -6,7 +6,11 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Worker } from "@plutojl/rainbow";
 import type { ServerState } from "../plutoManager.js";
 import { createPlutoTools, type PlutoToolsManager } from "../mcpTools/index.js";
-import { EXECUTION_TIMEOUT_MS, REPLY_TIMEOUT_MS } from "../mcpTools/tool.js";
+import {
+  EXECUTION_TIMEOUT_MS,
+  REPLY_TIMEOUT_MS,
+  STILL_STARTING,
+} from "../mcpTools/tool.js";
 import { SERVER_URL, never, textOf } from "./helpers/fakePlutoManager.js";
 
 /**
@@ -207,7 +211,10 @@ const SAMPLES: Sample[] = [
     args: () => ({ ...nb, symbol: "x" }),
     bound: "reply",
     hangs: "stalled",
-    check: (result) => expect(textOf(result)).toContain("'x'"),
+    check: (result) =>
+      expect(textOf(result)).toBe(
+        "Pluto did not answer the documentation request for 'x' within 30s; the connection to the notebook may be stalled. Check get_notebook_status, or reopen the notebook with open_notebook."
+      ),
   },
   {
     tool: "introspect_notebook",
@@ -309,11 +316,14 @@ describe("every tool call is bounded", () => {
 
   async function callBounded(
     sample: Sample,
-    resolution: "hangs" | "resolves"
+    resolution: "hangs" | "resolves",
+    starting = false
   ): Promise<CallToolResult> {
-    const state: ServerState = sample.stopped
-      ? { status: "stopped" }
-      : { status: "ready", url: SERVER_URL };
+    const state: ServerState = starting
+      ? { status: "starting", url: SERVER_URL }
+      : sample.stopped
+        ? { status: "stopped" }
+        : { status: "ready", url: SERVER_URL };
     const tools = createPlutoTools(hangingManager(state, resolution));
     let settled = false;
     const call = tools.call(sample.tool, sample.args(dir)).finally(() => {
@@ -322,7 +332,11 @@ describe("every tool call is bounded", () => {
     if (sample.writesFile) {
       await letIoThrough(() => settled);
     }
-    await jest.advanceTimersByTimeAsync(BOUND_MS[sample.bound]);
+    await jest.advanceTimersByTimeAsync(
+      resolution === "hangs" || starting
+        ? EXECUTION_TIMEOUT_MS
+        : BOUND_MS[sample.bound]
+    );
     expect(settled).toBe(true);
     return call;
   }
@@ -350,15 +364,34 @@ describe("every tool call is bounded", () => {
     }
   );
 
+  const opensNotebook = SAMPLES.filter((s) => "path" in s.args("/d"));
+
+  it.each(opensNotebook.map((s) => [s.tool, s] as const))(
+    "%s answers still opening while opening the notebook hangs",
+    async (_name, sample) => {
+      const result = await callBounded(sample, "hangs");
+      expect(outcomeOf(result)).toBe("timed_out");
+      const { message } = JSON.parse(textOf(result));
+      if (sample.tool === "create_notebook") {
+        expect(message).toContain("Do NOT retry create_notebook");
+      } else {
+        expect(message).toBe(
+          "Pluto is still opening /nb.jl after 300s — retry the call or poll get_notebook_status."
+        );
+      }
+    }
+  );
+
   it.each(
-    SAMPLES.filter((s) => "path" in s.args("/d")).map(
+    [...opensNotebook, SAMPLES.find((s) => s.tool === "list_notebooks")!].map(
       (s) => [s.tool, s] as const
     )
   )(
-    "%s settles within its bound while opening the notebook hangs",
+    "%s answers still starting while the server's start hangs",
     async (_name, sample) => {
-      const result = await callBounded(sample, "hangs");
-      expect(outcomeOf(result)).toBe(TIMEOUT_OF[sample.bound]);
+      const result = await callBounded(sample, "resolves", true);
+      expect(outcomeOf(result)).toBe("timed_out");
+      expect(JSON.parse(textOf(result)).message).toBe(STILL_STARTING);
     }
   );
 });

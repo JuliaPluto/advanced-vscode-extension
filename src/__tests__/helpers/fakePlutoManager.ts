@@ -99,8 +99,8 @@ export function fakePlutoManager(
     moveNotebook: jest.fn(async () => {}),
     getNotebookContent: jest.fn(async () => "### A Pluto.jl notebook ###\n"),
     ...options.overrides,
-  };
-  return manager as typeof manager & PlutoToolsManager;
+  } satisfies PlutoToolsManager;
+  return manager;
 }
 
 export function textOf(result: { content: unknown }): string {

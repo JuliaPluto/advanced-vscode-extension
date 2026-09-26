@@ -1,7 +1,10 @@
-import { mkdtemp, readFile, rm } from "fs/promises";
+import { jest } from "@jest/globals";
+import { existsSync } from "fs";
+import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createPlutoTools } from "../mcpTools/index.js";
+import { EXECUTION_TIMEOUT_MS } from "../mcpTools/tool.js";
 import {
   SERVER_URL,
   fakePlutoManager,
@@ -166,6 +169,89 @@ describe("the tool set", () => {
       folded: true,
     });
     expect(textOf(folded)).toBe("Cell c1 folded (code hidden)");
+  });
+
+  it("refuses move_notebook on a remote server before opening the notebook", async () => {
+    const manager = fakePlutoManager({
+      overrides: { isLocalServer: () => false },
+    });
+    const result = await createPlutoTools(manager).call("move_notebook", {
+      path: "/nb.jl",
+      new_path: "/moved.jl",
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain(
+      "only works when the Pluto server is on localhost"
+    );
+    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.moveNotebook).not.toHaveBeenCalled();
+  });
+
+  it("exports HTML next to the notebook by default", async () => {
+    const fetch = jest
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<html></html>"));
+    try {
+      const notebook = join(dir, "nb.pluto.jl");
+      const result = await createPlutoTools(fakePlutoManager()).call(
+        "export_notebook_html",
+        { path: notebook }
+      );
+      const html = join(dir, "nb.html");
+      expect(textOf(result)).toBe(`Notebook exported to ${html} (13 bytes)`);
+      expect(await readFile(html, "utf-8")).toBe("<html></html>");
+      expect(fetch).toHaveBeenCalledWith(
+        `${SERVER_URL}/notebookexport?id=nb-1`,
+        expect.anything()
+      );
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("does not write a rendered file after read_cell_output timed out", async () => {
+    let finishRender = () => {};
+    const rendered = new Promise<void>((resolve) => (finishRender = resolve));
+    const worker = fakeWorker([
+      {
+        cell_id: "c1",
+        code: "plot()",
+        output: { mime: "image/svg+xml", body: "<svg/>" },
+      },
+    ]);
+    const manager = fakePlutoManager({
+      worker,
+      overrides: {
+        executeCodeEphemeral: async (_worker, code) => {
+          await rendered;
+          const png = /"([^"]+\.png)", "w"/.exec(code)![1];
+          await writeFile(png, new Uint8Array([1]));
+          return {
+            errored: false,
+            output: { mime: "text/plain", body: "1" },
+          } as never;
+        },
+      },
+    });
+    const dest = join(dir, "plot.png");
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate"] });
+    try {
+      const call = createPlutoTools(manager).call("read_cell_output", {
+        path: "/nb.jl",
+        cell_id: "c1",
+        as: "file",
+        output_path: dest,
+      });
+      await jest.advanceTimersByTimeAsync(EXECUTION_TIMEOUT_MS);
+      expect(JSON.parse(textOf(await call)).message).toContain(
+        "nothing was written"
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+    finishRender();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(existsSync(dest)).toBe(false);
   });
 
   it("gives the notebook's browser URL", async () => {

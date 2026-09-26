@@ -1,11 +1,19 @@
+import { jest } from "@jest/globals";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { resolvePathArgs } from "../cli/toolArgs.js";
-import { PlutoMCPHttpServer } from "../mcp-server-http.js";
 import type { PlutoManager } from "../plutoManager.js";
-import { createPlutoTools } from "../mcpTools/index.js";
+import * as toolSet from "../mcpTools/index.js";
 import { fakePlutoManager, textOf } from "./helpers/fakePlutoManager.js";
+
+const createPlutoTools = jest.fn(toolSet.createPlutoTools);
+jest.unstable_mockModule("../mcpTools/index.js", () => ({
+  ...toolSet,
+  createPlutoTools,
+}));
+const { PlutoMCPHttpServer } = await import("../mcp-server-http.js");
+type PlutoMCPHttpServer = InstanceType<typeof PlutoMCPHttpServer>;
 
 async function connect(httpServer: PlutoMCPHttpServer): Promise<Client> {
   const server = (
@@ -35,8 +43,13 @@ describe("MCP registration", () => {
     await Promise.all(sessions.map((c) => c.close()));
   });
 
+  it("builds the tool set once for every session", () => {
+    expect(createPlutoTools).toHaveBeenCalledTimes(1);
+    expect(createPlutoTools).toHaveBeenCalledWith(manager);
+  });
+
   it("lists every tool of the set in every session", async () => {
-    const names = createPlutoTools(manager).tools.map((t) => t.name);
+    const names = toolSet.createPlutoTools(manager).tools.map((t) => t.name);
     expect(names).toHaveLength(25);
     for (const client of sessions) {
       const { tools } = await client.listTools();
