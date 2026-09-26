@@ -1,8 +1,11 @@
+import * as fs from "fs";
+import * as path from "path";
 import { jest } from "@jest/globals";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { resolvePathArgs } from "../cli/toolArgs.js";
+import type { ToolInfo } from "../cli/toolClient.js";
 import type { PlutoManager } from "../plutoManager.js";
 import * as toolSet from "../mcpTools/index.js";
 import { fakePlutoManager, textOf } from "./helpers/fakePlutoManager.js";
@@ -67,23 +70,44 @@ describe("MCP registration", () => {
     );
   });
 
-  it("marks exactly the arguments the CLI resolves as paths", async () => {
+  it("marks every file argument, so the CLI resolves exactly those", async () => {
     const { tools } = await sessions[0].listTools();
+    const marked = new Set<string>();
     for (const t of tools) {
       const properties = (t.inputSchema.properties ?? {}) as Record<
         string,
         { type?: string; "x-pluto-path"?: boolean }
       >;
-      for (const [name, schema] of Object.entries(properties)) {
-        if (schema.type !== "string") continue;
-        const resolved = resolvePathArgs({ [name]: "rel" }, "/cwd")[name];
-        expect({
+      const strings = Object.keys(properties).filter(
+        (name) => properties[name].type === "string"
+      );
+      const resolved = resolvePathArgs(
+        Object.fromEntries(strings.map((name) => [name, "rel"])),
+        t as ToolInfo,
+        "/cwd"
+      );
+      for (const name of strings) {
+        const isPath = resolved[name] === "/cwd/rel";
+        expect({ tool: t.name, name, isPath }).toEqual({
           tool: t.name,
           name,
-          marked: !!schema["x-pluto-path"],
-        }).toEqual({ tool: t.name, name, marked: resolved === "/cwd/rel" });
+          isPath: !!properties[name]["x-pluto-path"],
+        });
+        if (isPath) marked.add(name);
       }
     }
+    expect(marked).toContain("path");
+  });
+
+  it("lists every tool in the package README, and nothing else", () => {
+    const readme = fs.readFileSync(
+      path.join(process.cwd(), "packages/advanced-pluto-mcp/README.md"),
+      "utf-8"
+    );
+    const section = readme.split("## Notebook tools")[1].split("\n## ")[0];
+    const documented = [...section.matchAll(/^\| `(\w+)`/gm)].map((m) => m[1]);
+    const names = toolSet.createPlutoTools(manager).tools.map((t) => t.name);
+    expect([...documented].sort()).toEqual([...names].sort());
   });
 
   it("declares path once, with one description", async () => {

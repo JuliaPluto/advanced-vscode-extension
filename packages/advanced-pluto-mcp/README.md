@@ -69,7 +69,7 @@ npx @plutojl/cli tools [name] [--mcp-port <port>]
 
 ### `call`
 
-Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options. The JSON may also come from a file (`@args.json`) or stdin (`-`). For multi-line cell code, `--code-file cell.jl` supplies the `code` argument from a file (`-` for stdin), so the code needs no JSON or shell escaping. Relative `path`, `output_path`, and `new_path` arguments are resolved against the current directory before they are sent, since the server needs absolute notebook paths.
+Call a notebook tool from the command line. The tool name and JSON arguments may appear before or after the options. The JSON may also come from a file (`@args.json`) or stdin (`-`). For multi-line cell code, `--code-file cell.jl` supplies the `code` argument from a file (`-` for stdin), so the code needs no JSON or shell escaping. Arguments are checked against the tool's schema before anything is sent: an unknown argument, a missing required one, or a value of the wrong type is an error that lists the tool's parameters. Relative file-path arguments (shown as "file path" by `tools <name>`) are resolved against the current directory, since the server needs absolute notebook paths.
 
 ```bash
 npx @plutojl/cli call <tool_name> [json_args | @file | -] [options]

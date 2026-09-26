@@ -16,6 +16,9 @@ export interface ToolSchema {
   description?: string;
   enum?: unknown[];
   default?: unknown;
+  items?: ToolSchema;
+  /** Set on string arguments that name a file. */
+  "x-pluto-path"?: boolean;
 }
 
 export interface ToolInfo {

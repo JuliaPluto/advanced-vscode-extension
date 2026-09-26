@@ -111,8 +111,8 @@ When auto-start is disabled, use `Pluto: Start MCP Server` command to start manu
 
 ### Endpoints
 
-- **SSE Stream**: `http://localhost:3100/mcp` (GET)
-- **Messages**: `http://localhost:3100/messages` (POST)
+- **MCP (Streamable HTTP)**: `http://localhost:3100/mcp` — what VS Code, Claude Code and the CLI use
+- **Legacy SSE**: `GET http://localhost:3100/mcp` without a session id, with messages on `POST /messages`, for older MCP clients
 - **Health Check**: `http://localhost:3100/health` (GET)
 
 ### Client Configuration
@@ -170,449 +170,39 @@ To change the port:
 
 ## Available Tools
 
-The MCP server exposes the following tools:
+The tool server's own `tools/list` is the reference; this guide does not copy it. To see it from a terminal:
 
-1. **learn_pluto_basics**: Get comprehensive guide on Pluto.jl notebook structure and best practices
-2. **start_pluto_server**: Start the Pluto server
-3. **connect_to_pluto_server**: Connect to an existing Pluto server
-4. **stop_pluto_server**: Stop the Pluto server
-5. **open_notebook**: Open a Pluto notebook and create a worker session
-6. **list_notebooks**: Get a list of all open notebooks with their paths and IDs
-7. **execute_cell**: Execute an existing cell by ID
-8. **create_cell**: Create and execute a new cell
-9. **edit_cell**: Update the code of an existing cell
-10. **read_cell**: Read the code and output of a cell
-11. **execute_code**: Execute Julia code without creating a persistent cell (ephemeral)
-12. **get_notebook_status**: Get server and notebook status
-
-### Server Management
-
-#### start_pluto_server
-
-Start the Pluto server on the configured port.
-
-```json
-{
-  "name": "start_pluto_server",
-  "arguments": {
-    "port": 1234
-  }
-}
+```bash
+npx @plutojl/cli tools                 # every tool, one line each
+npx @plutojl/cli tools read_cell_output # one tool's parameters, types and defaults
+npx @plutojl/cli call learn_pluto_basics
 ```
 
-#### connect_to_pluto_server
+The [`@plutojl/cli` README](../packages/advanced-pluto-mcp/README.md#notebook-tools) has a one-line table of all tools, checked against the tool set by the test suite.
 
-Connect to an already running Pluto server (useful if Julia is running externally).
+Start with `learn_pluto_basics`: it covers the notebook file format, reactivity rules, environments and the recommended workflow. Server tools take no port; the Pluto server is the one configured in the extension settings (or by the CLI's `--pluto-port` / `--pluto-url`).
 
-```json
-{
-  "name": "connect_to_pluto_server",
-  "arguments": {
-    "port": 1234
-  }
-}
-```
-
-#### stop_pluto_server
-
-Stop the running Pluto server.
-
-```json
-{
-  "name": "stop_pluto_server",
-  "arguments": {}
-}
-```
-
-#### get_notebook_status
-
-Check if the Pluto server is running.
-
-```json
-{
-  "name": "get_notebook_status",
-  "arguments": {}
-}
-```
-
-Response:
-
-```json
-{
-  "server_running": true,
-  "message": "Pluto server is running"
-}
-```
-
-### Learning Resources
-
-#### learn_pluto_basics
-
-Get comprehensive guide on Pluto.jl notebook structure, reactivity, PlutoUI components, and best practices.
-
-```json
-{
-  "name": "learn_pluto_basics",
-  "arguments": {}
-}
-```
-
-Response: Returns complete markdown documentation covering:
-
-- Notebook file format and cell structure
-- Reactive execution model and rules
-- Complete PlutoUI component reference (Slider, TextField, NumberField, CheckBox, Select, Button, etc.)
-- Combining markdown with interactive widgets
-- Best practices and common patterns
-
-**Usage**: AI assistants should call this tool first to understand how to properly create and modify Pluto notebooks.
-
-### Notebook Management
-
-#### open_notebook
-
-Open a Pluto notebook and create a worker session.
-
-```json
-{
-  "name": "open_notebook",
-  "arguments": {
-    "path": "/path/to/notebook.jl"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "message": "Notebook opened: /path/to/notebook.jl\nNotebook ID: abc-123-def"
-}
-```
-
-#### list_notebooks
-
-Get a list of all currently open notebooks.
-
-```json
-{
-  "name": "list_notebooks",
-  "arguments": {}
-}
-```
-
-Response:
-
-```json
-{
-  "count": 2,
-  "notebooks": [
-    {
-      "path": "/path/to/notebook1.jl",
-      "notebookId": "abc-123-def"
-    },
-    {
-      "path": "/path/to/notebook2.jl",
-      "notebookId": "xyz-456-ghi"
-    }
-  ]
-}
-```
-
-### Cell Operations
-
-#### create_cell
-
-Create a new cell and execute it.
-
-```json
-{
-  "name": "create_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "code": "x = 1 + 1",
-    "index": 0
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "cell_id": "abc-123",
-  "output": {
-    "body": "2",
-    "mime": "text/plain"
-  },
-  "runtime": 0.05,
-  "errored": false,
-  "message": "Cell created and executed successfully"
-}
-```
-
-#### read_cell
-
-Read the code and output of an existing cell.
-
-```json
-{
-  "name": "read_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "cell_id": "abc-123"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "cell_id": "abc-123",
-  "code": "x = 1 + 1",
-  "output": {
-    "body": "2",
-    "mime": "text/plain"
-  },
-  "runtime": 0.05,
-  "errored": false,
-  "running": false,
-  "queued": false
-}
-```
-
-#### edit_cell
-
-Update the code of an existing cell.
-
-```json
-{
-  "name": "edit_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "cell_id": "abc-123",
-    "code": "x = 2 + 2",
-    "run": true
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "cell_id": "abc-123",
-  "output": {
-    "body": "4",
-    "mime": "text/plain"
-  },
-  "runtime": 0.03,
-  "errored": false,
-  "message": "Cell updated and executed successfully"
-}
-```
-
-#### execute_cell
-
-Execute an existing cell (runs current code in the cell).
-
-```json
-{
-  "name": "execute_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "cell_id": "abc-123"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "cell_id": "abc-123",
-  "output": {
-    "body": "4",
-    "mime": "text/plain"
-  },
-  "runtime": 0.03,
-  "errored": false
-}
-```
-
-### Code Execution
-
-#### execute_code
-
-Execute Julia code without creating a persistent cell (ephemeral execution).
-
-This is useful for:
-
-- Quick queries or evaluations
-- Testing code snippets
-- Inspecting variable values
-- Running diagnostic commands
-
-The code has access to all variables defined in the notebook, but doesn't modify the notebook structure.
-
-```json
-{
-  "name": "execute_code",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "code": "println(\"x = $x\")"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "output": {
-    "body": "x = 4",
-    "mime": "text/plain"
-  },
-  "runtime": 0.01,
-  "errored": false,
-  "message": "Code executed successfully (no cell created)"
-}
-```
-
-**Important**: The cell is created temporarily and deleted immediately after execution. It will not appear in the notebook file.
+`npx @plutojl/cli call` checks arguments against the tool's schema before sending them, so a misspelled or unknown argument is an error rather than silently ignored.
 
 ---
 
 ## Usage Examples
 
-### Example Prompts
-
-Try asking Claude or Copilot:
-
-**Basic Operations:**
+Example prompts for an assistant connected over MCP:
 
 ```
-- "List all open notebooks"
-- "Open the notebook at /path/to/analysis.jl"
-- "What's the status of the Pluto server?"
+- "Open the notebook at /path/to/analysis.jl and list its cells"
+- "Run 2 + 2 in that notebook without adding a cell"
+- "Create a cell that loads DataFrames, then show me its output"
 ```
 
-**Code Execution:**
+The same steps from a terminal:
 
-```
-- "Execute: 2 + 2"
-- "Run this code without saving: println(x)"
-- "What's the value of variable x?"
-```
-
-**Notebook Manipulation:**
-
-```
-- "Create a cell that imports DataFrames"
-- "Edit cell abc-123 to use Plots instead of StatsPlots"
-- "Show me the output of cell xyz-789"
-```
-
-### Workflow Examples
-
-#### Workflow 1: Quick Data Analysis
-
-1. **Start server and open notebook**:
-
-```json
-{"name": "start_pluto_server", "arguments": {}}
-{"name": "open_notebook", "arguments": {"path": "/path/to/analysis.jl"}}
-```
-
-2. **Check what notebooks are open**:
-
-```json
-{ "name": "list_notebooks", "arguments": {} }
-```
-
-3. **Execute quick queries without modifying notebook**:
-
-```json
-{
-  "name": "execute_code",
-  "arguments": {
-    "path": "/path/to/analysis.jl",
-    "code": "summary(dataframe)"
-  }
-}
-```
-
-#### Workflow 2: Interactive Development
-
-1. **Create cells incrementally**:
-
-```json
-{
-  "name": "create_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "code": "using DataFrames",
-    "index": 0
-  }
-}
-```
-
-2. **Edit and refine**:
-
-```json
-{
-  "name": "edit_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "cell_id": "abc-123",
-    "code": "using DataFrames, Plots"
-  }
-}
-```
-
-3. **Test with ephemeral execution**:
-
-```json
-{
-  "name": "execute_code",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "code": "plot(1:10, rand(10))"
-  }
-}
-```
-
-#### Workflow 3: Notebook Inspection
-
-1. **List all open notebooks**:
-
-```json
-{ "name": "list_notebooks", "arguments": {} }
-```
-
-2. **Read specific cells**:
-
-```json
-{
-  "name": "read_cell",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "cell_id": "abc-123"
-  }
-}
-```
-
-3. **Query variable state without creating cells**:
-
-```json
-{
-  "name": "execute_code",
-  "arguments": {
-    "path": "/path/to/notebook.jl",
-    "code": "varinfo()"
-  }
-}
+```bash
+npx @plutojl/cli call open_notebook '{"path": "analysis.pluto.jl"}'
+npx @plutojl/cli call list_cells '{"path": "analysis.pluto.jl"}'
+npx @plutojl/cli call execute_code '{"path": "analysis.pluto.jl", "code": "2 + 2"}'
+npx @plutojl/cli call create_cell '{"path": "analysis.pluto.jl"}' --code-file cell.jl
 ```
 
 ---
@@ -620,42 +210,27 @@ Try asking Claude or Copilot:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                VS Code Extension                     │
-│  ┌────────────────┐        ┌──────────────────┐    │
-│  │   Controller   │───────▶│  PlutoManager    │◀───┼───┐
-│  │   Serializer   │        │  (Shared)        │    │   │
-│  └────────────────┘        └──────────────────┘    │   │
-│                                      │               │   │
-│                                      ▼               │   │
-│                            ┌──────────────────┐     │   │
-│                            │  Pluto Server    │     │   │
-│                            │  (Julia Process) │     │   │
-│                            └──────────────────┘     │   │
-└─────────────────────────────────────────────────────┘   │
-                                                           │
-┌─────────────────────────────────────────────────────┐   │
-│              MCP HTTP Server                        │   │
-│  ┌────────────────────────────────────────────┐    │   │
-│  │  HTTP/SSE Endpoints                        │    │   │
-│  │  - GET  /mcp (SSE stream)                  │    │   │
-│  │  - POST /messages (JSON-RPC)               │    │   │
-│  │  - GET  /health (health check)             │    │   │
-│  └────────────────────────────────────────────┘    │   │
-│                      │                              │   │
-└──────────────────────┼──────────────────────────────┘   │
-                       │                                  │
-                       └──────────────────────────────────┘
-                                (Shared PlutoManager)
-
-         ▲
-         │
-    ┌────┴─────┐
-    │  Claude  │
-    │ Desktop  │
-    │   (MCP   │
-    │  Client) │
-    └──────────┘
+  VS Code chat       Claude Code        npx @plutojl/cli call / tools
+  (native MCP)       (.mcp.json)        (Streamable HTTP client)
+       │                  │                        │
+       └──────────────────┼────────────────────────┘
+                          ▼
+┌───────────────────────────────────────────────────────────┐
+│  Tool server (MCP over HTTP, port 3100)                   │
+│  - POST   /mcp       Streamable HTTP requests             │
+│  - GET    /mcp       with mcp-session-id: session stream  │
+│  - DELETE /mcp       end a Streamable HTTP session        │
+│  - GET    /mcp       without a session id: legacy SSE     │
+│  - POST   /messages  legacy SSE messages                  │
+│  - GET    /health    status, Pluto URL, session counts    │
+└───────────────────────────┬───────────────────────────────┘
+                            ▼
+┌───────────────────────────────────────────────────────────┐
+│  PlutoManager (shared with the notebook controller in     │
+│  VS Code, or owned by `npx @plutojl/cli run`)             │
+└───────────────────────────┬───────────────────────────────┘
+                            ▼
+                 Pluto server (Julia process)
 ```
 
 ---
@@ -778,10 +353,16 @@ Expected response:
 ```json
 {
   "status": "ok",
+  "host": "vscode",
+  "version": "0.10.0",
   "plutoServerRunning": true,
-  "activeSessions": 0
+  "plutoUrl": "http://localhost:1234",
+  "activeSessions": 1,
+  "transports": { "sse": 0, "streamableHttp": 1 }
 }
 ```
+
+`npx @plutojl/cli status` reads the same endpoint and prints it readably.
 
 ### Verification Commands
 
@@ -805,24 +386,7 @@ curl http://localhost:3100/health
 
 ## Error Handling
 
-All tools return error information when something goes wrong:
-
-```json
-{
-  "content": [
-    {
-      "type": "text",
-      "text": "Error: Pluto server is not running"
-    }
-  ]
-}
-```
-
-Common errors:
-
-- `"Pluto server is not running"` - Start the server first
-- `"Notebook {path} is not open"` - Open the notebook first
-- `"Cell {id} not found"` - Invalid cell ID
+A tool that fails returns a normal MCP result with `isError: true` and a text message that says what to do next (for example, to start Pluto with `start_pluto_server` or to look up cell IDs with `list_cells`). `npx @plutojl/cli call` prints that message and exits with status 1.
 
 ---
 
@@ -867,7 +431,7 @@ Common errors:
 - **Claude Code**: Uses `.mcp.json` in workspace root, written by a command that preserves existing entries
 - **Port Configurable**: Via `pluto-notebook.mcpPort` setting
 - **Shared State**: Single PlutoManager instance for extension and MCP
-- **HTTP-based**: Flexible SSE transport for real-time communication
+- **HTTP-based**: Streamable HTTP, with a legacy SSE fallback on the same port
 
 ---
 
@@ -885,4 +449,4 @@ If you encounter issues:
 
 **Ready to go!** 🚀
 
-Open a `.jl` file, run `Pluto: Create MCP Config`, and start chatting with your AI assistant about your Pluto notebooks!
+Open a `.jl` file and enable the Pluto Notebook tools in VS Code chat, or run `Pluto: Create Claude Code MCP Config (.mcp.json)` for Claude Code.

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { extensionFor } from "../notebookOutput.ts";
 import {
+  checkToolArgs,
   readToolArgsSource,
   resolvePathArgs,
   withCodeFile,
@@ -37,6 +38,7 @@ function describeTool(tool: ToolInfo): string {
         : (schema.type ?? "any");
       const flags = [
         required.has(name) ? yellow("required") : "",
+        schema["x-pluto-path"] ? dim("file path, relative to cwd") : "",
         schema.default !== undefined
           ? dim(`default ${JSON.stringify(schema.default)}`)
           : "",
@@ -66,19 +68,42 @@ function describeTool(tool: ToolInfo): string {
   return lines.join("\n");
 }
 
+function noSuchTool(name: string, tools: ToolInfo[]): string {
+  const close = tools.filter((t) => t.name.includes(name)).map((t) => t.name);
+  return (
+    `${err.red("error:")} no tool named '${name}'` +
+    (close.length ? `. Did you mean: ${close.join(", ")}?` : "")
+  );
+}
+
+function badArgs(tool: ToolInfo, problems: string[]): string {
+  const props = tool.inputSchema?.properties ?? {};
+  const required = new Set(tool.inputSchema?.required ?? []);
+  const params = Object.keys(props).map((name) =>
+    required.has(name) ? `${name} (required)` : name
+  );
+  const lines = [
+    `${err.red("error:")} invalid arguments for ${tool.name}:`,
+    ...problems.map((p) => `  ${p}`),
+  ];
+  if (params.length === 0) {
+    lines.push(err.dim(`  ${tool.name} takes no arguments.`));
+  } else {
+    lines.push(
+      err.dim(`  ${tool.name} takes: ${params.join(", ")}`),
+      err.dim(`  npx @plutojl/cli tools ${tool.name} describes each one.`)
+    );
+  }
+  return lines.join("\n");
+}
+
 export async function listTools(port: number, filter?: string): Promise<void> {
   const tools = await withToolClient(port, (client) => client.listTools());
 
   if (filter) {
     const tool = tools.find((t) => t.name === filter);
     if (!tool) {
-      const close = tools
-        .filter((t) => t.name.includes(filter))
-        .map((t) => t.name);
-      console.error(
-        `${err.red("error:")} no tool named '${filter}'` +
-          (close.length ? `. Did you mean: ${close.join(", ")}?` : "")
-      );
+      console.error(noSuchTool(filter, tools));
       process.exit(1);
     }
     console.log(describeTool(tool));
@@ -148,7 +173,7 @@ export async function callTool(
     );
     process.exit(1);
   }
-  let args = resolvePathArgs(parsed as Record<string, unknown>, process.cwd());
+  let args = parsed as Record<string, unknown>;
   if (codeFile !== undefined) {
     try {
       args = withCodeFile(args, codeFile, process.cwd());
@@ -160,9 +185,27 @@ export async function callTool(
     }
   }
 
-  const result = await withToolClient(port, (client) =>
-    client.callTool(toolName, args, timeoutMs)
-  );
+  const outcome = await withToolClient(port, async (client) => {
+    const tools = await client.listTools();
+    const tool = tools.find((t) => t.name === toolName);
+    if (!tool) {
+      return { refused: noSuchTool(toolName, tools) };
+    }
+    const resolved = resolvePathArgs(args, tool, process.cwd());
+    const problems = checkToolArgs(resolved, tool);
+    if (problems.length) {
+      return { refused: badArgs(tool, problems) };
+    }
+    return {
+      args: resolved,
+      result: await client.callTool(toolName, resolved, timeoutMs),
+    };
+  });
+  if ("refused" in outcome) {
+    console.error(outcome.refused);
+    process.exit(1);
+  }
+  const { result } = outcome;
 
   if (raw) {
     console.log(JSON.stringify(result, null, 2));
@@ -174,7 +217,8 @@ export async function callTool(
       } else if (item.type === "image" && item.data) {
         // Never print base64 to the terminal: save the image and say where
         const ext = extensionFor(item.mimeType ?? "image/png");
-        const stem = typeof args.cell_id === "string" ? args.cell_id : toolName;
+        const cellId = outcome.args.cell_id;
+        const stem = typeof cellId === "string" ? cellId : toolName;
         const dest =
           out ??
           path.resolve(`${stem}${imageIndex ? `-${imageIndex}` : ""}.${ext}`);
