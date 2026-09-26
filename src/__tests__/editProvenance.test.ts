@@ -47,45 +47,64 @@ function setup(applyEdit: (edit: string) => PromiseLike<boolean>) {
   return { provenance, timers, logs };
 }
 
-describe("EditProvenance.applyRemote", () => {
-  it("marks the notebook remote while the edit is applied and until the next macrotask", async () => {
-    const seen: boolean[] = [];
+describe("EditProvenance edits", () => {
+  it("applyRemote claims no structural change, so a user add or delete during it is handled", async () => {
+    const claimed: boolean[] = [];
     const { provenance, timers } = setup(async () => {
-      seen.push(provenance.isRemote("/a.jl"), provenance.isRemote("/b.jl"));
+      claimed.push(
+        provenance.isOwnStructuralChange("/a.jl", ["a", undefined]),
+        provenance.isOwnStructuralChange("/a.jl", ["a"])
+      );
+      return true;
+    });
+    expect(await provenance.applyRemote("stamp")).toBe(true);
+    expect(claimed).toEqual([false, false]);
+    expect(timers.pending.size).toBe(0);
+  });
+
+  it("replaceStructure claims only the change that leaves exactly the expected ids", async () => {
+    const claimed: boolean[] = [];
+    const { provenance, timers } = setup(async () => {
+      claimed.push(
+        provenance.isOwnStructuralChange("/a.jl", ["b", "a"]),
+        // a user add, delete or move racing the edit
+        provenance.isOwnStructuralChange("/a.jl", ["b", "a", undefined]),
+        provenance.isOwnStructuralChange("/a.jl", ["b"]),
+        provenance.isOwnStructuralChange("/a.jl", ["a", "b"]),
+        provenance.isOwnStructuralChange("/other.jl", ["b", "a"])
+      );
       return true;
     });
 
-    expect(await provenance.applyRemote("/a.jl", "edit")).toBe(true);
-    expect(seen).toEqual([true, false]);
-    expect(provenance.isRemote("/a.jl")).toBe(true);
+    expect(await provenance.replaceStructure("/a.jl", "edit", ["b", "a"])).toBe(
+      true
+    );
+    expect(claimed).toEqual([true, false, false, false, false]);
+    expect(provenance.isOwnStructuralChange("/a.jl", ["b", "a"])).toBe(true);
 
     timers.runAll();
-    expect(provenance.isRemote("/a.jl")).toBe(false);
+    expect(provenance.isOwnStructuralChange("/a.jl", ["b", "a"])).toBe(false);
   });
 
-  it("stays remote until every overlapping edit has been released", async () => {
+  it("a newer replaceStructure's expectation survives the older one's release", async () => {
     const { provenance, timers } = setup(async () => true);
-    await Promise.all([
-      provenance.applyRemote("/a.jl", "one"),
-      provenance.applyRemote("/a.jl", "two"),
-    ]);
-    const [first] = [...timers.pending.values()];
+    await provenance.replaceStructure("/a.jl", "one", ["a"]);
+    const [olderRelease] = [...timers.pending.values()];
     timers.pending.clear();
-    first.callback();
-    expect(provenance.isRemote("/a.jl")).toBe(true);
-    first.callback();
-    expect(provenance.isRemote("/a.jl")).toBe(false);
+    await provenance.replaceStructure("/a.jl", "two", ["b"]);
+    olderRelease.callback();
+    expect(provenance.isOwnStructuralChange("/a.jl", ["b"])).toBe(true);
   });
 
-  it("releases the notebook when the edit fails", async () => {
+  it("releases the expectation when the edit fails", async () => {
     const { provenance, timers } = setup(() =>
       Promise.reject(new Error("bad edit"))
     );
-    await expect(provenance.applyRemote("/a.jl", "edit")).rejects.toThrow(
-      "bad edit"
-    );
+    await expect(
+      provenance.replaceStructure("/a.jl", "edit", ["a"])
+    ).rejects.toThrow("bad edit");
     timers.runAll();
-    expect(provenance.isRemote("/a.jl")).toBe(false);
+    expect(provenance.isOwnStructuralChange("/a.jl", ["a"])).toBe(false);
   });
 });
 
@@ -138,6 +157,42 @@ describe("EditProvenance.scheduleOrderSync", () => {
     timers.runAll();
     await flush();
     expect(runs).toBe(0);
+  });
+
+  it("does not reschedule a sync that was running when the notebook was forgotten", async () => {
+    const { provenance, timers } = setup(async () => true);
+    let release!: (result: OrderSyncResult) => void;
+    provenance.scheduleOrderSync(
+      "/a.jl",
+      () => new Promise<OrderSyncResult>((resolve) => (release = resolve))
+    );
+    timers.runAll();
+    provenance.forget("/a.jl");
+    release("deferred");
+    await flush();
+    expect(timers.pending.size).toBe(0);
+  });
+
+  it("does not reschedule or accept syncs after dispose", async () => {
+    const { provenance, timers } = setup(async () => true);
+    let release!: (result: OrderSyncResult) => void;
+    provenance.scheduleOrderSync(
+      "/a.jl",
+      () => new Promise<OrderSyncResult>((resolve) => (release = resolve))
+    );
+    timers.runAll();
+    provenance.dispose();
+    release("deferred");
+    await flush();
+    provenance.scheduleOrderSync("/b.jl", async () => "applied");
+    expect(timers.pending.size).toBe(0);
+  });
+
+  it("a forgotten path accepts new syncs", async () => {
+    const { provenance, timers } = setup(async () => true);
+    provenance.forget("/a.jl");
+    provenance.scheduleOrderSync("/a.jl", async () => "applied");
+    expect(timers.pending.size).toBe(1);
   });
 
   it("logs a failed sync and stops", async () => {

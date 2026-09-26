@@ -14,38 +14,65 @@ const MAX_ORDER_SYNC_ATTEMPTS = 60;
  * change applied to the document) or from the user, and the deferred
  * cell-order sync that applies Pluto's structure to the document.
  *
- * Every document edit goes through `applyRemote`; while one is in flight,
- * `isRemote` is true for that notebook. The notebook change event for an
- * edit is delivered before `applyEdit` resolves; the flag is still held
- * until the next macrotask.
+ * Every document edit goes through `applyRemote` or `replaceStructure`.
+ * Only structural edits (cells added, removed or moved) produce change
+ * events the controller reacts to, so only `replaceStructure` is tracked:
+ * a structural change is ours when it leaves the document with exactly
+ * the cell ids `replaceStructure` was asked to produce. That expectation
+ * is held from the edit until the macrotask after `applyEdit` settles;
+ * the change event itself is delivered before `applyEdit` resolves.
  */
 export class EditProvenance<Edit> {
-  private readonly remoteDepth = new Map<string, number>();
+  private readonly expectedIds = new Map<string, { ids: readonly string[] }>();
   private readonly orderSyncTimers = new Map<string, unknown>();
+  // Bumped by forget: a sync that started under an older generation
+  // does not reschedule itself
+  private readonly generation = new Map<string, number>();
+  private disposed = false;
 
   constructor(private readonly deps: ProvenanceDeps<Edit>) {}
 
-  isRemote(notebookPath: string): boolean {
-    return (this.remoteDepth.get(notebookPath) ?? 0) > 0;
+  /** Applies an edit that changes no cell structure (text, metadata). */
+  applyRemote(edit: Edit): PromiseLike<boolean> {
+    return this.deps.applyEdit(edit);
   }
 
-  async applyRemote(notebookPath: string, edit: Edit): Promise<boolean> {
-    this.remoteDepth.set(
-      notebookPath,
-      (this.remoteDepth.get(notebookPath) ?? 0) + 1
-    );
+  /**
+   * Applies an edit that leaves the notebook's cells with exactly `ids`, in
+   * order; the resulting change event is recognised by `isOwnStructuralChange`.
+   */
+  async replaceStructure(
+    notebookPath: string,
+    edit: Edit,
+    ids: readonly string[]
+  ): Promise<boolean> {
+    const expectation = { ids };
+    this.expectedIds.set(notebookPath, expectation);
     try {
       return await this.deps.applyEdit(edit);
     } finally {
       this.timer(() => {
-        const depth = this.remoteDepth.get(notebookPath) ?? 1;
-        if (depth <= 1) {
-          this.remoteDepth.delete(notebookPath);
-        } else {
-          this.remoteDepth.set(notebookPath, depth - 1);
+        if (this.expectedIds.get(notebookPath) === expectation) {
+          this.expectedIds.delete(notebookPath);
         }
       }, 0);
     }
+  }
+
+  /**
+   * Whether a structural change that left the document with `ids` is the
+   * one a pending `replaceStructure` produced.
+   */
+  isOwnStructuralChange(
+    notebookPath: string,
+    ids: ReadonlyArray<string | undefined>
+  ): boolean {
+    const expected = this.expectedIds.get(notebookPath)?.ids;
+    return (
+      !!expected &&
+      expected.length === ids.length &&
+      expected.every((id, i) => ids[i] === id)
+    );
   }
 
   /**
@@ -58,15 +85,20 @@ export class EditProvenance<Edit> {
     sync: () => PromiseLike<OrderSyncResult>,
     attempt = 0
   ): void {
-    if (this.orderSyncTimers.has(notebookPath)) {
+    if (this.disposed || this.orderSyncTimers.has(notebookPath)) {
       return;
     }
+    const generation = this.generation.get(notebookPath) ?? 0;
     const delay = Math.min(100 * 2 ** attempt, 5000);
     const handle = this.timer(() => {
       this.orderSyncTimers.delete(notebookPath);
       Promise.resolve(sync()).then(
         (result) => {
-          if (result === "deferred" && attempt + 1 < MAX_ORDER_SYNC_ATTEMPTS) {
+          if (
+            result === "deferred" &&
+            attempt + 1 < MAX_ORDER_SYNC_ATTEMPTS &&
+            generation === (this.generation.get(notebookPath) ?? 0)
+          ) {
             this.scheduleOrderSync(notebookPath, sync, attempt + 1);
           }
         },
@@ -81,8 +113,13 @@ export class EditProvenance<Edit> {
     this.orderSyncTimers.set(notebookPath, handle);
   }
 
-  /** Drops the notebook's pending order sync. */
+  /** Drops the notebook's pending order sync, and stops a running one from retrying. */
   forget(notebookPath: string): void {
+    this.generation.set(
+      notebookPath,
+      (this.generation.get(notebookPath) ?? 0) + 1
+    );
+    this.expectedIds.delete(notebookPath);
     const handle = this.orderSyncTimers.get(notebookPath);
     if (handle !== undefined) {
       (this.deps.clearTimer ?? clearTimeout)(
@@ -93,6 +130,7 @@ export class EditProvenance<Edit> {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const notebookPath of [...this.orderSyncTimers.keys()]) {
       this.forget(notebookPath);
     }

@@ -707,8 +707,9 @@ export class PlutoNotebookController {
         desired
       ),
     ]);
-    if (!(await this.provenance.applyRemote(notebookPath, edit))) {
-      return "noop";
+    const ids = desired.map((data) => data.metadata?.pluto_cell_id as string);
+    if (!(await this.provenance.replaceStructure(notebookPath, edit, ids))) {
+      return "deferred";
     }
     // Cells materialized from Pluto state carry their outputs already
     if (!notebook.isClosed) {
@@ -802,7 +803,7 @@ export class PlutoNotebookController {
           code_folded: folded,
         }),
       ]);
-      await this.provenance.applyRemote(notebook.uri.fsPath, edit);
+      await this.provenance.applyRemote(edit);
     }
     if (foldHiddenCellsEnabled()) {
       await this.setInputCollapsed(notebook, [cell], folded);
@@ -862,7 +863,7 @@ export class PlutoNotebookController {
         }),
       ]);
     }
-    if (await this.provenance.applyRemote(notebook.uri.fsPath, edit)) {
+    if (await this.provenance.applyRemote(edit)) {
       this.outputChannel.appendLine(
         `[CodeSync] Cell ${cellId} code updated from Pluto`
       );
@@ -1168,7 +1169,7 @@ export class PlutoNotebookController {
           vscode.NotebookEdit.updateCellMetadata(currentIndex, cellMetadata),
         ]);
 
-        await this.provenance.applyRemote(notebook.uri.fsPath, edit);
+        await this.provenance.applyRemote(edit);
 
         this.outputChannel.appendLine(
           `Updated cell metadata with pluto_cell_id: ${cellId}`
@@ -1260,7 +1261,14 @@ export class PlutoNotebookController {
 
     // Changes we applied ourselves from Pluto-side patches must not be
     // echoed back to Pluto — that would duplicate or re-delete cells
-    if (this.provenance.isRemote(notebook.uri.fsPath)) {
+    if (
+      this.provenance.isOwnStructuralChange(
+        notebook.uri.fsPath,
+        notebook
+          .getCells()
+          .map((cell) => cell.metadata?.pluto_cell_id as string | undefined)
+      )
+    ) {
       return;
     }
 
