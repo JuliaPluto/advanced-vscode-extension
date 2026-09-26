@@ -42,12 +42,15 @@ Reactivity:
   start a cascade that outlives the call that triggered it.
 
 Waiting:
-- create_cell, execute_cell and execute_code return after five minutes with
+- create_cell, execute_cell, execute_code, edit_cell (when it runs the cell)
+  and read_cell_output (when it renders a PNG) return after five minutes with
   timed_out set, and the computation keeps running server-side.
 - Call wait_for_notebook_idle once instead of polling list_cells or read_cell
   in a loop.
 - A create_cell that timed out still created its cell. Retrying it defines the
   same variable twice; list_cells finds the cell and delete_cell removes it.
+- An edit_cell that timed out already sent the new code and started the run.
+  Do not retry it; wait_for_notebook_idle, then read_cell.
 - execute_code runs in a temporary cell that is deleted as soon as it
   finishes, so a result that lands after the timeout cannot be read back. Use
   create_cell for anything long enough to time out.

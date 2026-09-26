@@ -35,6 +35,13 @@ let mcpServerInstance: PlutoMCPHttpServer | undefined;
  */
 const EXECUTION_TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * Bound on a documentation request. Pluto answers one immediately even
+ * while the notebook is busy, so going unanswered this long means the
+ * connection to the notebook has stalled.
+ */
+const DOCS_TIMEOUT_MS = 30_000;
+
 type TimeoutResult<T> = { timedOut: false; value: T } | { timedOut: true };
 
 async function withExecutionTimeout<T>(
@@ -493,7 +500,7 @@ export class PlutoMCPHttpServer {
     // Edit Cell
     server.tool(
       "edit_cell",
-      "Update the code of an existing cell and, by default, run it; the result returned is the cell's output after that run. Editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through these tools. Use save_notebook to persist changes to disk.",
+      "Update the code of an existing cell and, by default, run it; the result returned is the cell's output after that run, or timed_out if the run takes longer than five minutes (it keeps running — use wait_for_notebook_idle; do not retry edit_cell). Editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through these tools. Use save_notebook to persist changes to disk.",
       {
         path: z.string().describe("Path to the notebook"),
         cell_id: z.string().describe("UUID of the cell to edit"),
@@ -518,7 +525,30 @@ export class PlutoMCPHttpServer {
         let result = null;
 
         if (run) {
-          result = await this.plutoManager.executeCell(worker, cell_id, code);
+          const outcome = await withExecutionTimeout(
+            this.plutoManager.executeCell(worker, cell_id, code)
+          );
+
+          if (outcome.timedOut) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      cell_id: cell_id,
+                      timed_out: true,
+                      message: `edit_cell has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s. The new code was sent and the run requested; the cell keeps executing — use wait_for_notebook_idle, then read_cell to check its code and result. Do NOT retry edit_cell; poll instead.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+
+          result = outcome.value;
         } else {
           await this.plutoManager.setCellCode(worker, cell_id, code);
         }
@@ -761,8 +791,24 @@ export class PlutoMCPHttpServer {
         }
 
         try {
-          const docs = await worker.getDocs(symbol);
+          const outcome = await withExecutionTimeout(
+            worker.getDocs(symbol),
+            DOCS_TIMEOUT_MS
+          );
 
+          if (outcome.timedOut) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Pluto did not answer the documentation request for '${symbol}' within ${DOCS_TIMEOUT_MS / 1000}s; the connection to the notebook may be stalled. Check get_notebook_status, or reopen the notebook with open_notebook.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const docs = outcome.value;
           return {
             content: [
               {
@@ -850,13 +896,21 @@ export class PlutoMCPHttpServer {
 
           // Get documentation for each symbol if requested
           let symbolsWithDocs: Array<{ symbol: string; docs?: string }> = [];
+          let unanswered = 0;
 
           if (include_docs) {
             symbolsWithDocs = await Promise.all(
               symbols.map(async (symbol) => {
                 try {
-                  const docs = await worker.getDocs(symbol);
-                  return { symbol, docs: docs || undefined };
+                  const outcome = await withExecutionTimeout(
+                    worker.getDocs(symbol),
+                    DOCS_TIMEOUT_MS
+                  );
+                  if (outcome.timedOut) {
+                    unanswered++;
+                    return { symbol };
+                  }
+                  return { symbol, docs: outcome.value || undefined };
                 } catch {
                   return { symbol, docs: undefined };
                 }
@@ -874,7 +928,11 @@ export class PlutoMCPHttpServer {
                   {
                     count: symbols.length,
                     symbols: symbolsWithDocs,
-                    message: `Found ${symbols.length} symbol(s) in notebook`,
+                    message:
+                      `Found ${symbols.length} symbol(s) in notebook` +
+                      (unanswered
+                        ? `; Pluto did not answer ${unanswered} documentation request(s) within ${DOCS_TIMEOUT_MS / 1000}s, so those symbols have no docs. The connection to the notebook may be stalled — check get_notebook_status, or reopen the notebook with open_notebook.`
+                        : ""),
                   },
                   null,
                   2
@@ -1045,7 +1103,7 @@ export class PlutoMCPHttpServer {
           };
         }
 
-        const renderPng = async (): Promise<Buffer> => {
+        const renderPng = async (): Promise<TimeoutResult<Buffer>> => {
           if (!this.plutoManager.isLocalServer()) {
             throw new Error(
               `The cell's output is ${output.mime}; rendering it to PNG needs a local Pluto server. Use as: "file" with a .${extensionFor(output.mime)} name to save the original output instead.`
@@ -1055,10 +1113,18 @@ export class PlutoMCPHttpServer {
             tmpdir(),
             `pluto-cell-${cell_id}-${Date.now()}.png`
           );
-          const render = await this.plutoManager.executeCodeEphemeral(
+          const rendering = this.plutoManager.executeCodeEphemeral(
             worker,
             renderCellToPngCode(cell_id, pngPath)
           );
+          const outcome = await withExecutionTimeout(rendering);
+          if (outcome.timedOut) {
+            void rendering
+              .finally(() => rm(pngPath, { force: true }))
+              .catch(() => {});
+            return outcome;
+          }
+          const render = outcome.value;
           if (render.errored) {
             const why = fullOutput(render.output)?.text ?? "unknown error";
             throw new Error(
@@ -1066,10 +1132,27 @@ export class PlutoMCPHttpServer {
             );
           }
           try {
-            return await readFile(pngPath);
+            return { timedOut: false, value: await readFile(pngPath) };
           } finally {
             await rm(pngPath, { force: true });
           }
+        };
+
+        const renderTimedOut = {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  cell_id,
+                  timed_out: true,
+                  message: `Rendering the cell's ${output.mime} output to PNG is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle, then call read_cell_output again.`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
 
         if (as === "file") {
@@ -1087,7 +1170,11 @@ export class PlutoMCPHttpServer {
           if (wantedExt && wantedExt !== nativeExt) {
             // The caller named a format: render to it when possible, refuse otherwise
             if (wantedExt === "png" && !isRasterMime(output.mime)) {
-              bytes = await renderPng();
+              const rendered = await renderPng();
+              if (rendered.timedOut) {
+                return renderTimedOut;
+              }
+              bytes = rendered.value;
               mime = "image/png";
             } else if (!(wantedExt === "jpg" && nativeExt === "jpg")) {
               throw new Error(
@@ -1123,7 +1210,11 @@ export class PlutoMCPHttpServer {
             ],
           };
         }
-        const png = await renderPng();
+        const rendered = await renderPng();
+        if (rendered.timedOut) {
+          return renderTimedOut;
+        }
+        const png = rendered.value;
         return {
           content: [
             {
