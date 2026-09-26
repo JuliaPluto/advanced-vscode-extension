@@ -7,6 +7,8 @@ import {
   presentOutput,
   renderCellToPngCode,
 } from "../notebookOutput.ts";
+import { parsePlutoNotebook } from "../plutoSerializer.ts";
+import { NotebookCellKind } from "vscode";
 
 describe("presentOutput", () => {
   it("replaces image bodies with their size and a fetch hint", () => {
@@ -112,18 +114,18 @@ describe("renderCellToPngCode", () => {
 });
 
 describe("newNotebookSource", () => {
-  it("produces a parseable empty notebook", () => {
-    const src = newNotebookSource();
-    expect(src.startsWith("### A Pluto.jl notebook ###")).toBe(true);
-    expect(src).toContain("# ╔═╡ Cell order:");
-    expect(src).not.toContain('md"""');
+  it("parses back to one empty code cell", () => {
+    const { cells } = parsePlutoNotebook(newNotebookSource());
+    expect(cells).toHaveLength(1);
+    expect(cells[0].kind).toBe(NotebookCellKind.Code);
+    expect(cells[0].value).toBe("");
   });
 
-  it("adds a folded markdown title cell", () => {
+  it("parses back to one folded title cell", () => {
     const src = newNotebookSource('Hello "world"');
-    const id = /# ╔═╡ ([0-9a-f-]{36})\n/.exec(src)?.[1];
-    expect(id).toBeDefined();
-    expect(src).toContain(`# Hello 'world'`);
-    expect(src).toContain(`# ╟─${id}`);
+    const { cells } = parsePlutoNotebook(src);
+    expect(cells).toHaveLength(1);
+    expect(cells[0].value).toContain("# Hello 'world'");
+    expect(src).toContain(`# ╟─${cells[0].metadata?.pluto_cell_id}`);
   });
 });
