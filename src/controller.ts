@@ -8,7 +8,6 @@ import type {
   UpdateEvent,
 } from "@plutojl/rainbow";
 import { formatCellOutput, rendererCellState } from "./cellOutput.ts";
-import { serializeCellResult } from "./outputSerialization.ts";
 import { ExecutionLedger } from "./executionLedger.ts";
 import {
   EditProvenance,
@@ -252,16 +251,12 @@ export class PlutoNotebookController {
     );
 
     if (editors.length > 0 && this.rendererMessaging) {
-      const rendererMessage =
-        message.state && typeof message.state === "object"
-          ? { ...message, state: serializeCellResult(message.state) }
-          : message;
       // Send message to all editors displaying this notebook
       for (const editor of editors) {
-        this.rendererMessaging.postMessage(rendererMessage, editor);
+        this.rendererMessaging.postMessage(message, editor);
       }
       this.outputChannel.appendLine(
-        `[CONTROLLER MESSAGE] Sent to ${editors.length} editor(s): ${JSON.stringify(rendererMessage)}`
+        `[CONTROLLER MESSAGE] Sent to ${editors.length} editor(s): ${JSON.stringify(message)}`
       );
     }
   }

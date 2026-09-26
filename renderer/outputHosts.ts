@@ -5,6 +5,8 @@
  * `release` must run while the output element is still in the document.
  */
 
+import { sentBodyKey } from "../src/outputKind";
+
 /** The part of a Pluto cell output that decides whether a host can be reused */
 export interface DisplayedOutput {
   body?: unknown;
@@ -21,14 +23,16 @@ export interface OutputHost<T> {
 }
 
 /**
- * Same body, and same run unless the output asks to persist its JS state
- * (Pluto re-mounts HTML on every run otherwise, e.g. to reset `@bind`s).
+ * Same body as sent (text, or the base64 of image bytes), and same run
+ * unless the output asks to persist its JS state (Pluto re-mounts HTML on
+ * every run otherwise, e.g. to reset `@bind`s).
  */
 export function canAdopt(
   shown: DisplayedOutput | undefined,
   next: DisplayedOutput | undefined
 ): boolean {
-  if (typeof next?.body !== "string" || shown?.body !== next.body) {
+  const key = sentBodyKey(next?.body);
+  if (!next || !shown || key === undefined || sentBodyKey(shown.body) !== key) {
     return false;
   }
   const persist =

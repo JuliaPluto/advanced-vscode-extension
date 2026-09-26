@@ -15,7 +15,7 @@ import {
   useMemo,
 } from "@plutojl/rainbow/ui";
 import { type RendererContext } from "vscode-notebook-renderer";
-import { restoreCellResult } from "../../src/outputSerialization";
+import { classifyOutput, fromTransport } from "../../src/outputKind";
 
 const useMathjaxEffect = () =>
   useEffect(() => {
@@ -59,7 +59,11 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
       // Placeholder: Handle different message types from controller
       switch (message.type) {
         case "setState": {
-          const state = restoreCellResult(message.state as CellResultData);
+          const sent = message.state as CellResultData;
+          const state =
+            sent.output === undefined
+              ? sent
+              : { ...sent, output: fromTransport(sent.output) };
           // A message without output leaves the mounted output in place
           setLocalState((previous) => ({ ...previous, ...state }));
 
@@ -94,15 +98,7 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
   }, [state.cell_id, context]);
 
   const OUTPUT = useMemo(() => {
-    const { mime, body } = localState.output ?? {};
-    const fixedMime =
-      (mime === "application/vnd.pluto.stacktrace+object" &&
-        (typeof body !== "object" ||
-          !("stacktrace" in localState.output.body))) ||
-      (mime === "application/vnd.pluto.tree+object" &&
-        (typeof body !== "object" || !("type" in localState.output.body)))
-        ? "text/plain"
-        : localState.output.mime;
+    const fixedMime = classifyOutput(localState.output).mime;
     if (localState.output?.mime)
       return html`<${OutputBody}
     persist_js_state=${localState.output?.persist_js_state}
