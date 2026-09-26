@@ -80,6 +80,27 @@ export function resolveMcpPort(
   return { port, explicit: false };
 }
 
+/** The Pluto server URL, which must be an absolute http(s) URL. */
+function checkPlutoUrl(url: string | undefined): string | undefined {
+  if (url === undefined) {
+    return undefined;
+  }
+  const source =
+    "--pluto-url (or PLUTO_SERVER_URL, or serverUrl in .plutomcp.json)";
+  if (!/^https?:\/\//i.test(url)) {
+    const hint = url.includes("://") ? "" : ` — did you mean 'http://${url}'?`;
+    throw new Error(
+      `${source} must start with http:// or https://, got '${url}'${hint}`
+    );
+  }
+  try {
+    new URL(url);
+  } catch {
+    throw new Error(`${source} is not a valid URL: '${url}'`);
+  }
+  return url;
+}
+
 export function resolveRunConfig(
   args: RawArgs,
   ctx: ResolveContext = {}
@@ -99,8 +120,9 @@ export function resolveRunConfig(
       envInt("PLUTO_PORT", env) ??
       file.plutoPort ??
       DEFAULTS.plutoPort,
-    plutoUrl:
-      args.plutoUrl ?? env.PLUTO_SERVER_URL ?? file.serverUrl ?? undefined,
+    plutoUrl: checkPlutoUrl(
+      args.plutoUrl ?? env.PLUTO_SERVER_URL ?? file.serverUrl ?? undefined
+    ),
     juliaVersion: juliaVersion ?? DEFAULTS.juliaVersion,
     juliaVersionExplicit: juliaVersion !== undefined,
     workDir,
