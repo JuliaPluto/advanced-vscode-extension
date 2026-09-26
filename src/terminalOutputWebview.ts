@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import type { CellResultData } from "@plutojl/rainbow";
 
+/** Injected by esbuild from node_modules/@plutojl/rainbow/package.json. */
+declare const __RAINBOW_VERSION__: string;
+
 /**
  * Manages webview panels for displaying terminal output with rich content
  * Reuses the existing Pluto renderer components
@@ -159,7 +162,7 @@ export class TerminalOutputWebviewProvider {
 
     <script type="module">
         // Import from @plutojl/rainbow directly
-        import { html, render, OutputBody, setup_mathjax } from 'https://cdn.jsdelivr.net/npm/@plutojl/rainbow@latest/ui/+esm';
+        import { html, render, OutputBody, setup_mathjax } from 'https://cdn.jsdelivr.net/npm/@plutojl/rainbow@${__RAINBOW_VERSION__}/ui/+esm';
 
         // Parse the result data
         const result = ${resultJson};
