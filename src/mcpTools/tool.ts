@@ -1,7 +1,11 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Worker } from "@plutojl/rainbow";
 import { z } from "zod";
-import type { PlutoManager, ServerState } from "../plutoManager.ts";
+import {
+  describeServerState,
+  type PlutoManager,
+  type ServerState,
+} from "../plutoManager.ts";
 import { notebookPath } from "./args.ts";
 
 /**
@@ -261,13 +265,14 @@ export function tool<S extends z.ZodRawShape>(spec: ToolSpec<S>): PlutoTool {
 
 /** Why tools cannot reach the Pluto server in this state, and what to do. */
 export function serverUnavailable(state: ServerState, url: string): string {
+  const described = describeServerState(state);
   switch (state.status) {
     case "stopping":
-      return "Pluto server is stopping; start it again with start_pluto_server.";
+      return `${described}; start it again with start_pluto_server.`;
     case "failed":
-      return `Pluto server failed: ${state.reason}. Start it again with start_pluto_server.`;
+      return `${described}. Start it again with start_pluto_server.`;
     default:
-      return `Pluto server is not running. Start it with start_pluto_server, or use connect_to_pluto_server for one already running at ${url}.`;
+      return `${described}. Start it with start_pluto_server, or use connect_to_pluto_server for one already running at ${url}.`;
   }
 }
 
@@ -300,21 +305,12 @@ export async function resolveNotebook(
   manager: PlutoToolsManager,
   path: string
 ): Promise<Worker> {
-  const worker = await bounded(
-    manager.getWorker(path),
-    EXECUTION_TIMEOUT_MS,
-    () =>
-      timedOut(
-        {},
-        `Pluto is still opening ${path} after ${EXECUTION_TIMEOUT_MS / 1000}s — retry the call or poll get_notebook_status.`
-      )
+  return bounded(manager.getWorker(path), EXECUTION_TIMEOUT_MS, () =>
+    timedOut(
+      {},
+      `Pluto is still opening ${path} after ${EXECUTION_TIMEOUT_MS / 1000}s — retry the call or poll get_notebook_status.`
+    )
   );
-  if (!worker) {
-    throw new Error(
-      `The Pluto server at ${manager.getServerUrl()} is not ready to open ${path} (state: ${manager.getState().status})`
-    );
-  }
-  return worker;
 }
 
 /** A tool that needs a ready Pluto server; it never starts one. */

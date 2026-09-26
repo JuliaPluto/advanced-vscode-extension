@@ -747,3 +747,141 @@ describe("PlutoManager concurrency", () => {
     });
   });
 });
+
+describe("PlutoManager.getWorker", () => {
+  const NOTEBOOK_ID = "5e2f7c1a-0c4b-4c7e-9a51-1f3d2b6a8c90";
+  const NOTEBOOK = "/tmp/total.pluto.jl";
+  const realFetch = global.fetch;
+  let fetchMock: jest.Mock<(url: unknown) => Promise<unknown>>;
+
+  beforeEach(() => {
+    fetchMock = jest.fn(async () => ({
+      ok: true,
+      text: async () => NOTEBOOK_ID,
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  const opensByPath = () =>
+    fetchMock.mock.calls.filter(([url]) => String(url).includes("/open"));
+
+  function localManager(): PlutoManager {
+    return new PlutoManager(
+      1234,
+      createMockLogger(),
+      createMockServerManager(1),
+      stubFileReader
+    );
+  }
+
+  it("refuses to open a notebook when the running-notebooks listing fails", async () => {
+    jest
+      .spyOn(Host.prototype, "workers")
+      .mockRejectedValue(new Error("HTTP 500"));
+    const attach = jest.spyOn(Host.prototype, "worker");
+    const manager = localManager();
+
+    await expect(manager.getWorker(NOTEBOOK)).rejects.toThrow(
+      `Could not list the notebooks running on the Pluto server at http://localhost:1234 (HTTP 500), so ${NOTEBOOK} was not opened`
+    );
+    expect(opensByPath()).toEqual([]);
+    expect(attach).not.toHaveBeenCalled();
+    expect(manager.getOpenNotebooks()).toEqual([]);
+  });
+
+  it("adopts a notebook already running for the path, and only disconnects on close", async () => {
+    jest
+      .spyOn(Host.prototype, "workers")
+      .mockResolvedValue([
+        { notebook_id: NOTEBOOK_ID, path: NOTEBOOK },
+      ] as never);
+    const running = createFakeWorker({ notebook_id: NOTEBOOK_ID });
+    jest.spyOn(Host.prototype, "worker").mockReturnValue(running);
+    const manager = localManager();
+
+    await expect(manager.getWorker(NOTEBOOK)).resolves.toBe(running);
+    expect(opensByPath()).toEqual([]);
+
+    await manager.closeNotebook(NOTEBOOK);
+    expect(running.shutdown).not.toHaveBeenCalled();
+  });
+
+  it("opens by path, and owns, a notebook that is not running", async () => {
+    jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+    const opened = createFakeWorker({ notebook_id: NOTEBOOK_ID });
+    jest.spyOn(Host.prototype, "worker").mockReturnValue(opened);
+    const manager = localManager();
+
+    await expect(manager.getWorker(NOTEBOOK)).resolves.toBe(opened);
+    expect(opensByPath()).toHaveLength(1);
+
+    await manager.closeNotebook(NOTEBOOK);
+    expect(opened.shutdown).toHaveBeenCalled();
+  });
+
+  it("rejects, never resolving without a worker, when the server exits while starting", async () => {
+    jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+    const attach = jest
+      .spyOn(Host.prototype, "worker")
+      .mockReturnValue(createFakeWorker({ notebook_id: NOTEBOOK_ID }));
+    const serverManager = createMockServerManager(1);
+    const manager = new PlutoManager(
+      1234,
+      createMockLogger(),
+      serverManager,
+      stubFileReader
+    );
+    manager.on("serverStateChanged", (state) => {
+      if (state.status === "ready") {
+        serverManager.triggerStop();
+      }
+    });
+
+    await expect(manager.getWorker(NOTEBOOK)).rejects.toThrow(
+      "Pluto server stopped unexpectedly"
+    );
+    expect(attach).not.toHaveBeenCalled();
+    expect(manager.getOpenNotebooks()).toEqual([]);
+  });
+
+  it("throws instead of returning a worker it cannot reconnect", async () => {
+    jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+    const worker = createFakeWorker({ notebook_id: NOTEBOOK_ID });
+    jest.spyOn(Host.prototype, "worker").mockReturnValue(worker);
+    const manager = localManager();
+    await manager.getWorker(NOTEBOOK);
+
+    Object.assign(worker, {
+      connected: false,
+      connect: jest.fn(async () => false),
+    });
+    await expect(manager.getWorker(NOTEBOOK)).rejects.toThrow(
+      `Lost the connection to ${NOTEBOOK}`
+    );
+  });
+
+  it("addresses cell operations by path", async () => {
+    jest.spyOn(Host.prototype, "workers").mockResolvedValue([]);
+    const deleteSnippets = jest.fn(async () => undefined);
+    const moveSnippets = jest.fn(async () => undefined);
+    jest.spyOn(Host.prototype, "worker").mockReturnValue(
+      createFakeWorker({
+        notebook_id: NOTEBOOK_ID,
+        deleteSnippets,
+        moveSnippets,
+      } as Partial<Worker>)
+    );
+    const manager = localManager();
+
+    await manager.deleteCell(NOTEBOOK, "c1");
+    await manager.moveCells(NOTEBOOK, ["c2"], 0);
+
+    expect(deleteSnippets).toHaveBeenCalledWith(["c1"]);
+    expect(moveSnippets).toHaveBeenCalledWith(["c2"], 0);
+    expect(opensByPath()).toHaveLength(1);
+  });
+});

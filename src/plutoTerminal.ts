@@ -445,7 +445,7 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
     }
     void this.plutoManager
       .getWorker(this.notebookPath)
-      .then((worker) => worker?.interrupt())
+      .then((worker) => worker.interrupt())
       .catch((error) => {
         this.outputChannel.appendLine(
           `Terminal interrupt failed: ${
@@ -530,10 +530,6 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
       // Get worker from PlutoManager (it handles creation/caching)
       const worker = await this.plutoManager.getWorker(this.notebookPath);
 
-      if (!worker) {
-        throw new Error("Failed to get worker for notebook");
-      }
-
       // Check if notebook is busy
       if (!worker.isIdle()) {
         this.write(
@@ -552,7 +548,10 @@ export class PlutoTerminalProvider implements vscode.Pseudoterminal {
 
       // Execute code ephemerally using PlutoManager
       this.isRunningInPluto = true;
-      const result = await this.plutoManager.executeCodeEphemeral(worker, code);
+      const result = await this.plutoManager.executeCodeEphemeral(
+        this.notebookPath,
+        code
+      );
       this.isRunningInPluto = false;
 
       // Render output — unless the user cancelled with Ctrl+C meanwhile

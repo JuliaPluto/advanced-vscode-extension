@@ -87,21 +87,19 @@ export class PlutoNotebookController {
   private interruptHandler = async (
     notebook: vscode.NotebookDocument
   ): Promise<void> => {
-    const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
-    if (worker) {
-      try {
-        await worker.interrupt();
-        vscode.window.showInformationMessage("Notebook execution interrupted");
-      } catch (error) {
-        this.outputChannel.appendLine(`Error interrupting notebook: ${error}`);
-        vscode.window.showErrorMessage("Failed to interrupt execution");
-      } finally {
-        // End this notebook's executions after the interrupt attempt —
-        // waiting until now stops late patches from resurrecting them as
-        // successes, and a failed interrupt must still release the
-        // spinners (a still-running kernel will just re-create them)
-        this.ledger.failNotebook(notebook.uri.fsPath);
-      }
+    try {
+      const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+      await worker.interrupt();
+      vscode.window.showInformationMessage("Notebook execution interrupted");
+    } catch (error) {
+      this.outputChannel.appendLine(`Error interrupting notebook: ${error}`);
+      vscode.window.showErrorMessage("Failed to interrupt execution");
+    } finally {
+      // End this notebook's executions after the interrupt attempt —
+      // waiting until now stops late patches from resurrecting them as
+      // successes, and a failed interrupt must still release the
+      // spinners (a still-running kernel will just re-create them)
+      this.ledger.failNotebook(notebook.uri.fsPath);
     }
   };
 
@@ -221,7 +219,7 @@ export class PlutoNotebookController {
         const worker = await this.plutoManager.getWorker(
           editor.notebook.uri.fsPath
         );
-        await worker?.setBond(message.name, message.value);
+        await worker.setBond(message.name, message.value);
         this.outputChannel.appendLine(
           `[RENDERER MESSAGE] Bond set${message.name}=${message.value} for ${editor.notebook.uri}!`
         );
@@ -339,8 +337,15 @@ export class PlutoNotebookController {
     if (!this.workerSubscriptions.has(notebookPath)) {
       return;
     }
-    const worker = await this.plutoManager.getWorker(notebookPath);
-    const state = worker?.getState();
+    let state: NotebookData | undefined;
+    try {
+      state = (await this.plutoManager.getWorker(notebookPath)).getState();
+    } catch (error) {
+      this.outputChannel.appendLine(
+        `[Render] ${error instanceof Error ? error.message : String(error)}`
+      );
+      return;
+    }
     if (state) {
       this.reconcileCellsFromState(notebook, state);
     }
@@ -638,8 +643,13 @@ export class PlutoNotebookController {
       return "noop";
     }
     const notebookPath = notebook.uri.fsPath;
-    const worker = await this.plutoManager.getWorker(notebookPath);
-    if (!worker) {
+    let worker: Worker;
+    try {
+      worker = await this.plutoManager.getWorker(notebookPath);
+    } catch (error) {
+      this.outputChannel.appendLine(
+        `[CellOrderSync] ${error instanceof Error ? error.message : String(error)}`
+      );
       return "noop";
     }
     const state = worker.getState();
@@ -1067,15 +1077,12 @@ export class PlutoNotebookController {
       if (this.plutoManager.isConnected()) {
         try {
           const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+          this.outputChannel.appendLine(
+            `Worker initialized for: ${notebook.uri.fsPath}`
+          );
 
-          if (worker) {
-            this.outputChannel.appendLine(
-              `Worker initialized for: ${notebook.uri.fsPath}`
-            );
-
-            // Subscribe to updates from this worker (manages cleanup automatically)
-            this.subscribeToWorker(notebook.uri.fsPath, notebook, worker);
-          }
+          // Subscribe to updates from this worker (manages cleanup automatically)
+          this.subscribeToWorker(notebook.uri.fsPath, notebook, worker);
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -1101,9 +1108,13 @@ export class PlutoNotebookController {
     notebook: vscode.NotebookDocument,
     addedCells: readonly vscode.NotebookCell[]
   ): Promise<void> {
-    const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
-    if (!worker) {
-      this.outputChannel.appendLine("No worker available for notebook");
+    let worker: Worker;
+    try {
+      worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
+    } catch (error) {
+      this.outputChannel.appendLine(
+        `No worker available for notebook: ${error instanceof Error ? error.message : String(error)}`
+      );
       return;
     }
     for (const addedCell of addedCells) {
@@ -1138,7 +1149,7 @@ export class PlutoNotebookController {
         // Add cell to worker, preserving an existing identity if the cell
         // carries one (e.g. restored from a file)
         const cellId = await this.plutoManager.addCell(
-          worker,
+          notebook.uri.fsPath,
           cellIndex,
           code,
           presetId
@@ -1153,7 +1164,7 @@ export class PlutoNotebookController {
           this.outputChannel.appendLine(
             `Cell removed while being added — deleting ${cellId} from Pluto`
           );
-          await this.plutoManager.deleteCell(worker, cellId);
+          await this.plutoManager.deleteCell(notebook.uri.fsPath, cellId);
           continue;
         }
 
@@ -1207,11 +1218,6 @@ export class PlutoNotebookController {
         this.ledger.fail(notebook.uri.fsPath, cellId, { cell: removedCell });
       }
     }
-    const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
-    if (!worker) {
-      this.outputChannel.appendLine("No worker available for notebook");
-      return;
-    }
     for (const removedCell of removedCells) {
       try {
         const cellId = removedCell.metadata?.pluto_cell_id as string;
@@ -1237,7 +1243,7 @@ export class PlutoNotebookController {
         this.outputChannel.appendLine(`Deleting cell with ID: ${cellId}`);
 
         // Remove cell from worker
-        await this.plutoManager.deleteCell(worker, cellId);
+        await this.plutoManager.deleteCell(notebook.uri.fsPath, cellId);
 
         this.outputChannel.appendLine(`Cell ${cellId} deleted successfully`);
       } catch (error) {
@@ -1296,13 +1302,10 @@ export class PlutoNotebookController {
         continue;
       }
       try {
-        const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
-        if (worker) {
-          this.outputChannel.appendLine(
-            `[VSCodeMove] Cell ${cellId} moved to index ${index}`
-          );
-          await this.plutoManager.moveCells(worker, [cellId], index);
-        }
+        this.outputChannel.appendLine(
+          `[VSCodeMove] Cell ${cellId} moved to index ${index}`
+        );
+        await this.plutoManager.moveCells(notebook.uri.fsPath, [cellId], index);
       } catch (error) {
         this.outputChannel.appendLine(
           `[VSCodeMove] Failed for ${cellId}: ${
@@ -1392,10 +1395,6 @@ export class PlutoNotebookController {
       // Get or create worker - this will start the server if needed
       const worker = await this.plutoManager.getWorker(notebook.uri.fsPath);
 
-      if (!worker) {
-        throw new Error(`Failed to initialize Pluto worker.`);
-      }
-
       // Ensure we're subscribed to this worker's updates
       // This handles the case where the worker was created during first execution
       // (i.e., when registration happened before server was ready)
@@ -1412,7 +1411,7 @@ export class PlutoNotebookController {
       const code = prepareCellCodeForWorker(cell);
 
       // The worker will handle the execution and stream updates back via onNotebookUpdate.
-      await this.plutoManager.executeCell(worker, cellId, code);
+      await this.plutoManager.executeCell(notebookPath, cellId, code);
 
       // We do NOT call execution.end() here. The `onNotebookUpdate` listener
       // will handle `execution.end()` when it receives the final 'running: false' patch.

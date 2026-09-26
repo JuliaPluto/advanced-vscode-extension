@@ -313,9 +313,15 @@ describe("notebookTool", () => {
     expect(manager.getWorker).not.toHaveBeenCalled();
   });
 
-  it("describes a notebook that cannot be opened by the server state", async () => {
+  it("answers a notebook the manager cannot reach with the manager's error", async () => {
     const manager = fakePlutoManager({
-      overrides: { getWorker: async () => undefined },
+      overrides: {
+        getWorker: async () => {
+          throw new Error(
+            "Pluto server is stopping, so /nb.jl cannot be opened."
+          );
+        },
+      },
     });
     const t = notebookTool(manager, {
       name: "t",
@@ -324,9 +330,14 @@ describe("notebookTool", () => {
       run: async () => "unreachable",
     });
     const result = await t.call({ path: "/nb.jl" });
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toBe(
-      `The Pluto server at ${SERVER_URL} is not ready to open /nb.jl (state: ready)`
-    );
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: "Pluto server is stopping, so /nb.jl cannot be opened.",
+        },
+      ],
+      isError: true,
+    });
   });
 });

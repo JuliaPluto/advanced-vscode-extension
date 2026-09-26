@@ -239,7 +239,7 @@ export class NotebooksTreeDataProvider implements vscode.TreeDataProvider<Notebo
         try {
           if (isConnected) {
             const worker = await this.plutoManager.getWorker(notebook.path);
-            plutoNotebook = worker?.getState();
+            plutoNotebook = worker.getState();
           }
         } catch (err) {
           error = err instanceof Error ? err : new Error(String(err));
@@ -263,9 +263,6 @@ export class NotebooksTreeDataProvider implements vscode.TreeDataProvider<Notebo
   private async getCells(notebookPath: string): Promise<PlutoCellTreeItem[]> {
     try {
       const worker = await this.plutoManager.getWorker(notebookPath);
-      if (!worker) {
-        return [];
-      }
 
       // Get cell order from worker
       const notebookData: NotebookData = worker.getState();
