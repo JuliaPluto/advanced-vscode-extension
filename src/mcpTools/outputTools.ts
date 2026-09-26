@@ -25,9 +25,10 @@ async function renderPng(
   cell_id: string,
   mime: string
 ): Promise<Buffer> {
-  if (!manager.isLocalServer()) {
+  const canWrite = manager.capabilities().writeLocalFile;
+  if (!canWrite.ok) {
     throw new Error(
-      `The cell's output is ${mime}; rendering it to PNG needs a local Pluto server. Use as: "file" with a .${extensionFor(mime)} name to save the original output instead.`
+      `The cell's output is ${mime}. ${canWrite.reason} Use as: "file" with a .${extensionFor(mime)} name to save the original output instead.`
     );
   }
   const pngPath = join(tmpdir(), `pluto-cell-${cell_id}-${Date.now()}.png`);

@@ -2,6 +2,7 @@ import { jest } from "@jest/globals";
 import type { Worker } from "@plutojl/rainbow";
 import type { ServerState } from "../../plutoManager.js";
 import type { PlutoToolsManager } from "../../mcpTools/tool.js";
+import { serverCapabilities } from "../../serverCapabilities.js";
 
 export const SERVER_URL = "http://localhost:1234";
 
@@ -79,8 +80,8 @@ export function fakePlutoManager(
       state = { status: "stopped" };
     }),
     getServerUrl: () => SERVER_URL,
-    isLocalServer: () => true,
-    serverWritesNotebookFiles: () => true,
+    capabilities: () =>
+      serverCapabilities({ sharesFilesystem: true, writesNotebookFiles: true }),
     getOpenNotebooks: () => [{ path: "/nb.jl", notebookId: "nb-1" }],
     getWorker: jest.fn<(path: string) => Promise<Worker | undefined>>(
       async () => worker
