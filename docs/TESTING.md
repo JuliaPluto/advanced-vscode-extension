@@ -121,7 +121,7 @@ npm run test:unit -- --runInBand plutoManager.test.ts
 
 **What we mock:**
 
-- `vscode` module - Only what's needed by PlutoServerTaskManager:
+- `vscode` module - Only what's needed by the code under test:
   - `workspace.getConfiguration` (for Julia settings)
   - Task-related types (TaskExecution, ShellExecution, etc.)
   - Notebook types (for serializer tests)
@@ -131,7 +131,7 @@ npm run test:unit -- --runInBand plutoManager.test.ts
 - ❌ Pluto server - use real Julia Pluto server
 - ❌ File system - use real file operations
 - ❌ @plutojl/rainbow - use real library
-- ❌ PlutoServerTaskManager - use real implementation
+- ❌ PlutoServer - test it against a fake launcher (`src/__tests__/plutoServer.test.ts`)
 
 This integration testing approach provides:
 

@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import * as vscode from "vscode";
 import { PlutoManager, PlutoManagerLogger } from "../plutoManager.js";
-import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
+import type { IPlutoServer, IFileReader } from "../plutoManagerTypes.js";
 import { toggleServer } from "../commands/plutoServerCommands.js";
 import { PlutoStatusBar } from "../statusBar.js";
 
@@ -16,7 +16,6 @@ const fileReader: IFileReader = { readFile: async () => "" };
 /** A server whose launch finishes only when the test releases it */
 function createGatedServer() {
   let release: () => void = () => {};
-  let onStop: (() => void) | undefined;
   const server = {
     startCalls: 0,
     running: false,
@@ -27,22 +26,15 @@ function createGatedServer() {
         release = resolve;
       });
       server.running = true;
+      return "http://localhost:1234";
     },
     stop: async () => {
-      if (server.running) {
-        server.running = false;
-        onStop?.();
-      }
+      server.running = false;
     },
-    waitForReady: async () => {},
-    onStop: (cb: () => void) => {
-      onStop = cb;
-    },
-    onPortChanged: () => {},
-    getActualPort: () => 1234,
-    getServerUrl: () => "http://localhost:1234",
+    onExit: () => {},
+    writesNotebookFiles: true,
   };
-  return server satisfies IPlutoServerManager;
+  return server satisfies IPlutoServer;
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));

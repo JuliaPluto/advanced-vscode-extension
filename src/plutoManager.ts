@@ -2,7 +2,7 @@ import type { CellResultData, Worker } from "@plutojl/rainbow";
 import { Host, parse } from "@plutojl/rainbow";
 import * as path from "path";
 import { rm, writeFile } from "fs/promises";
-import type { IPlutoServerManager, IFileReader } from "./plutoManagerTypes.ts";
+import type { IPlutoServer, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { resolve as resolvePath } from "path";
 import { v4 as uuidv4 } from "uuid";
@@ -52,7 +52,9 @@ export class PlutoManager {
   private state: ServerState = { status: "stopped" };
   private startPromise?: Promise<void>; // in-flight start()/connect(), shared by concurrent callers
   private stopPromise?: Promise<void>; // in-flight stop(), shared by concurrent callers
-  private serverUrl: string;
+  private startAbort?: AbortController; // cancels the owned server's launch
+  private readonly configuredUrl: string; // where the server is expected before it starts
+  private serverUrl: string; // where it is now; an owned server may fall back to another port
   private usingCustomServerUrl = false;
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
   private readonly eventEmitter: EventEmitter = new EventEmitter();
@@ -60,35 +62,16 @@ export class PlutoManager {
   constructor(
     private readonly port = 1234,
     private readonly logger: PlutoManagerLogger,
-    private readonly serverManager: IPlutoServerManager,
+    private readonly server: IPlutoServer,
     private readonly fileReader: IFileReader,
     serverUrl?: string
   ) {
-    if (serverUrl) {
-      this.serverUrl = serverUrl;
-      this.usingCustomServerUrl = true;
-    } else {
-      this.serverUrl = `http://localhost:${this.port}`;
-    }
+    this.usingCustomServerUrl = !!serverUrl;
+    this.configuredUrl = serverUrl || `http://localhost:${this.port}`;
+    this.serverUrl = this.configuredUrl;
 
-    // Register callback to reset state when server task stops
-    this.serverManager.onStop(() => {
+    this.server.onExit(() => {
       this.onServerStopped();
-    });
-
-    // A configured server URL is fixed; only an owned server moves ports
-    this.serverManager.onPortChanged((newPort: number) => {
-      if (this.usingCustomServerUrl) {
-        return;
-      }
-      this.serverUrl = `http://localhost:${newPort}`;
-      // Update host with new URL
-      if (this.host) {
-        this.host = new Host(this.serverUrl);
-      }
-      if (this.state.status === "starting") {
-        this.setState({ status: "starting", url: this.serverUrl });
-      }
     });
   }
 
@@ -151,9 +134,11 @@ export class PlutoManager {
     }
     this.workers.clear();
 
+    const url = this.state.url;
+    this.serverUrl = this.configuredUrl;
     this.setState({
       status: "failed",
-      url: this.state.url,
+      url,
       reason: "Pluto server stopped unexpectedly",
     });
 
@@ -208,12 +193,12 @@ export class PlutoManager {
    * Start Pluto server (or connect to custom server URL).
    */
   public start(): Promise<void> {
-    return this.transitionToReady(async () => {
-      if (!this.usingCustomServerUrl) {
-        await this.serverManager.start();
-        await this.serverManager.waitForReady();
+    return this.transitionToReady(async (signal) => {
+      if (this.usingCustomServerUrl) {
+        await this.probeServer();
+      } else {
+        this.serverUrl = await this.server.start(signal);
       }
-      await this.probeServer();
     });
   }
 
@@ -225,7 +210,9 @@ export class PlutoManager {
    * waits for the stop to finish. Every path that reaches ready recreates
    * the notebooks banked by the last stop.
    */
-  private transitionToReady(launch: () => Promise<void>): Promise<void> {
+  private transitionToReady(
+    launch: (signal: AbortSignal) => Promise<void>
+  ): Promise<void> {
     if (this.state.status === "ready" && !this.stopPromise) {
       return Promise.resolve();
     }
@@ -235,11 +222,16 @@ export class PlutoManager {
     return this.startPromise;
   }
 
-  private async runStart(launch: () => Promise<void>): Promise<void> {
+  private async runStart(
+    launch: (signal: AbortSignal) => Promise<void>
+  ): Promise<void> {
     await this.stopPromise?.catch(() => {});
+    this.serverUrl = this.configuredUrl;
     this.setState({ status: "starting", url: this.serverUrl });
+    const abort = new AbortController();
+    this.startAbort = abort;
     try {
-      await launch();
+      await launch(abort.signal);
     } catch (error) {
       if (this.state.status === "starting") {
         this.setState({
@@ -249,6 +241,8 @@ export class PlutoManager {
         });
       }
       throw error;
+    } finally {
+      this.startAbort = undefined;
     }
     if (this.state.status !== "starting") {
       throw new Error(
@@ -260,6 +254,14 @@ export class PlutoManager {
     this.host = new Host(this.serverUrl);
     this.setState({ status: "ready", url: this.serverUrl });
     await this.recreateWorkers();
+    const settled = this.getState();
+    if (settled.status !== "ready") {
+      throw new Error(
+        settled.status === "failed"
+          ? settled.reason
+          : "Pluto server was stopped while reopening notebooks"
+      );
+    }
   }
 
   private async probeServer(): Promise<void> {
@@ -354,9 +356,8 @@ export class PlutoManager {
     clearTimeout(timeoutHandle);
     this.workers.clear();
 
-    // Stop server process (NodeServerManager already has its own 5s SIGKILL fallback)
     try {
-      await this.serverManager.stop();
+      await this.server.stop();
     } catch (error) {
       this.setState({
         status: "failed",
@@ -366,6 +367,7 @@ export class PlutoManager {
       throw error;
     }
 
+    this.serverUrl = this.configuredUrl;
     this.setState({ status: "stopped" });
   }
 
@@ -820,7 +822,7 @@ export class PlutoManager {
    * does not, only the editor's save and save_notebook reach the disk.
    */
   public serverWritesNotebookFiles(): boolean {
-    return this.serverManager.writesNotebookFiles?.() ?? true;
+    return this.server.writesNotebookFiles;
   }
 
   /**
@@ -907,14 +909,6 @@ export class PlutoManager {
    */
   public getServerUrl(): string {
     return this.serverUrl;
-  }
-
-  /**
-   * Get the actual port being used by the server
-   * This may differ from the configured port if the configured port was unavailable
-   */
-  public getActualPort(): number {
-    return this.serverManager.getActualPort();
   }
 
   /**
@@ -1025,13 +1019,14 @@ export class PlutoManager {
    * Close all notebook connections
    */
   public async dispose(): Promise<void> {
+    this.startAbort?.abort();
     this.setState({ status: "stopping", url: this.serverUrl });
     for (const [notebookPath, worker] of this.workers.entries()) {
       await this.releaseWorker(notebookPath, worker).catch(() => {});
     }
     this.workers.clear();
 
-    await this.serverManager.stop().catch(() => {
+    await this.server.stop().catch(() => {
       // Ignore errors during dispose
     });
     this.setState({ status: "stopped" });

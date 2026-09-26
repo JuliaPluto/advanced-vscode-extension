@@ -1,20 +1,17 @@
 import { PlutoManager, PlutoManagerLogger } from "../plutoManager.js";
-import type { IPlutoServerManager, IFileReader } from "../plutoManagerTypes.js";
+import type { IPlutoServer, IFileReader } from "../plutoManagerTypes.js";
 import { spawn, ChildProcess, execSync } from "child_process";
 import { writeFile, unlink, mkdir, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
 /** Stub server manager for tests that connect to an already-running Pluto */
-function createStubServerManager(port: number): IPlutoServerManager {
+function createStubServerManager(port: number): IPlutoServer {
   return {
-    start: async () => {},
+    start: async () => `http://localhost:${port}`,
     stop: async () => {},
-    waitForReady: async () => {},
-    onStop: () => {},
-    onPortChanged: () => {},
-    getActualPort: () => port,
-    getServerUrl: () => `http://localhost:${port}`,
+    onExit: () => {},
+    writesNotebookFiles: true,
   };
 }
 

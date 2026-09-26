@@ -1,6 +1,11 @@
 import type { PlutoManagerLogger } from "./plutoManager.ts";
 import { PlutoManager } from "./plutoManager.ts";
-import { PlutoServerTaskManager } from "./plutoServerTask.ts";
+import * as vscode from "vscode";
+import {
+  VscodeTaskLauncher,
+  resolveExtensionToolchain,
+} from "./plutoServerTask.ts";
+import { PlutoServer } from "./server/plutoServer.ts";
 import { VscodeFileReader } from "./vscodeFileReader.ts";
 
 /**
@@ -17,7 +22,14 @@ export function getSharedPlutoManager(
   sharedPlutoManager ??= new PlutoManager(
     port,
     logger,
-    new PlutoServerTaskManager(port),
+    new PlutoServer(
+      new VscodeTaskLauncher(),
+      resolveExtensionToolchain,
+      // The editor is the only writer of notebook files, so a save in VS
+      // Code never races a write from Pluto
+      { port, writeNotebookFiles: false, update: true },
+      { warn: (message) => void vscode.window.showWarningMessage(message) }
+    ),
     new VscodeFileReader(),
     serverUrl
   );
