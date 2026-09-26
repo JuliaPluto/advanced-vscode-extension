@@ -1,7 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import { extensionFor } from "../notebookOutput.ts";
-import { readToolArgsSource, resolvePathArgs } from "./toolArgs.ts";
+import {
+  readToolArgsSource,
+  resolvePathArgs,
+  withCodeFile,
+} from "./toolArgs.ts";
 import { type ToolInfo, withToolClient } from "./toolClient.ts";
 import { bold, cyan, dim, err, yellow } from "./ui.ts";
 
@@ -107,6 +111,8 @@ export interface CallOptions {
   timeoutMs: number;
   /** Where to write image content; defaults to ./<cell_id or tool>.<ext>. */
   out?: string;
+  /** File (or `-` for stdin) whose contents become the `code` argument. */
+  codeFile?: string;
 }
 
 export async function callTool(
@@ -115,7 +121,7 @@ export async function callTool(
   argsJson: string,
   options: CallOptions
 ): Promise<void> {
-  const { raw, timeoutMs, out } = options;
+  const { raw, timeoutMs, out, codeFile } = options;
   let source: string;
   try {
     source = readToolArgsSource(argsJson, process.cwd());
@@ -142,10 +148,17 @@ export async function callTool(
     );
     process.exit(1);
   }
-  const args = resolvePathArgs(
-    parsed as Record<string, unknown>,
-    process.cwd()
-  );
+  let args = resolvePathArgs(parsed as Record<string, unknown>, process.cwd());
+  if (codeFile !== undefined) {
+    try {
+      args = withCodeFile(args, codeFile, process.cwd());
+    } catch (e) {
+      console.error(
+        `${err.red("error:")} --code-file ${codeFile}: ${e instanceof Error ? e.message : String(e)}`
+      );
+      process.exit(1);
+    }
+  }
 
   const result = await withToolClient(port, (client) =>
     client.callTool(toolName, args, timeoutMs)

@@ -22,6 +22,7 @@ export interface RawArgs {
   toolArgs?: string;
   raw?: boolean;
   out?: string;
+  codeFile?: string;
   timeoutSeconds?: number;
   // status
   json?: boolean;
@@ -133,6 +134,11 @@ const FLAGS: Record<string, FlagSpec> = {
     value: true,
     apply: (a, v) => (a.out = v),
   },
+  "--code-file": {
+    commands: ["call"],
+    value: true,
+    apply: (a, v) => (a.codeFile = v),
+  },
   "--timeout": {
     commands: ["call", "status"],
     value: true,
@@ -237,6 +243,11 @@ export function parseArgs(argv: string[]): RawArgs {
       }
       args.toolName = positionals[0];
       args.toolArgs = positionals[1];
+      if (args.codeFile === "-" && args.toolArgs === "-") {
+        throw new UsageError(
+          "stdin can feed either the JSON arguments or --code-file, not both"
+        );
+      }
       break;
     case "tools":
       if (positionals.length > 1) {

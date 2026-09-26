@@ -1,7 +1,11 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { readToolArgsSource, resolvePathArgs } from "../cli/toolArgs.ts";
+import {
+  readToolArgsSource,
+  resolvePathArgs,
+  withCodeFile,
+} from "../cli/toolArgs.ts";
 
 describe("resolvePathArgs", () => {
   const cwd = path.join(os.tmpdir(), "proj");
@@ -42,5 +46,42 @@ describe("readToolArgsSource", () => {
 
   it("treats a lone @ as inline text", () => {
     expect(readToolArgsSource("@", "/")).toBe("@");
+  });
+});
+
+describe("withCodeFile", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "plutocli-code-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("sets code from the file relative to cwd, without its final newline", () => {
+    const code = 'begin\n\t@bind x Slider(1:10)\n\t"say \\"hi\\""\nend\n';
+    fs.writeFileSync(path.join(dir, "cell.jl"), code);
+    expect(withCodeFile({ path: "/nb.jl" }, "cell.jl", dir)).toEqual({
+      path: "/nb.jl",
+      code: code.slice(0, -1),
+    });
+  });
+
+  it("keeps blank lines the cell ends with, before the final newline", () => {
+    fs.writeFileSync(path.join(dir, "cell.jl"), "x = 1\r\n\r\n");
+    expect(withCodeFile({}, "cell.jl", dir).code).toBe("x = 1\r\n");
+  });
+
+  it("refuses when the arguments already carry code", () => {
+    fs.writeFileSync(path.join(dir, "cell.jl"), "1");
+    expect(() => withCodeFile({ code: "2" }, "cell.jl", dir)).toThrow(
+      /not both/
+    );
+  });
+
+  it("reports a missing file", () => {
+    expect(() => withCodeFile({}, "missing.jl", dir)).toThrow(/ENOENT/);
   });
 });
