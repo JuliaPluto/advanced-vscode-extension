@@ -73,13 +73,20 @@ export class ExecutionLedger<
     return (this.active.get(notebookPath)?.size ?? 0) > 0;
   }
 
-  /** Streams output into the live execution; false when there is none. */
+  /**
+   * Streams output into the live execution; false when there is none. A
+   * result already drawn for this cell (the previous run's, while a new
+   * run starts) is left mounted.
+   */
   render(notebookPath: string, cellId: CellId, state: CellResultData): boolean {
     const execution = this.active.get(notebookPath)?.get(cellId)?.execution;
     if (!execution) {
       return false;
     }
-    this.replaceOutput(execution, this.deps.formatOutput(state));
+    const stamp = state.output?.last_run_timestamp;
+    if (!stamp || stamp !== this.renderedStamp.get(notebookPath)?.get(cellId)) {
+      this.replaceOutput(execution, this.deps.formatOutput(state));
+    }
     return true;
   }
 

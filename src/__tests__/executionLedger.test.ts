@@ -169,6 +169,26 @@ describe("ExecutionLedger", () => {
     ]);
   });
 
+  it("leaves the previous run's drawn result mounted when a new run starts", () => {
+    const { ledger, created } = setup();
+    ledger.begin("/a.jl", "c1", "cell");
+    ledger.finish("/a.jl", "c1", result(7));
+
+    ledger.begin("/a.jl", "c1", "cell");
+    expect(ledger.render("/a.jl", "c1", result(7))).toBe(true);
+    expect(created[1].outputs).toEqual([]);
+
+    ledger.render("/a.jl", "c1", result(8));
+    expect(created[1].outputs).toEqual([["out-8"]]);
+  });
+
+  it("renders a stamp-less result into the live execution", () => {
+    const { ledger, created } = setup();
+    ledger.begin("/a.jl", "c1", "cell");
+    ledger.render("/a.jl", "c1", result(undefined));
+    expect(created[0].outputs).toEqual([["out-undefined"]]);
+  });
+
   it("render and finish report false with no live execution", () => {
     const { ledger } = setup();
     expect(ledger.render("/a.jl", "c1", result(7))).toBe(false);

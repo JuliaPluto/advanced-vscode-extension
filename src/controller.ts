@@ -453,9 +453,24 @@ export class PlutoNotebookController {
       return;
     }
     this.ledger.materialize(notebook.uri.fsPath, cellId, cell, state);
+    this.sendCellState(notebook, cellId, state);
+  }
+
+  /**
+   * Streams a cell's logs, stdout and progress to its renderer. While an
+   * execution is live, its output reaches the renderer only through
+   * replaceOutput, so it is left out here.
+   */
+  private sendCellState(
+    notebook: vscode.NotebookDocument,
+    cellId: CellId,
+    state: CellResultData
+  ): void {
+    const live = this.ledger.isActive(notebook.uri.fsPath, cellId);
+    const { output, ...rest } = state;
     this.sendMessageToRenderer(notebook, {
       type: "setState",
-      state,
+      state: live ? rest : { ...rest, output },
       cell_id: cellId,
     });
   }
@@ -538,11 +553,7 @@ export class PlutoNotebookController {
     // Optimistically send data. May be ignored.
     // If not ignored, this makes sure logs, stdout and progress
     // is communicated
-    this.sendMessageToRenderer(notebook, {
-      type: "setState",
-      state: currentCellState,
-      cell_id: currentCellState.cell_id,
-    });
+    this.sendCellState(notebook, cellId, currentCellState);
 
     const segment2 = path[2];
 
@@ -896,11 +907,7 @@ export class PlutoNotebookController {
       } else {
         this.ledger.render(notebook.uri.fsPath, cell_id, state);
       }
-      this.sendMessageToRenderer(notebook, {
-        type: "setState",
-        state,
-        cell_id,
-      });
+      this.sendCellState(notebook, cell_id, state);
     }
   };
 
