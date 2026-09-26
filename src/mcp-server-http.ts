@@ -35,6 +35,13 @@ let mcpServerInstance: PlutoMCPHttpServer | undefined;
  */
 const EXECUTION_TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * Bound on a documentation request. Pluto answers one immediately even
+ * while the notebook is busy, so going unanswered this long means the
+ * connection to the notebook has stalled.
+ */
+const DOCS_TIMEOUT_MS = 30_000;
+
 type TimeoutResult<T> = { timedOut: false; value: T } | { timedOut: true };
 
 async function withExecutionTimeout<T>(
@@ -503,7 +510,7 @@ export class PlutoMCPHttpServer {
     // Edit Cell
     server.tool(
       "edit_cell",
-      "Update the code of an existing cell and, by default, run it; the result returned is the cell's output after that run. Editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through these tools. Use save_notebook to persist changes to disk.",
+      "Update the code of an existing cell and, by default, run it; the result returned is the cell's output after that run, or timed_out if the run takes longer than five minutes (it keeps running — use wait_for_notebook_idle; do not retry edit_cell). Editing the .pluto.jl file on disk has NO effect on the running notebook — all mutations must go through these tools. Use save_notebook to persist changes to disk.",
       {
         path: z.string().describe("Path to the notebook"),
         cell_id: z.string().describe("UUID of the cell to edit"),
@@ -541,7 +548,7 @@ export class PlutoMCPHttpServer {
                     {
                       cell_id: cell_id,
                       timed_out: true,
-                      message: `Cell code was updated and the cell is still running after ${EXECUTION_TIMEOUT_MS / 1000}s. It continues to execute — use wait_for_notebook_idle or poll read_cell to get the result. Do NOT retry edit_cell.`,
+                      message: `edit_cell has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s. The new code was sent and the run requested; the cell keeps executing — use wait_for_notebook_idle, then read_cell to check its code and result. Do NOT retry edit_cell; poll instead.`,
                     },
                     null,
                     2
@@ -789,24 +796,20 @@ export class PlutoMCPHttpServer {
         }
 
         try {
-          const outcome = await withExecutionTimeout(worker.getDocs(symbol));
+          const outcome = await withExecutionTimeout(
+            worker.getDocs(symbol),
+            DOCS_TIMEOUT_MS
+          );
 
           if (outcome.timedOut) {
             return {
               content: [
                 {
                   type: "text",
-                  text: JSON.stringify(
-                    {
-                      symbol,
-                      timed_out: true,
-                      message: `Documentation lookup is still running after ${EXECUTION_TIMEOUT_MS / 1000}s, most likely because the notebook is busy running cells — use wait_for_notebook_idle, then call get_docs again.`,
-                    },
-                    null,
-                    2
-                  ),
+                  text: `Pluto did not answer the documentation request for '${symbol}' within ${DOCS_TIMEOUT_MS / 1000}s; the connection to the notebook may be stalled. Check get_notebook_status, or reopen the notebook with open_notebook.`,
                 },
               ],
+              isError: true,
             };
           }
 
@@ -898,42 +901,26 @@ export class PlutoMCPHttpServer {
 
           // Get documentation for each symbol if requested
           let symbolsWithDocs: Array<{ symbol: string; docs?: string }> = [];
+          let unanswered = 0;
 
           if (include_docs) {
-            const outcome = await withExecutionTimeout(
-              Promise.all(
-                symbols.map(async (symbol) => {
-                  try {
-                    const docs = await worker.getDocs(symbol);
-                    return { symbol, docs: docs || undefined };
-                  } catch {
-                    return { symbol, docs: undefined };
+            symbolsWithDocs = await Promise.all(
+              symbols.map(async (symbol) => {
+                try {
+                  const outcome = await withExecutionTimeout(
+                    worker.getDocs(symbol),
+                    DOCS_TIMEOUT_MS
+                  );
+                  if (outcome.timedOut) {
+                    unanswered++;
+                    return { symbol };
                   }
-                })
-              )
+                  return { symbol, docs: outcome.value || undefined };
+                } catch {
+                  return { symbol, docs: undefined };
+                }
+              })
             );
-
-            if (outcome.timedOut) {
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify(
-                      {
-                        count: symbols.length,
-                        symbols: symbols.map((symbol) => ({ symbol })),
-                        timed_out: true,
-                        message: `Documentation lookup is still running after ${EXECUTION_TIMEOUT_MS / 1000}s, most likely because the notebook is busy running cells; symbols are listed without docs. Use wait_for_notebook_idle, then call introspect_notebook again or get_docs for one symbol.`,
-                      },
-                      null,
-                      2
-                    ),
-                  },
-                ],
-              };
-            }
-
-            symbolsWithDocs = outcome.value;
           } else {
             symbolsWithDocs = symbols.map((symbol) => ({ symbol }));
           }
@@ -946,7 +933,11 @@ export class PlutoMCPHttpServer {
                   {
                     count: symbols.length,
                     symbols: symbolsWithDocs,
-                    message: `Found ${symbols.length} symbol(s) in notebook`,
+                    message:
+                      `Found ${symbols.length} symbol(s) in notebook` +
+                      (unanswered
+                        ? `; Pluto did not answer ${unanswered} documentation request(s) within ${DOCS_TIMEOUT_MS / 1000}s, so those symbols have no docs. The connection to the notebook may be stalled — check get_notebook_status, or reopen the notebook with open_notebook.`
+                        : ""),
                   },
                   null,
                   2

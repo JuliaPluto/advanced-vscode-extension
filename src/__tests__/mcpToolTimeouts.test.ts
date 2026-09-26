@@ -6,6 +6,7 @@ import { PlutoMCPHttpServer } from "../mcp-server-http.js";
 import type { PlutoManager } from "../plutoManager.js";
 
 const EXECUTION_TIMEOUT_MS = 5 * 60_000;
+const DOCS_TIMEOUT_MS = 30_000;
 const never = () => new Promise<never>(() => {});
 
 const worker = {
@@ -60,28 +61,73 @@ describe("blocking tools are bounded by the execution timeout", () => {
     jest.useRealTimers();
   });
 
-  it.each([
-    ["execute_cell", { path: "/nb.jl", cell_id: "c1" }],
-    ["create_cell", { path: "/nb.jl", code: "x = 1" }],
-    ["execute_code", { path: "/nb.jl", code: "x" }],
-    ["edit_cell", { path: "/nb.jl", cell_id: "c1", code: "x = 1" }],
-    ["get_docs", { path: "/nb.jl", symbol: "x" }],
-    ["introspect_notebook", { path: "/nb.jl" }],
-    ["read_cell_output", { path: "/nb.jl", cell_id: "c1", as: "image" }],
-    [
-      "read_cell_output",
-      { path: "/nb.jl", cell_id: "c1", as: "file", output_path: "/x.png" },
-    ],
-  ])("%s returns timed_out instead of blocking", async (name, args) => {
+  async function callAfter(
+    ms: number,
+    name: string,
+    args: Record<string, unknown>
+  ) {
     const call = client.callTool({ name, arguments: args }, undefined, {
       timeout: 2 * EXECUTION_TIMEOUT_MS,
     });
-
-    await jest.advanceTimersByTimeAsync(EXECUTION_TIMEOUT_MS);
+    await jest.advanceTimersByTimeAsync(ms);
     const result = await call;
-
     const [content] = result.content as Array<{ type: string; text: string }>;
+    return { isError: result.isError, text: content.text };
+  }
+
+  it.each([
+    ["execute_cell", { path: "/nb.jl", cell_id: "c1" }, { cell_id: "c1" }],
+    ["create_cell", { path: "/nb.jl", code: "x = 1" }, {}],
+    ["execute_code", { path: "/nb.jl", code: "x" }, {}],
+    [
+      "edit_cell",
+      { path: "/nb.jl", cell_id: "c1", code: "x = 1" },
+      { cell_id: "c1" },
+    ],
+    [
+      "read_cell_output",
+      { path: "/nb.jl", cell_id: "c1", as: "image" },
+      { cell_id: "c1" },
+    ],
+    [
+      "read_cell_output",
+      { path: "/nb.jl", cell_id: "c1", as: "file", output_path: "/x.png" },
+      { cell_id: "c1" },
+    ],
+  ])(
+    "%s returns timed_out after the execution timeout",
+    async (name, args, ids) => {
+      const result = await callAfter(EXECUTION_TIMEOUT_MS, name, args);
+
+      expect(result.isError).toBeFalsy();
+      expect(JSON.parse(result.text)).toMatchObject({
+        ...ids,
+        timed_out: true,
+        message: expect.stringContaining("wait_for_notebook_idle"),
+      });
+    }
+  );
+
+  it("get_docs fails as a stalled connection after the docs timeout", async () => {
+    const result = await callAfter(DOCS_TIMEOUT_MS, "get_docs", {
+      path: "/nb.jl",
+      symbol: "x",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("'x'");
+    expect(result.text).toContain("may be stalled");
+  });
+
+  it("introspect_notebook lists symbols without the docs that timed out", async () => {
+    const result = await callAfter(DOCS_TIMEOUT_MS, "introspect_notebook", {
+      path: "/nb.jl",
+    });
+
     expect(result.isError).toBeFalsy();
-    expect(JSON.parse(content.text)).toMatchObject({ timed_out: true });
+    const body = JSON.parse(result.text);
+    expect(body.symbols).toEqual([{ symbol: "x" }]);
+    expect(body.message).toContain("did not answer 1 documentation request");
+    expect(body.message).toContain("may be stalled");
   });
 });
