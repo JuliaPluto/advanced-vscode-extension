@@ -6,6 +6,7 @@ import type {
 import { PlutoOutput } from "./components/PlutoOutput";
 import { html, PlutoActionsContext, render } from "@plutojl/rainbow/ui";
 import { CellResultData } from "@plutojl/rainbow";
+import { OutputHostPool } from "./outputHosts";
 import plutoOutputStyles from "./styles/pluto-output.css";
 import treeStyles from "./styles/tree.css";
 
@@ -37,6 +38,13 @@ function injectStyles() {
   }
 }
 
+const PARKED_OUTPUT_GRACE_MS = 10_000;
+
+interface HostData {
+  actions: object;
+  context: RendererContext<void>;
+}
+
 export const activate: ActivationFunction = (
   context: RendererContext<void>
 ) => {
@@ -45,31 +53,67 @@ export const activate: ActivationFunction = (
 
   // Store messaging API for use in components
   messagingApi = context.postMessage;
-  return {
-    renderOutputItem(outputItem, element) {
-      const state: CellResultData = outputItem.json();
-      // Render directly into the provided element
-      // This ensures VS Code can properly clear/replace outputs
-      const actions = {
+  const pool = new OutputHostPool<HostData>(
+    PARKED_OUTPUT_GRACE_MS,
+    (cellId, isParked) => ({
+      actions: {
         // TODO: Make get notebook actually get the notebook
         get_notebook: () => ({ cell_inputs: {} }),
         request_js_link_response: () => {},
         update_notebook: () => {},
         set_bond: (name: string, value: any) => {
+          if (isParked()) {
+            return;
+          }
           postMessageToController({
             type: "bond",
             name,
             value,
-            cell_id: state.cell_id,
+            cell_id: cellId,
           });
         },
-      };
-      render(
-        html`<${PlutoActionsContext.Provider} value=${actions}>
-          <${PlutoOutput} state="${state}"  context=${context} />
-        </${PlutoActionsContext.Provider}>`,
+      },
+      context: Object.create(context, {
+        onDidReceiveMessage: {
+          value: ((listener, thisArg, disposables) =>
+            context.onDidReceiveMessage!(
+              (message) => {
+                if (!isParked()) {
+                  listener.call(thisArg, message);
+                }
+              },
+              undefined,
+              disposables
+            )) satisfies RendererContext<void>["onDidReceiveMessage"],
+        },
+      }),
+    }),
+    (host) => render("", host.element)
+  );
+  context.onDidReceiveMessage?.((message) => {
+    if (message?.type === "setState") {
+      pool.noteDisplayed(message.cell_id, message.state?.output);
+    }
+  });
+
+  return {
+    renderOutputItem(outputItem, element) {
+      const state: CellResultData = outputItem.json();
+      const { host } = pool.acquire(
+        outputItem.id,
+        state.cell_id,
+        state.output,
         element
       );
+      render(
+        html`<${PlutoActionsContext.Provider} value=${host.data.actions}>
+          <${PlutoOutput} state="${state}"  context=${host.data.context} />
+        </${PlutoActionsContext.Provider}>`,
+        host.element
+      );
+    },
+    disposeOutputItem(id) {
+      pool.release(id);
     },
   };
 };
