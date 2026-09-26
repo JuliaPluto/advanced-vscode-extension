@@ -25,11 +25,11 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
       bound: execution(
         `Cell is still running after ${seconds}s. It continues to execute — use wait_for_notebook_idle or poll read_cell to get the result.`
       ),
-      run: async ({ cell_id }, worker) => {
+      run: async ({ path, cell_id }, worker) => {
         if (!worker.getSnippet(cell_id)) {
           throw new Error(`Cell ${cell_id} not found`);
         }
-        const result = await manager.runCell(worker, cell_id);
+        const result = await manager.runCell(path, cell_id);
         return {
           cell_id,
           output: presentOutput(result?.output),
@@ -51,8 +51,8 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
         (args) =>
           `Execution is still running after ${seconds}s. The cell WAS created (at index ${args.index}) and continues to run — use list_cells to find its id, then wait_for_notebook_idle or read_cell to get the result. Do NOT retry create_cell.`
       ),
-      run: async ({ code, index }, worker) => {
-        const result = await manager.runSnippet(worker, index, code);
+      run: async ({ path, code, index }) => {
+        const result = await manager.runSnippet(path, index, code);
         return {
           cell_id: result.cell_id,
           output: presentOutput(result.output),
@@ -81,12 +81,12 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
           ? `edit_cell has not finished after ${seconds}s. The new code was sent and the run requested; the cell keeps executing — use wait_for_notebook_idle, then read_cell to check its code and result. Do NOT retry edit_cell; poll instead.`
           : `Pluto has not acknowledged the new code after ${seconds}s; the connection to the notebook may be stalled — use read_cell to check whether the code arrived before retrying.`
       ),
-      run: async ({ cell_id, code, run }, worker) => {
+      run: async ({ path, cell_id, code, run }) => {
         let result = null;
         if (run) {
-          result = await manager.executeCell(worker, cell_id, code);
+          result = await manager.executeCell(path, cell_id, code);
         } else {
-          await manager.setCellCode(worker, cell_id, code);
+          await manager.setCellCode(path, cell_id, code);
         }
         return {
           cell_id,
@@ -131,8 +131,8 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
       bound: execution(
         `Code is still running after ${seconds}s. It keeps executing in a temporary cell that is deleted automatically when it finishes — use wait_for_notebook_idle to wait for it. For long computations prefer create_cell so the result stays inspectable.`
       ),
-      run: async ({ code }, worker) => {
-        const result = await manager.executeCodeEphemeral(worker, code);
+      run: async ({ path, code }) => {
+        const result = await manager.executeCodeEphemeral(path, code);
         return {
           output: presentOutput(result.output),
           runtime: result.runtime,
@@ -254,8 +254,8 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
         "Permanently remove a cell from the notebook by its ID. Use list_cells to find cell IDs.",
       args: { cell_id: cellId },
       bound: unacknowledged(),
-      run: async ({ cell_id }, worker) => {
-        await manager.deleteCell(worker, cell_id);
+      run: async ({ path, cell_id }) => {
+        await manager.deleteCell(path, cell_id);
         return `Cell ${cell_id} deleted`;
       },
     }),
@@ -273,8 +273,8 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
           ),
       },
       bound: unacknowledged(),
-      run: async ({ cell_ids, index }, worker) => {
-        await manager.moveCells(worker, cell_ids, index);
+      run: async ({ path, cell_ids, index }) => {
+        await manager.moveCells(path, cell_ids, index);
         return `Moved ${cell_ids.length} cell(s) to position ${index}`;
       },
     }),
@@ -292,8 +292,8 @@ export function cellTools(manager: PlutoToolsManager): PlutoTool[] {
           ),
       },
       bound: unacknowledged(),
-      run: async ({ cell_id, folded }, worker) => {
-        await manager.foldCell(worker, cell_id, folded);
+      run: async ({ path, cell_id, folded }) => {
+        await manager.foldCell(path, cell_id, folded);
         return `Cell ${cell_id} ${folded ? "folded (code hidden)" : "unfolded (code visible)"}`;
       },
     }),

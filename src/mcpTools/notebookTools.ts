@@ -49,8 +49,8 @@ export function notebookTools(manager: PlutoToolsManager): PlutoTool[] {
       precondition: () => {
         requireCapability(manager.capabilities().moveNotebook);
       },
-      run: async ({ path, new_path }, worker) => {
-        await manager.moveNotebook(worker, new_path);
+      run: async ({ path, new_path }) => {
+        await manager.moveNotebook(path, new_path);
         return `Notebook moved from ${path} to ${new_path}. Pluto is now tracking the new path.`;
       },
     }),
@@ -67,8 +67,8 @@ export function notebookTools(manager: PlutoToolsManager): PlutoTool[] {
       bound: execution(
         `save_notebook has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s; the connection to the Pluto server may be stalled — check get_notebook_status, then call save_notebook again.`
       ),
-      run: async ({ path, output_path }, worker) => {
-        const content = await manager.getNotebookContent(worker);
+      run: async ({ path, output_path }) => {
+        const content = await manager.getNotebookContent(path);
         const savePath = output_path ?? path;
         await writeFile(savePath, content, "utf-8");
         return `Notebook saved to ${savePath} (${content.length} bytes)`;

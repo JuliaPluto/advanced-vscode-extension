@@ -289,19 +289,23 @@ x = 42
     // Step 8: Execute existing cell
     if (worker) {
       const cellId = "b2d79330-7f73-11ea-0d1c-a9aad1efaae1";
-      const result = await manager.executeCell(worker, cellId, "2 + 2");
+      const result = await manager.executeCell(
+        testNotebookPath,
+        cellId,
+        "2 + 2"
+      );
       expect(result).toBeDefined();
     }
 
     // Step 9: Add a new cell
     if (worker) {
-      const newCellId = await manager.addCell(worker, 0, "y = 100");
+      const newCellId = await manager.addCell(testNotebookPath, 0, "y = 100");
       expect(newCellId).toBeDefined();
       expect(typeof newCellId).toBe("string");
 
       // Step 10: Execute the new cell
       const newCellResult = await manager.executeCell(
-        worker,
+        testNotebookPath,
         newCellId,
         "y * 2"
       );
@@ -309,14 +313,14 @@ x = 42
 
       // Step 11: Delete the cell we just added
       await expect(
-        manager.deleteCell(worker, newCellId)
+        manager.deleteCell(testNotebookPath, newCellId)
       ).resolves.not.toThrow();
     }
 
     // Step 12: Execute code ephemerally (without creating permanent cell)
     if (worker) {
       const ephemeralResult = await manager.executeCodeEphemeral(
-        worker,
+        testNotebookPath,
         "5 * 5"
       );
       expect(ephemeralResult).toBeDefined();

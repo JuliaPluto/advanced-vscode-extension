@@ -55,7 +55,7 @@ function hangingManager(
       serverCapabilities({ sharesFilesystem: true, writesNotebookFiles: true }),
     getOpenNotebooks: () => [],
     ...(resolution === "resolves" && {
-      getWorker: async () => hangingWorker,
+      liveWorker: async () => hangingWorker,
     }),
   });
 }

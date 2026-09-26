@@ -191,7 +191,7 @@ describe("tool", () => {
     });
 
     it("bounds opening a notebook on its own, apart from the body", async () => {
-      const manager = fakePlutoManager({ overrides: { getWorker: never } });
+      const manager = fakePlutoManager({ overrides: { liveWorker: never } });
       const t = notebookTool(manager, {
         name: "t",
         description: "",
@@ -294,7 +294,7 @@ describe("notebookTool", () => {
       path: "/nb.jl",
       cell_id: "c1",
     });
-    expect(manager.getWorker).toHaveBeenCalledWith("/nb.jl");
+    expect(manager.liveWorker).toHaveBeenCalledWith("/nb.jl");
   });
 
   it("checks its precondition before opening the notebook", async () => {
@@ -310,12 +310,18 @@ describe("notebookTool", () => {
     });
     const result = await t.call({ path: "/nb.jl" });
     expect(textOf(result)).toBe("refused");
-    expect(manager.getWorker).not.toHaveBeenCalled();
+    expect(manager.liveWorker).not.toHaveBeenCalled();
   });
 
-  it("describes a notebook that cannot be opened by the server state", async () => {
+  it("answers a notebook the manager cannot reach with the manager's error", async () => {
     const manager = fakePlutoManager({
-      overrides: { getWorker: async () => undefined },
+      overrides: {
+        liveWorker: async () => {
+          throw new Error(
+            "Pluto server is stopping, so /nb.jl cannot be opened."
+          );
+        },
+      },
     });
     const t = notebookTool(manager, {
       name: "t",
@@ -324,9 +330,14 @@ describe("notebookTool", () => {
       run: async () => "unreachable",
     });
     const result = await t.call({ path: "/nb.jl" });
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toBe(
-      `The Pluto server at ${SERVER_URL} is not ready to open /nb.jl (state: ready)`
-    );
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: "Pluto server is stopping, so /nb.jl cannot be opened.",
+        },
+      ],
+      isError: true,
+    });
   });
 });
