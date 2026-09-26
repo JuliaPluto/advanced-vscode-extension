@@ -38,7 +38,7 @@ export function withCodeFile(
 }
 
 /** Tool servers without `x-pluto-path` marks name their file arguments this way. */
-const LEGACY_PATH_ARGS = ["path", "output_path", "new_path"];
+const LEGACY_PATH_ARGS = ["path", "output_path", "new_path"] as const;
 
 /**
  * The arguments of `tool` that name files: those its schema marks with
@@ -51,7 +51,7 @@ export function pathArgNames(tool: ToolInfo, tools: ToolInfo[]): string[] {
       .filter(([, schema]) => schema["x-pluto-path"])
       .map(([name]) => name);
   if (!tools.some((t) => marked(t).length > 0)) {
-    return LEGACY_PATH_ARGS;
+    return [...LEGACY_PATH_ARGS];
   }
   return marked(tool);
 }
