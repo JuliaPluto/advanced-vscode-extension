@@ -5,6 +5,7 @@
  */
 
 import * as vscode from "vscode";
+import { isPlutoNotebookFileName } from "../plutoFileName.ts";
 
 /**
  * Toggle between code view (document) and notebook view
@@ -41,7 +42,7 @@ export function registerToggleViewCommand(
         const fileName = document.fileName;
 
         // Check if it's a Pluto notebook file
-        if (fileName.endsWith(".pluto.jl") || fileName.endsWith(".dyad.jl")) {
+        if (isPlutoNotebookFileName(fileName)) {
           const uri = document.uri;
 
           // Close the text editor
