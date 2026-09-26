@@ -456,8 +456,17 @@ export class PlutoManager {
     host: Host,
     notebookPath: string
   ): Promise<string | undefined> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const running = (await host.workers()) as unknown as Array<{
+      const running = (await Promise.race([
+        host.workers(),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error("Listing running notebooks timed out")),
+            30_000
+          );
+        }),
+      ])) as unknown as Array<{
         notebook_id?: string;
         path?: string;
       }>;
@@ -467,6 +476,8 @@ export class PlutoManager {
       )?.notebook_id;
     } catch {
       return undefined;
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -482,7 +493,10 @@ export class PlutoManager {
 
     let response: Response;
     try {
-      response = await fetch(url, { method: "POST" });
+      response = await fetch(url, {
+        method: "POST",
+        signal: AbortSignal.timeout(120_000),
+      });
     } catch (error) {
       throw new Error(this.describeServerError(error));
     }
@@ -819,7 +833,7 @@ export class PlutoManager {
     url.searchParams.set("id", worker.notebook_id);
     let response: Response;
     try {
-      response = await fetch(url);
+      response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     } catch (error) {
       throw new Error(this.describeServerError(error));
     }

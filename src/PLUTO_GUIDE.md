@@ -57,9 +57,10 @@ Rules that follow from this:
 
 ### Long computations and waiting
 
-- `create_cell`, `execute_cell`, and `execute_code` block until the cell finishes, but return after **5 minutes** with a `timed_out: true` message if it hasn't. The computation KEEPS RUNNING server-side — the response tells you how to pick up the result.
+- `create_cell`, `execute_cell`, `execute_code`, `edit_cell` (when it runs the cell) and `read_cell_output` (when it renders a PNG) block until the work finishes, but return after **5 minutes** with a `timed_out: true` message if it hasn't. The computation KEEPS RUNNING server-side — the response tells you how to pick up the result.
 - After a timeout (or after `edit_cell` kicks off a reactive cascade), call **`wait_for_notebook_idle`** once instead of polling `list_cells`/`read_cell` in a loop. It blocks until no cell is running or queued, then you read results.
 - If `create_cell` times out, the cell WAS created. Use `list_cells` to find it — do NOT retry `create_cell`; creating the same definition twice causes "Multiple definitions" errors.
+- If `edit_cell` times out, the new code was already sent and the run started. Do NOT retry `edit_cell` — call `wait_for_notebook_idle`, then `read_cell`.
 - For slow operations (e.g. `import Pkg; Pkg.add(...)`), prefer: (1) `edit_cell` with `run=false` to set the code, then (2) `execute_cell` to run it, then (3) `wait_for_notebook_idle`.
 - Use `delete_cell` to remove any accidental duplicate cells.
 
