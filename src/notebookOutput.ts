@@ -54,25 +54,23 @@ export interface FullOutput {
 export function fullOutput(output: unknown): FullOutput | undefined {
   const bytes = outputBytes(output);
   if (!bytes) return undefined;
-  const mime = (output as { mime?: unknown }).mime;
   return {
-    mime: typeof mime === "string" ? mime : "text/plain",
+    mime: classifyOutput(output).mime,
     bytes,
     text: outputText(output),
   };
 }
 
 /**
- * Make a cell output compact enough for a tool response. Text, including
- * SVG, is cut at INLINE_TEXT_LIMIT and structured bodies at
- * INLINE_TREE_LIMIT; an SVG over the limit, and every body that is not
- * text, is replaced by its size, each with a note on how to fetch it.
+ * Make a cell output compact enough for a tool response. A body whose mime
+ * is textual is cut at INLINE_TEXT_LIMIT, except an SVG over the limit, and
+ * a structured body at INLINE_TREE_LIMIT. Any other body is replaced by its
+ * size, each with a note on how to fetch it.
  */
 export function presentOutput(output: unknown): unknown {
   if (output === null || typeof output !== "object") return output;
   const record = output as Record<string, unknown>;
   const kind = classifyOutput(record);
-  const mime = typeof record.mime === "string" ? record.mime : "";
 
   if (kind.body === "empty") return record;
 
@@ -82,21 +80,20 @@ export function presentOutput(output: unknown): unknown {
       ...record,
       body: null,
       bytes: kind.size,
-      body_note: `${mime || "structured"} output of ${kind.size} characters is not returned inline; ${FETCH_HINT}`,
+      body_note: `${kind.mime} output of ${kind.size} characters is not returned inline; ${FETCH_HINT}`,
     };
   }
 
-  const text = kind.textual ? outputText(record) : undefined;
+  const text = kind.mimeTextual ? outputText(record) : undefined;
   if (
     text === undefined ||
-    kind.raster ||
     (kind.family === "image" && text.length > INLINE_TEXT_LIMIT)
   ) {
     return {
       ...record,
       body: null,
       bytes: kind.size,
-      body_note: `${mime} output of ${kind.size} bytes is not returned inline; ${kind.family === "image" ? IMAGE_HINT : FETCH_HINT}`,
+      body_note: `${kind.mime} output of ${kind.size} bytes is not returned inline; ${kind.family === "image" ? IMAGE_HINT : FETCH_HINT}`,
     };
   }
 

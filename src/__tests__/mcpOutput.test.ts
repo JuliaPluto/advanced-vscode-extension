@@ -45,6 +45,34 @@ describe("presentOutput", () => {
     }
   });
 
+  it("replaces string bodies under a mime that is not text", () => {
+    for (const [mime, body, hint] of [
+      ["application/pdf", "%PDF-1.4 ...", /as: "text", "file"/],
+      ["image/tiff", "II*\u0000", /as: "image" to see it/],
+      ["application/octet-stream", "\u0000\u0001", /as: "text", "file"/],
+    ] as const) {
+      const out = presentOutput({ mime, body }) as {
+        body: unknown;
+        bytes: number;
+        body_note: string;
+      };
+      expect(out.body).toBeNull();
+      expect(out.bytes).toBe(body.length);
+      expect(
+        out.body_note.startsWith(`${mime} output of ${body.length} bytes`)
+      ).toBe(true);
+      expect(out.body_note).toMatch(hint);
+    }
+  });
+
+  it("names a missing mime unknown", () => {
+    const out = presentOutput({ body: new Uint8Array(3) }) as {
+      body_note: string;
+    };
+    expect(out.body_note).toMatch(/^unknown output of 3 bytes/);
+    expect(fullOutput({ body: new Uint8Array([1]) })?.mime).toBe("unknown");
+  });
+
   it("decodes short text bodies and keeps them inline", () => {
     const out = presentOutput({
       mime: "text/plain",

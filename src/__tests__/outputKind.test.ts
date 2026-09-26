@@ -1,9 +1,11 @@
+import { jest } from "@jest/globals";
 import {
   classifyOutput,
   fromTransport,
   outputBytes,
   outputText,
   toTransport,
+  UNKNOWN_MIME,
   type OutputKind,
 } from "../outputKind.ts";
 
@@ -94,15 +96,110 @@ const rows: Row[] = [
     { family: "pluto", renderable: true },
   ],
   [
-    "",
-    undefined,
-    { family: "none", body: "empty", size: 0, renderable: false },
+    "image/jpeg",
+    png,
+    { family: "image", raster: true, textual: false, renderable: true },
+  ],
+  [
+    "image/gif",
+    png,
+    { family: "image", raster: true, textual: false, renderable: true },
+  ],
+  [
+    "image/png",
+    png.buffer,
+    { body: "bytes", raster: true, textual: false, size: 9 },
+  ],
+  [
+    "image/png",
+    "\u0089PNG",
+    { body: "text", raster: true, mimeTextual: false, textual: true },
+  ],
+  [
+    "image/tiff",
+    png,
+    {
+      family: "image",
+      raster: false,
+      mimeTextual: false,
+      textual: false,
+      renderable: false,
+    },
+  ],
+  [
+    "application/vnd.pluto.parseerror+object",
+    { msg: "x" },
+    { family: "pluto", body: "structured", renderable: true },
+  ],
+  [
+    "application/vnd.pluto.divelement+object",
+    { children: [] },
+    { family: "pluto", renderable: true },
+  ],
+  [
+    "application/atom+xml",
+    utf8("<feed/>"),
+    { family: "text", mimeTextual: true, textual: true, renderable: false },
+  ],
+  [
+    "application/x-foo",
+    "abc",
+    { family: "other", body: "text", mimeTextual: false, textual: true },
+  ],
+  [
+    "application/x-foo",
+    png,
+    { family: "other", body: "bytes", mimeTextual: false, textual: false },
+  ],
+  [
+    "application/pdf",
+    "%PDF-1.4",
+    { family: "other", mimeTextual: false, textual: true },
   ],
 ];
 
 describe("classifyOutput", () => {
   it.each(rows)("%s (%p)", (mime, body, expected) => {
     expect(classifyOutput({ mime, body })).toMatchObject({ mime, ...expected });
+  });
+
+  it("reports a missing mime as unknown", () => {
+    for (const mime of [undefined, "", 42]) {
+      expect(classifyOutput({ mime, body: "x" })).toMatchObject({
+        mime: UNKNOWN_MIME,
+        family: "none",
+        mimeTextual: false,
+        renderable: false,
+      });
+    }
+    expect(classifyOutput({ body: undefined })).toMatchObject({
+      mime: UNKNOWN_MIME,
+      body: "empty",
+      size: 0,
+    });
+  });
+
+  it("drops mime parameters", () => {
+    expect(
+      classifyOutput({
+        mime: "application/json; charset=utf-8",
+        body: utf8("{}"),
+      })
+    ).toMatchObject({
+      mime: "application/json",
+      mimeTextual: true,
+      textual: true,
+    });
+  });
+
+  it("reads a $bytes body only when it is valid base64", () => {
+    expect(
+      classifyOutput({ mime: "image/png", body: { $bytes: "iVBO" } }).body
+    ).toBe("bytes");
+    expect(
+      classifyOutput({ mime: "image/png", body: { $bytes: "not base64!" } })
+        .body
+    ).toBe("structured");
   });
 
   it("reads a Pluto object mime whose body lacks its shape as text/plain", () => {
@@ -123,6 +220,7 @@ describe("classifyOutput", () => {
   it("accepts outputs that are not objects", () => {
     for (const output of [undefined, null, 42]) {
       expect(classifyOutput(output)).toMatchObject({
+        mime: UNKNOWN_MIME,
         family: "none",
         body: "empty",
       });
@@ -158,10 +256,42 @@ describe("outputText / outputBytes", () => {
   });
 
   it("decodes a body once and leaves the output untouched", () => {
-    const output = { mime: "image/svg+xml", body: utf8("<svg/>") };
-    const first = outputText(output);
-    expect(outputText(output)).toBe(first);
-    expect(output.body).toBeInstanceOf(Uint8Array);
+    const decode = jest.spyOn(TextDecoder.prototype, "decode");
+    try {
+      const buffer = utf8("<svg/><svg/>").buffer;
+      const output = {
+        mime: "image/svg+xml",
+        body: new Uint8Array(buffer, 0, 6),
+      };
+      const otherView = {
+        mime: "image/svg+xml",
+        body: new Uint8Array(buffer, 6, 6),
+      };
+      expect(outputText(output)).toBe("<svg/>");
+      expect(outputText(output)).toBe("<svg/>");
+      expect(outputText({ ...output })).toBe("<svg/>");
+      expect(decode).toHaveBeenCalledTimes(1);
+      expect(outputText(otherView)).toBe("<svg/>");
+      expect(decode).toHaveBeenCalledTimes(2);
+      expect(output.body).toBeInstanceOf(Uint8Array);
+    } finally {
+      decode.mockRestore();
+    }
+  });
+
+  it("decodes a textual $bytes body once", () => {
+    const decode = jest.spyOn(TextDecoder.prototype, "decode");
+    try {
+      const output = {
+        mime: "image/svg+xml",
+        body: { $bytes: btoa("<svg/>") },
+      };
+      expect(outputText(output)).toBe("<svg/>");
+      expect(outputText(output)).toBe("<svg/>");
+      expect(decode).toHaveBeenCalledTimes(1);
+    } finally {
+      decode.mockRestore();
+    }
   });
 });
 

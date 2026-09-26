@@ -14,14 +14,20 @@ export type OutputFamily =
   | "image"
   /** application/vnd.pluto.*+object: tree, table, stacktrace, parseerror, divelement. */
   | "pluto"
+  /** No mime: nothing says what the body is. */
   | "none"
   | "other";
 
 export interface OutputKind {
-  /** The mime to render with; a Pluto object mime whose body lacks its shape reads as text/plain. */
+  /**
+   * The mime to render with, without parameters. A Pluto object mime whose
+   * body lacks its shape reads as text/plain; a missing mime as UNKNOWN_MIME.
+   */
   mime: string;
   family: OutputFamily;
   body: BodyShape;
+  /** The mime says the body is characters, whatever shape it arrived in. */
+  mimeTextual: boolean;
   /** The body is characters, or bytes that decode to characters. */
   textual: boolean;
   /** Image bytes that must never be decoded as text. */
@@ -57,12 +63,20 @@ const RENDERABLE_MIMES = new Set([
   "application/vnd.pluto.divelement+object",
 ]);
 
+export const UNKNOWN_MIME = "unknown";
+
 const TEXTUAL_MIME =
-  /^(text\/|image\/svg\+xml$|application\/(json|javascript|xml)$|[^;]+\+(json|xml)$)/;
+  /^(text\/|image\/svg\+xml$|application\/(json|javascript|xml)$|.+\+(json|xml)$)/;
 const PLUTO_OBJECT_MIME = /^application\/vnd\.pluto\.[a-z]+\+object$/;
 
-/** Key of the JSON-safe stand-in for a byte body; see toTransport. */
+/**
+ * Key of the JSON-safe stand-in for bytes; see toTransport. Pluto's object
+ * protocols (tree, table, divelement) have no user-chosen property names,
+ * so the key cannot collide with a real one.
+ */
 const TRANSPORT_KEY = "$bytes";
+const BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 interface OutputRecord {
   mime?: unknown;
@@ -91,7 +105,8 @@ function isTransportBody(body: unknown): body is TransportBody {
   return (
     body !== null &&
     typeof body === "object" &&
-    typeof (body as Record<string, unknown>)[TRANSPORT_KEY] === "string"
+    typeof (body as Record<string, unknown>)[TRANSPORT_KEY] === "string" &&
+    BASE64.test((body as TransportBody)[TRANSPORT_KEY])
   );
 }
 
@@ -115,7 +130,7 @@ function effectiveMime(mime: string, body: unknown): string {
 }
 
 function familyOf(mime: string): OutputFamily {
-  if (mime === "") return "none";
+  if (mime === UNKNOWN_MIME) return "none";
   if (mime === "text/html") return "html";
   if (mime.startsWith("image/")) return "image";
   if (PLUTO_OBJECT_MIME.test(mime)) return "pluto";
@@ -126,17 +141,18 @@ function familyOf(mime: string): OutputFamily {
 export function classifyOutput(output: unknown): OutputKind {
   const record = asRecord(output);
   const body = record?.body;
-  const mime = effectiveMime(
-    typeof record?.mime === "string" ? record.mime : "",
-    body
-  );
+  const sent =
+    typeof record?.mime === "string" ? record.mime.split(";")[0].trim() : "";
+  const mime = effectiveMime(sent || UNKNOWN_MIME, body);
   const shape = shapeOf(body);
   const raster = isRasterMime(mime);
+  const mimeTextual = TEXTUAL_MIME.test(mime);
   return {
     mime,
     family: familyOf(mime),
     body: shape,
-    textual: shape === "text" || (!raster && TEXTUAL_MIME.test(mime)),
+    mimeTextual,
+    textual: shape === "text" || (!raster && mimeTextual),
     raster,
     size: sizeOf(body, shape),
     renderable: RENDERABLE_MIMES.has(mime),
@@ -158,10 +174,10 @@ function sizeOf(body: unknown, shape: BodyShape): number {
 
 const decoded = new WeakMap<object, string>();
 
-function decodeText(body: object, bytes: Uint8Array): string {
+function decodeText(body: object, bytes: () => Uint8Array): string {
   let text = decoded.get(body);
   if (text === undefined) {
-    text = new TextDecoder().decode(bytes);
+    text = new TextDecoder().decode(bytes());
     decoded.set(body, text);
   }
   return text;
@@ -187,7 +203,7 @@ export function outputText(output: unknown): string | undefined {
       return body as string;
     case "bytes":
       return kind.textual
-        ? decodeText(body as object, bodyBytes(body)!)
+        ? decodeText(body as object, () => bodyBytes(body)!)
         : undefined;
     case "structured":
       return JSON.stringify(body);
@@ -209,6 +225,7 @@ export function outputBytes(output: unknown): Uint8Array | undefined {
  * A copy of the output whose body survives JSON: textual bytes become a
  * string, and any other bytes, including bytes nested in a structured body,
  * a `{ $bytes: <base64> }` stand-in. The output passed in is never changed.
+ * fromTransport restores the stand-ins; a textual body stays a string.
  */
 export function toTransport<T>(output: T): T {
   const record = asRecord(output);
@@ -216,7 +233,7 @@ export function toTransport<T>(output: T): T {
   const bytes = bytesOf(record.body);
   const body =
     bytes && classifyOutput(record).textual
-      ? decodeText(record.body as object, bytes)
+      ? decodeText(record.body as object, () => bytes)
       : mapBytes(record.body, (b) => ({ [TRANSPORT_KEY]: toBase64(b) }));
   return body === record.body ? output : ({ ...record, body } as T);
 }
