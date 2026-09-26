@@ -1,7 +1,7 @@
 import "@plutojl/rainbow/node-polyfill";
 
 import * as vscode from "vscode";
-import { PlutoNotebookSerializer } from "./serializer.ts";
+import { PlutoNotebookSerializer } from "./plutoSerializer.ts";
 import { PlutoNotebookController } from "./controller.ts";
 import {
   registerAllCommands,
