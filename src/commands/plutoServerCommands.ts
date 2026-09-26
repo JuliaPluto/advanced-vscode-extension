@@ -32,7 +32,11 @@ async function startServerWithProgress(
   );
 }
 
-async function stopServer(plutoManager: PlutoManager): Promise<void> {
+export async function startServer(plutoManager: PlutoManager): Promise<void> {
+  await startServerWithProgress(plutoManager, "Pluto server started");
+}
+
+export async function stopServer(plutoManager: PlutoManager): Promise<void> {
   try {
     await plutoManager.stop();
     vscode.window.showInformationMessage("Pluto server stopped");
@@ -44,58 +48,16 @@ async function stopServer(plutoManager: PlutoManager): Promise<void> {
   }
 }
 
-/**
- * Command: Start Pluto server
- */
-export function registerStartServerCommand(
-  context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand("pluto-notebook.startServer", async () => {
-      await startServerWithProgress(plutoManager, "Pluto server started");
-    })
-  );
-}
-
-/**
- * Command: Stop Pluto server
- */
-export function registerStopServerCommand(
-  context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand("pluto-notebook.stopServer", () =>
-      stopServer(plutoManager)
-    )
-  );
-}
-
-/**
- * Command: Restart Pluto server
- */
-export function registerRestartServerCommand(
-  context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.restartServer",
-      async () => {
-        try {
-          await plutoManager.restart();
-          vscode.window.showInformationMessage("Pluto server restarted");
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          vscode.window.showErrorMessage(
-            `Failed to restart Pluto server: ${errorMessage}`
-          );
-        }
-      }
-    )
-  );
+export async function restartServer(plutoManager: PlutoManager): Promise<void> {
+  try {
+    await plutoManager.restart();
+    vscode.window.showInformationMessage("Pluto server restarted");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(
+      `Failed to restart Pluto server: ${errorMessage}`
+    );
+  }
 }
 
 /**
@@ -120,88 +82,71 @@ export async function openUrl(url: string): Promise<void> {
   await vscode.env.openExternal(vscode.Uri.parse(url));
 }
 
-/**
- * Command: Open notebook in browser
- */
-export function registerOpenInBrowserCommand(
-  context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "pluto-notebook.openInBrowser",
-      async (notebookPath?: string) => {
-        // Prefer the active notebook editor — notebooks don't have a
-        // text editor, so activeTextEditor alone misses the main case
-        notebookPath ??=
-          vscode.window.activeNotebookEditor?.notebook.uri.fsPath ??
-          vscode.window.activeTextEditor?.document.uri.fsPath;
-        if (!notebookPath) {
-          vscode.window.showErrorMessage("No active notebook file");
-          return;
-        }
+export async function openInBrowser(
+  plutoManager: PlutoManager,
+  notebookPath?: string
+): Promise<void> {
+  // Prefer the active notebook editor — notebooks don't have a
+  // text editor, so activeTextEditor alone misses the main case
+  notebookPath ??=
+    vscode.window.activeNotebookEditor?.notebook.uri.fsPath ??
+    vscode.window.activeTextEditor?.document.uri.fsPath;
+  if (!notebookPath) {
+    vscode.window.showErrorMessage("No active notebook file");
+    return;
+  }
 
-        // Check if server is running
-        if (!plutoManager.isConnected()) {
-          vscode.window.showErrorMessage(
-            "Pluto server is not running. Start the server first."
-          );
-          return;
-        }
+  // Check if server is running
+  if (!plutoManager.isConnected()) {
+    vscode.window.showErrorMessage(
+      "Pluto server is not running. Start the server first."
+    );
+    return;
+  }
 
-        try {
-          // Get (or create) the worker for this notebook
-          const worker = await plutoManager.getWorker(notebookPath);
-          if (!worker) {
-            vscode.window.showErrorMessage(
-              `Could not open ${notebookPath} on the Pluto server.`
-            );
-            return;
-          }
+  try {
+    // Get (or create) the worker for this notebook
+    const worker = await plutoManager.getWorker(notebookPath);
+    if (!worker) {
+      vscode.window.showErrorMessage(
+        `Could not open ${notebookPath} on the Pluto server.`
+      );
+      return;
+    }
 
-          const url = `${plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
-          await openUrl(url);
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to open notebook in browser: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        }
-      }
-    )
-  );
+    const url = `${plutoManager.getServerUrl()}/edit?id=${worker.notebook_id}`;
+    await openUrl(url);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to open notebook in browser: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }
 
 /**
- * Command: Toggle Pluto server. A server that is starting is stopped once
- * the start settles; it is never started a second time.
+ * A server that is starting is stopped once the start settles; it is never
+ * started a second time.
  */
-export function registerToggleServerCommand(
-  context: vscode.ExtensionContext,
-  plutoManager: PlutoManager
-): void {
-  context.subscriptions.push(
-    vscode.commands.registerCommand("pluto-notebook.toggleServer", async () => {
-      switch (plutoManager.getState().status) {
-        case "starting":
-          vscode.window.showInformationMessage(
-            "Pluto server will stop once it finishes starting"
-          );
-          await stopServer(plutoManager);
-          break;
-        case "ready":
-          await stopServer(plutoManager);
-          break;
-        case "stopping":
-          break;
-        case "stopped":
-        case "failed":
-          await startServerWithProgress(plutoManager, "Pluto server started");
-          break;
-      }
-    })
-  );
+export async function toggleServer(plutoManager: PlutoManager): Promise<void> {
+  switch (plutoManager.getState().status) {
+    case "starting":
+      vscode.window.showInformationMessage(
+        "Pluto server will stop once it finishes starting"
+      );
+      await stopServer(plutoManager);
+      break;
+    case "ready":
+      await stopServer(plutoManager);
+      break;
+    case "stopping":
+      break;
+    case "stopped":
+    case "failed":
+      await startServer(plutoManager);
+      break;
+  }
 }
 
 /**
