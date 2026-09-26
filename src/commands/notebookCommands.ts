@@ -1,5 +1,9 @@
 import * as vscode from "vscode";
-import { serializePlutoNotebook } from "../plutoSerializer.ts";
+import { newNotebookSource } from "../notebookOutput.ts";
+import {
+  PLUTO_NOTEBOOK_EXTENSIONS,
+  isPlutoNotebookFileName,
+} from "../plutoFileName.ts";
 
 /**
  * Command: Create New Pluto Notebook
@@ -30,8 +34,8 @@ export function registerCreateNewNotebookCommand(
               if (!value) {
                 return "Filename cannot be empty";
               }
-              if (!value.endsWith(".pluto.jl") && !value.endsWith(".dyad.jl")) {
-                return "Filename must end with .pluto.jl or .dyad.jl";
+              if (!isPlutoNotebookFileName(value)) {
+                return `Filename must end with ${PLUTO_NOTEBOOK_EXTENSIONS.map((ext) => `.${ext}`).join(" or ")}`;
               }
               return null;
             },
@@ -62,21 +66,9 @@ export function registerCreateNewNotebookCommand(
             // File doesn't exist, proceed
           }
 
-          // Create a single empty cell
-          const emptyCell = new vscode.NotebookCellData(
-            vscode.NotebookCellKind.Code,
-            "",
-            "julia"
-          );
-
-          // Serialize the notebook with the empty cell
-          const notebookContent = serializePlutoNotebook([emptyCell]);
-
-          // Write to file
-          const encoder = new TextEncoder();
           await vscode.workspace.fs.writeFile(
             fileUri,
-            encoder.encode(notebookContent)
+            new TextEncoder().encode(newNotebookSource())
           );
 
           // Open the file in VSCode

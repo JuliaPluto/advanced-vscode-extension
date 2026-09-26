@@ -134,30 +134,25 @@ export function presentOutput(output: unknown): unknown {
   return { ...record, body };
 }
 
-/** Minimal Pluto notebook file, with one markdown title cell when a title is given. */
+/**
+ * A new Pluto notebook file with one cell: a folded markdown title cell when
+ * a title is given, otherwise an empty code cell.
+ */
 export function newNotebookSource(title?: string): string {
-  const header = [
+  const id = randomUUID();
+  const cell = title ? ['md"""', `# ${title.replace(/"/g, "'")}`, '"""'] : [""];
+  return [
     "### A Pluto.jl notebook ###",
     "# v0.20.0",
     "",
     "using Markdown",
     "using InteractiveUtils",
     "",
-  ];
-  if (!title) {
-    return [...header, "# ╔═╡ Cell order:", ""].join("\n");
-  }
-  const id = randomUUID();
-  const safeTitle = title.replace(/"/g, "'");
-  return [
-    ...header,
     `# ╔═╡ ${id}`,
-    'md"""',
-    `# ${safeTitle}`,
-    '"""',
+    ...cell,
     "",
     "# ╔═╡ Cell order:",
-    `# ╟─${id}`,
+    `# ${title ? "╟─" : "╠═"}${id}`,
     "",
   ].join("\n");
 }
