@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { getMCPServer, startMCPServer } from "./mcp-server-http.ts";
+import { mcpEndpointUrl } from "./mcpClientConfig.ts";
 
 /** Must match `contributes.mcpServerDefinitionProviders[].id` in package.json. */
 export const MCP_SERVER_DEFINITION_PROVIDER_ID = "pluto-notebook.mcpServers";
@@ -17,7 +18,7 @@ export function getMcpEndpoint(): vscode.Uri {
     vscode.workspace
       .getConfiguration("pluto-notebook")
       .get<number>("mcpPort", 3100);
-  return vscode.Uri.parse(`http://localhost:${port}/mcp`);
+  return vscode.Uri.parse(mcpEndpointUrl(port));
 }
 
 /**
