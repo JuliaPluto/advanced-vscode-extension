@@ -10,7 +10,6 @@ function createStubServerManager(port: number): IPlutoServerManager {
   return {
     start: async () => {},
     stop: async () => {},
-    isRunning: () => false,
     waitForReady: async () => {},
     onStop: () => {},
     onPortChanged: () => {},
@@ -237,7 +236,7 @@ x = 42
     // Step 1: Test initial state
     console.log("[TEST] Step 1: Testing initial state...");
     expect(manager.isConnected()).toBe(false);
-    expect(manager.isRunning()).toBe(false);
+    expect(manager.getState()).toEqual({ status: "stopped" });
     expect(manager.getServerUrl()).toBe(SERVER_URL);
     expect(manager.getOpenNotebooks()).toEqual([]);
 

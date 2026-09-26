@@ -32,6 +32,18 @@ async function startServerWithProgress(
   );
 }
 
+async function stopServer(plutoManager: PlutoManager): Promise<void> {
+  try {
+    await plutoManager.stop();
+    vscode.window.showInformationMessage("Pluto server stopped");
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(
+      `Failed to stop Pluto server: ${errorMessage}`
+    );
+  }
+}
+
 /**
  * Command: Start Pluto server
  */
@@ -54,18 +66,9 @@ export function registerStopServerCommand(
   plutoManager: PlutoManager
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("pluto-notebook.stopServer", async () => {
-      try {
-        await plutoManager.stop();
-        vscode.window.showInformationMessage("Pluto server stopped");
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        vscode.window.showErrorMessage(
-          `Failed to stop Pluto server: ${errorMessage}`
-        );
-      }
-    })
+    vscode.commands.registerCommand("pluto-notebook.stopServer", () =>
+      stopServer(plutoManager)
+    )
   );
 }
 
@@ -171,7 +174,8 @@ export function registerOpenInBrowserCommand(
 }
 
 /**
- * Command: Toggle Pluto server (start/stop)
+ * Command: Toggle Pluto server. A server that is starting is stopped once
+ * the start settles; it is never started a second time.
  */
 export function registerToggleServerCommand(
   context: vscode.ExtensionContext,
@@ -179,21 +183,22 @@ export function registerToggleServerCommand(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("pluto-notebook.toggleServer", async () => {
-      if (plutoManager.isRunning()) {
-        // Server is running, stop it
-        try {
-          await plutoManager.stop();
-          vscode.window.showInformationMessage("Pluto server stopped");
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          vscode.window.showErrorMessage(
-            `Failed to stop Pluto server: ${errorMessage}`
+      switch (plutoManager.getState().status) {
+        case "starting":
+          vscode.window.showInformationMessage(
+            "Pluto server will stop once it finishes starting"
           );
-        }
-      } else {
-        // Server is stopped, start it
-        await startServerWithProgress(plutoManager, "Pluto server started");
+          await stopServer(plutoManager);
+          break;
+        case "ready":
+          await stopServer(plutoManager);
+          break;
+        case "stopping":
+          break;
+        case "stopped":
+        case "failed":
+          await startServerWithProgress(plutoManager, "Pluto server started");
+          break;
       }
     })
   );

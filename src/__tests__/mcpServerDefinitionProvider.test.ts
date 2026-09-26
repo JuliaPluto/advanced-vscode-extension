@@ -33,7 +33,6 @@ function disposeAll(context: vscode.ExtensionContext): void {
 }
 
 const plutoManager = {
-  isRunning: () => false,
   isConnected: () => false,
 } as unknown as PlutoManager;
 
