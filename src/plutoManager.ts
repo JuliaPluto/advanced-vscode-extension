@@ -6,6 +6,11 @@ import type { IPlutoServer, IFileReader } from "./plutoManagerTypes.ts";
 import { EventEmitter } from "events";
 import { resolve as resolvePath } from "path";
 import { v4 as uuidv4 } from "uuid";
+import {
+  isLoopbackUrl,
+  serverCapabilities,
+  type ServerCapabilities,
+} from "./serverCapabilities.ts";
 
 /**
  * Lifecycle state of the Pluto server as PlutoManager sees it. `url` is
@@ -56,6 +61,7 @@ export class PlutoManager {
   private readonly configuredUrl: string; // where the server is expected before it starts
   private serverUrl: string; // where it is now; an owned server may fall back to another port
   private usingCustomServerUrl = false;
+  private ownsServer = false; // ready was reached through a server this manager started
   private readonly notebooksToRecreate: Set<string> = new Set(); // Paths of notebooks to recreate after reconnect
   private readonly eventEmitter: EventEmitter = new EventEmitter();
 
@@ -198,6 +204,7 @@ export class PlutoManager {
         await this.probeServer();
       } else {
         this.serverUrl = await this.server.start(signal);
+        this.ownsServer = true;
       }
     });
   }
@@ -227,6 +234,7 @@ export class PlutoManager {
   ): Promise<void> {
     await this.stopPromise?.catch(() => {});
     this.serverUrl = this.configuredUrl;
+    this.ownsServer = false;
     this.setState({ status: "starting", url: this.serverUrl });
     const abort = new AbortController();
     this.startAbort = abort;
@@ -567,7 +575,7 @@ export class PlutoManager {
     // If the server already manages this file (e.g. the user's own browser
     // tab has it open), adopt that notebook — uploading a copy and calling
     // moveTo would fail with "File exists already" (issue #40)
-    if (this.isLocalServer()) {
+    if (this.sharesFilesystem()) {
       const runningId = await this.findRunningNotebook(host, notebookPath);
       if (runningId) {
         const worker = host.worker(runningId);
@@ -602,7 +610,7 @@ export class PlutoManager {
     }
 
     let worker: Worker;
-    if (this.isLocalServer()) {
+    if (this.sharesFilesystem()) {
       // Same filesystem: let Pluto load the file where it is. Nothing is
       // copied or deleted, and the file stays a plain Pluto notebook that
       // both Pluto and VS Code write to.
@@ -833,21 +841,13 @@ export class PlutoManager {
   public async moveNotebook(worker: Worker, newPath: string): Promise<void> {
     const oldPath = worker.getState()?.path;
     await worker.moveTo(newPath);
-    if (this.serverWritesNotebookFiles()) {
+    if (this.capabilities().fileSync !== "editor-writes-file") {
       return;
     }
     await writeFile(newPath, await this.fetchNotebookFile(worker), "utf-8");
     if (oldPath && resolvePath(oldPath) !== resolvePath(newPath)) {
       await rm(oldPath, { force: true });
     }
-  }
-
-  /**
-   * Whether the Pluto server writes notebook files after every run. When it
-   * does not, only the editor's save and save_notebook reach the disk.
-   */
-  public serverWritesNotebookFiles(): boolean {
-    return this.server.writesNotebookFiles;
   }
 
   /**
@@ -912,21 +912,19 @@ export class PlutoManager {
   }
 
   /**
-   * Whether the Pluto server is running on localhost (file paths are shared).
+   * What the server can do for this process. A server this manager did not
+   * start (a configured URL, or one reached through connect()) is assumed
+   * to write notebook files, as Pluto does by default.
    */
-  public isLocalServer(): boolean {
-    try {
-      const url = new URL(this.serverUrl);
-      const host = url.hostname;
-      return (
-        host === "localhost" ||
-        host === "127.0.0.1" ||
-        host === "::1" ||
-        host === "0.0.0.0"
-      );
-    } catch {
-      return false;
-    }
+  public capabilities(): ServerCapabilities {
+    return serverCapabilities({
+      sharesFilesystem: this.sharesFilesystem(),
+      writesNotebookFiles: !this.ownsServer || this.server.writesNotebookFiles,
+    });
+  }
+
+  private sharesFilesystem(): boolean {
+    return isLoopbackUrl(this.serverUrl);
   }
 
   /**

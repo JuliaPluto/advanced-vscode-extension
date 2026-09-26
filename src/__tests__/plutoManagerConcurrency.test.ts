@@ -184,6 +184,52 @@ describe("PlutoManager concurrency", () => {
     });
   });
 
+  describe("capabilities()", () => {
+    function managerFor(serverUrl: string | undefined, ownedWrites: boolean) {
+      const server = createMockServerManager(1);
+      Object.assign(server, { writesNotebookFiles: ownedWrites });
+      return new PlutoManager(
+        1234,
+        createMockLogger(),
+        server,
+        stubFileReader,
+        serverUrl
+      );
+    }
+
+    it("leaves the file to the editor for a server it started that does not write it", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.start();
+      expect(manager.capabilities().fileSync).toBe("editor-writes-file");
+    });
+
+    it("assumes a server reached through connect() writes files, even on the default URL", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.connect();
+      expect(manager.capabilities().fileSync).toBe("server-writes-file");
+    });
+
+    it("forgets ownership when a later connect() replaces a started server", async () => {
+      const manager = managerFor(undefined, false);
+      await manager.start();
+      await manager.stop();
+      await manager.connect();
+      expect(manager.capabilities().fileSync).toBe("server-writes-file");
+    });
+
+    it("assumes a local server it did not start writes files, whatever the owned one would do", () => {
+      expect(
+        managerFor("http://127.0.0.1:1300", false).capabilities().fileSync
+      ).toBe("server-writes-file");
+    });
+
+    it("treats a remote server as holding a copy", () => {
+      const caps = managerFor("http://10.0.0.99:1234", false).capabilities();
+      expect(caps.fileSync).toBe("server-holds-copy");
+      expect(caps.moveNotebook.ok).toBe(false);
+    });
+  });
+
   describe("getWorker()", () => {
     // Non-local server URL skips the unlink/moveTo filesystem step
     const remoteUrl = "http://10.0.0.99:1234";

@@ -1,6 +1,7 @@
 import { writeFile } from "fs/promises";
 import { z } from "zod";
 import { pathArg } from "./args.ts";
+import { describeFileSync, requireCapability } from "../serverCapabilities.ts";
 import {
   EXECUTION_TIMEOUT_MS,
   REPLY_TIMEOUT_MS,
@@ -22,18 +23,14 @@ export function notebookTools(manager: PlutoToolsManager): PlutoTool[] {
     notebookTool(manager, {
       name: "open_notebook",
       description:
-        "Open a Pluto notebook file and create a worker session. The .jl file must already exist on disk — Pluto will not create a new file from a nonexistent path. Create the file first if needed.",
+        "Open a Pluto notebook file and create a worker session. The .jl file must already exist on disk — Pluto will not create a new file from a nonexistent path. Create the file first if needed. The result says who keeps the file on disk up to date; when Pluto writes it and the notebook is also open in the VS Code editor, saving in the editor writes it too.",
       args: {},
       bound: execution(
         (args) =>
           `Opening ${args.path} is still running after ${EXECUTION_TIMEOUT_MS / 1000}s — use list_notebooks to see when it is open, then call open_notebook again.`
       ),
       run: async ({ path }, worker) => {
-        const syncNote = !manager.isLocalServer()
-          ? "Warning: Pluto server is remote — the file on disk is NOT synced with the server. Use save_notebook to write changes back to the local file."
-          : manager.serverWritesNotebookFiles()
-            ? "Pluto is tracking this file path and will save changes to it."
-            : "The server does not write this file: changes reach disk when the notebook is saved in the editor, or through save_notebook.";
+        const syncNote = describeFileSync(manager.capabilities().fileSync);
         return `Notebook opened: ${path}\nNotebook ID: ${worker.notebook_id}\n${syncNote}`;
       },
     }),
@@ -50,11 +47,7 @@ export function notebookTools(manager: PlutoToolsManager): PlutoTool[] {
           `Moving ${args.path} to ${args.new_path} has not finished after ${EXECUTION_TIMEOUT_MS / 1000}s — check list_notebooks before retrying.`
       ),
       precondition: () => {
-        if (!manager.isLocalServer()) {
-          throw new Error(
-            "move_notebook only works when the Pluto server is on localhost (shared filesystem). Use save_notebook to write a copy instead."
-          );
-        }
+        requireCapability(manager.capabilities().moveNotebook);
       },
       run: async ({ path, new_path }, worker) => {
         await manager.moveNotebook(worker, new_path);
