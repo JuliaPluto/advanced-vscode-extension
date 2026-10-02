@@ -8,6 +8,7 @@ import type {
   UpdateEvent,
 } from "@plutojl/rainbow";
 import { formatCellOutput, foldHiddenCellsEnabled } from "./serializer.ts";
+import { serializeCellResult } from "./outputSerialization.ts";
 import {
   extractMarkdownContent,
   createVsCodeCellFromPlutoCell,
@@ -266,12 +267,16 @@ export class PlutoNotebookController {
     );
 
     if (editors.length > 0 && this.rendererMessaging) {
+      const rendererMessage =
+        message.state && typeof message.state === "object"
+          ? { ...message, state: serializeCellResult(message.state) }
+          : message;
       // Send message to all editors displaying this notebook
       for (const editor of editors) {
-        this.rendererMessaging.postMessage(message, editor);
+        this.rendererMessaging.postMessage(rendererMessage, editor);
       }
       this.outputChannel.appendLine(
-        `[CONTROLLER MESSAGE] Sent to ${editors.length} editor(s): ${JSON.stringify(message)}`
+        `[CONTROLLER MESSAGE] Sent to ${editors.length} editor(s): ${JSON.stringify(rendererMessage)}`
       );
     }
   }
@@ -567,33 +572,6 @@ export class PlutoNotebookController {
         this.activeExecutions.delete(cellId);
       }
       return;
-    }
-
-    const body = currentCellState.output?.body;
-    try {
-      // the state (which comes from `execution.replaceOutput([formatCellOutput])`)) is
-      // serialized differently than postMessage (which JSONifies stuff)
-      // Here we adjust for the case of binary data (e.g. svg/other images)
-      // which leave the websocket as UintArrays and get JSON.stringified to {0: byte...}
-      // TODO: this probably needs to happen at @plutojl/rainbow (which would then guarantee serializability)
-      // Since this only happens once per image, it's probably _fine_ --pg
-      if (
-        currentCellState.output.mime &&
-        typeof body === "object" &&
-        (body instanceof Uint8Array || body instanceof ArrayBuffer)
-      ) {
-        currentCellState.output.body = new TextDecoder().decode(
-          new Uint8Array(body)
-        );
-      }
-    } catch (err) {
-      console.error(`Serialization of ArrayBuffer in a string failed`, {
-        err,
-        body,
-        type: typeof body,
-        cellId,
-      });
-      // TextDecoder returns type error if body isn't an array buffer of sorts
     }
 
     // Optimistically send data. May be ignored.

@@ -6,6 +6,7 @@ import type {
 import { PlutoOutput } from "./components/PlutoOutput";
 import { html, PlutoActionsContext, render } from "@plutojl/rainbow/ui";
 import { CellResultData } from "@plutojl/rainbow";
+import { restoreCellResult } from "../src/outputSerialization";
 import plutoOutputStyles from "./styles/pluto-output.css";
 import treeStyles from "./styles/tree.css";
 
@@ -47,7 +48,7 @@ export const activate: ActivationFunction = (
   messagingApi = context.postMessage;
   return {
     renderOutputItem(outputItem, element) {
-      const state: CellResultData = outputItem.json();
+      const state: CellResultData = restoreCellResult(outputItem.json());
       // Render directly into the provided element
       // This ensures VS Code can properly clear/replace outputs
       const actions = {
@@ -66,7 +67,7 @@ export const activate: ActivationFunction = (
       };
       render(
         html`<${PlutoActionsContext.Provider} value=${actions}>
-          <${PlutoOutput} state="${state}"  context=${context} />
+          <${PlutoOutput} state=${state} context=${context} />
         </${PlutoActionsContext.Provider}>`,
         element
       );

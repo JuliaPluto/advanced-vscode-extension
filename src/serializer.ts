@@ -3,6 +3,7 @@ import {
   parsePlutoNotebook,
   serializePlutoNotebook,
 } from "./plutoSerializer.ts";
+import { serializeCellResult } from "./outputSerialization.ts";
 
 /** Whether Pluto's hidden cells should show with their input collapsed. */
 export function foldHiddenCellsEnabled(): boolean {
@@ -17,7 +18,10 @@ export function formatCellOutput(
 ): vscode.NotebookCellOutput {
   // Wrap output in custom renderer mimetype
   return new vscode.NotebookCellOutput([
-    vscode.NotebookCellOutputItem.json(output, "x-application/pluto-output"),
+    vscode.NotebookCellOutputItem.json(
+      serializeCellResult(output),
+      "x-application/pluto-output"
+    ),
   ]);
 }
 
