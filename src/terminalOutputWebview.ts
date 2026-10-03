@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { CellResultData } from "@plutojl/rainbow";
+import { serializeCellResult } from "./outputSerialization.ts";
 
 /**
  * Manages webview panels for displaying terminal output with rich content
@@ -109,7 +110,7 @@ export class TerminalOutputWebviewProvider {
     );
 
     // Serialize the result data
-    const resultJson = JSON.stringify(result);
+    const resultJson = JSON.stringify(serializeCellResult(result));
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -163,6 +164,15 @@ export class TerminalOutputWebviewProvider {
 
         // Parse the result data
         const result = ${resultJson};
+        const encodedBody = result.output?.body;
+        if (encodedBody?.__pluto_binary_body_base64__ === "base64") {
+            const binary = atob(encodedBody.data);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            result.output.body = bytes;
+        }
 
         // Initialize MathJax if needed
         setup_mathjax();

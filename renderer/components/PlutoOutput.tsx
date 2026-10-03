@@ -15,6 +15,7 @@ import {
   useMemo,
 } from "@plutojl/rainbow/ui";
 import { type RendererContext } from "vscode-notebook-renderer";
+import { restoreCellResult } from "../../src/outputSerialization";
 
 const useMathjaxEffect = () =>
   useEffect(() => {
@@ -58,7 +59,7 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
       // Placeholder: Handle different message types from controller
       switch (message.type) {
         case "setState": {
-          const state = message.state as CellResultData;
+          const state = restoreCellResult(message.state as CellResultData);
           setLocalState({ ...state });
 
           const logs = state.logs.filter((log) => {
@@ -103,10 +104,10 @@ export function PlutoOutput({ state, context }: PlutoOutputProps) {
         : localState.output.mime;
     if (localState.output?.mime)
       return html`<${OutputBody}
-    persist_js_state="${localState.output?.persist_js_state}"
-    body="${localState.output?.body}"
-    mime="${fixedMime}"
-    sanitize_html="${false /* Maybe reconsider */}"
+    persist_js_state=${localState.output?.persist_js_state}
+    body=${localState.output?.body}
+    mime=${fixedMime}
+    sanitize_html=${false /* Maybe reconsider */}
   ></${OutputBody}>`;
     return "Loading...";
   }, [
