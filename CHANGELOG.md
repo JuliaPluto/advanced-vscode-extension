@@ -1,9 +1,8 @@
 ## [0.10.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.10.0...v0.10.1) (2026-10-03)
 
-
 ### Bug Fixes
 
-* **renderer:** preserve binary image outputs ([#113](https://github.com/JuliaPluto/advanced-vscode-extension/issues/113)) ([5b1c1bd](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5b1c1bde6546da02a6bb1c79996e81d8abc34335)), closes [#112](https://github.com/JuliaPluto/advanced-vscode-extension/issues/112)
+- **renderer:** preserve binary image outputs ([#113](https://github.com/JuliaPluto/advanced-vscode-extension/issues/113)) ([5b1c1bd](https://github.com/JuliaPluto/advanced-vscode-extension/commit/5b1c1bde6546da02a6bb1c79996e81d8abc34335)), closes [#112](https://github.com/JuliaPluto/advanced-vscode-extension/issues/112)
 
 # [0.10.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.9.1...v0.10.0) (2026-09-15)
 
