@@ -306,6 +306,13 @@ describe("toTransport / fromTransport", () => {
     expect(output.body).toBe(png);
   });
 
+  it("carries only the byte range of a typed-array view", () => {
+    const backing = new Uint8Array([0, 1, 2, 3, 4]);
+    const output = { mime: "image/png", body: backing.subarray(1, 4) };
+    const back = fromTransport(throughJson(toTransport(output)));
+    expect(Array.from(back.body as Uint8Array)).toEqual([1, 2, 3]);
+  });
+
   it("sends textual bytes as a string", () => {
     const sent = toTransport({ mime: "image/svg+xml", body: utf8("<svg/>") });
     expect(sent.body).toBe("<svg/>");
