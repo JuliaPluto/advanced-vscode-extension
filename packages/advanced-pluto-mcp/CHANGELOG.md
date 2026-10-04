@@ -1,9 +1,8 @@
 ## [0.13.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.13.0...mcp-v0.13.1) (2026-10-04)
 
-
 ### Bug Fixes
 
-* **julia:** run on the user's Julia now that Pluto supports 1.13 ([63544d0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/63544d06b91b7db7618c09304610647cdb48f121))
+- **julia:** run on the user's Julia now that Pluto supports 1.13 ([63544d0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/63544d06b91b7db7618c09304610647cdb48f121))
 
 # [0.13.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/mcp-v0.12.0...mcp-v0.13.0) (2026-10-03)
 
