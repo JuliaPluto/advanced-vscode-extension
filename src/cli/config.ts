@@ -37,7 +37,7 @@ export const VERSION: string =
 export const DEFAULTS = {
   mcpPort: 3100,
   plutoPort: 1234,
-  juliaVersion: "1.12.7",
+  juliaVersion: "default",
 } as const;
 
 export const CONFIG_FILE = ".plutomcp.json";

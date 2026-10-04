@@ -42,14 +42,14 @@ Start Pluto and the tool server. Pluto is installed into a shared Julia environm
 npx @plutojl/cli run [options]
 ```
 
-| Option                  | Default  | Description                                                           |
-| ----------------------- | -------- | --------------------------------------------------------------------- |
-| `--mcp-port <port>`     | `3100`   | Tool server (MCP) port                                                |
-| `--pluto-port <port>`   | `1234`   | Pluto server port                                                     |
-| `--pluto-url <url>`     | —        | Connect to existing Pluto server (skip starting one)                  |
-| `--julia-version <ver>` | `1.12.7` | juliaup channel to use, or `default` for whatever `julia` resolves to |
-| `--update`              | —        | Re-install and precompile Pluto before starting                       |
-| `--no-pluto`            | —        | Start the tool server only, without starting Pluto                    |
+| Option                  | Default | Description                                                                   |
+| ----------------------- | ------- | ----------------------------------------------------------------------------- |
+| `--mcp-port <port>`     | `3100`  | Tool server (MCP) port                                                        |
+| `--pluto-port <port>`   | `1234`  | Pluto server port                                                             |
+| `--pluto-url <url>`     | —       | Connect to existing Pluto server (skip starting one)                          |
+| `--julia-version <ver>` | —       | juliaup channel to pin, e.g. `1.12`; without it, whatever `julia` resolves to |
+| `--update`              | —       | Re-install and precompile Pluto before starting                               |
+| `--no-pluto`            | —       | Start the tool server only, without starting Pluto                            |
 
 ### `status`
 
@@ -122,7 +122,7 @@ Example `.plutomcp.json`:
 {
   "mcpPort": 3100,
   "plutoPort": 1234,
-  "juliaVersion": "1.12.7",
+  "juliaVersion": "1.12",
   "serverUrl": "http://localhost:1234"
 }
 ```
