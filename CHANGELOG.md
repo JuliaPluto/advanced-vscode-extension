@@ -1,3 +1,10 @@
+## [0.11.1](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.11.0...v0.11.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **julia:** run on the user's Julia now that Pluto supports 1.13 ([63544d0](https://github.com/JuliaPluto/advanced-vscode-extension/commit/63544d06b91b7db7618c09304610647cdb48f121))
+
 # [0.11.0](https://github.com/JuliaPluto/advanced-vscode-extension/compare/v0.10.1...v0.11.0) (2026-10-03)
 
 ### Bug Fixes
