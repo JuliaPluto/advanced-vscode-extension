@@ -50,7 +50,7 @@ export function helpText(): string {
       ),
       opt(
         "--julia-version <ver>",
-        `juliaup channel, or 'default' for your current julia ${dim(`(default ${DEFAULTS.juliaVersion})`)}`
+        `juliaup channel to pin, e.g. 1.12 ${dim(`(default: your current julia)`)}`
       ),
       opt("--update", "Re-install and precompile Pluto before starting"),
       opt("--no-pluto", "Start the tool server only"),
